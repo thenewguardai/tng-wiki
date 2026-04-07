@@ -1,0 +1,41 @@
+{
+  "name": "tng-wiki",
+  "version": "0.1.0",
+  "description": "Scaffold an LLM-maintained knowledge base in under 10 minutes. Domain templates, agent-agnostic, QMD-ready.",
+  "keywords": [
+    "llm",
+    "wiki",
+    "knowledge-base",
+    "obsidian",
+    "claude-code",
+    "codex",
+    "karpathy",
+    "markdown",
+    "ai",
+    "research"
+  ],
+  "author": "The New Guard <hello@thenewguard.ai>",
+  "license": "MIT",
+  "homepage": "https://thenewguard.ai/features/llm-wiki-guide",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thenewguard/tng-wiki"
+  },
+  "bin": {
+    "tng-wiki": "./bin/cli.js"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "picocolors": "^1.1.1"
+  }
+}
