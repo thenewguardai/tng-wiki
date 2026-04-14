@@ -3,10 +3,7 @@ import pc from 'picocolors';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
 
-export async function runStatus(args) {
-  const root = resolve(args[0] || '.');
-
-  // Check if this is a wiki
+export function computeStatus(root) {
   const hasWiki = existsSync(join(root, 'wiki'));
   const hasRaw = existsSync(join(root, 'raw'));
   const hasSchema = existsSync(join(root, 'CLAUDE.md'))
@@ -14,23 +11,15 @@ export async function runStatus(args) {
     || existsSync(join(root, '.cursorrules'));
 
   if (!hasWiki || !hasRaw) {
-    p.log.error('Not a wiki directory. Run this from your wiki root, or pass the path as an argument.');
-    p.log.info(`  ${pc.dim('$')} tng-wiki status /path/to/wiki`);
-    return;
+    return { isWiki: false, root };
   }
 
-  p.intro(pc.bgCyan(pc.black(' wiki status ')));
-
-  // Count files
   const rawFiles = countMdFiles(join(root, 'raw'));
   const wikiPages = countMdFiles(join(root, 'wiki'));
   const outputFiles = existsSync(join(root, 'output')) ? countMdFiles(join(root, 'output')) : 0;
 
-  // Check index
-  const indexPath = join(root, 'wiki', 'index.md');
-  const hasIndex = existsSync(indexPath);
+  const hasIndex = existsSync(join(root, 'wiki', 'index.md'));
 
-  // Check log
   const logPath = join(root, 'wiki', 'log.md');
   const hasLog = existsSync(logPath);
   let lastOp = null;
@@ -43,43 +32,60 @@ export async function runStatus(args) {
     if (lastMatch) lastOp = { date: lastMatch[1], desc: lastMatch[2] };
   }
 
-  // Check for stale markers
-  let staleCount = 0;
-  if (hasWiki) {
-    staleCount = countPattern(join(root, 'wiki'), /⚠️ STALE\?/g);
+  const staleCount = countPattern(join(root, 'wiki'), /⚠️ STALE\?/g);
+  const uncompiledCount = countPattern(join(root, 'raw'), /compiled: false/g);
+
+  return {
+    isWiki: true,
+    root,
+    rawFiles,
+    wikiPages,
+    outputFiles,
+    opCount,
+    lastOp,
+    hasSchema,
+    hasIndex,
+    staleCount,
+    uncompiledCount,
+  };
+}
+
+export async function runStatus(args) {
+  const root = resolve(args[0] || '.');
+  const status = computeStatus(root);
+
+  if (!status.isWiki) {
+    p.log.error('Not a wiki directory. Run this from your wiki root, or pass the path as an argument.');
+    p.log.info(`  ${pc.dim('$')} tng-wiki status /path/to/wiki`);
+    return;
   }
 
-  // Check uncompiled sources
-  let uncompiledCount = 0;
-  if (hasRaw) {
-    uncompiledCount = countPattern(join(root, 'raw'), /compiled: false/g);
-  }
+  p.intro(pc.bgCyan(pc.black(' wiki status ')));
 
-  // Output
   console.log('');
-  console.log(`  ${pc.bold('Wiki Health')}  ${pc.dim(root)}`);
+  console.log(`  ${pc.bold('Wiki Health')}  ${pc.dim(status.root)}`);
   console.log('');
-  console.log(`  ${pc.cyan('Sources (raw/):')}      ${rawFiles} markdown files`);
-  console.log(`  ${pc.cyan('Wiki pages:')}          ${wikiPages} pages`);
-  console.log(`  ${pc.cyan('Outputs:')}             ${outputFiles} files`);
-  console.log(`  ${pc.cyan('Operations logged:')}   ${opCount}`);
+  console.log(`  ${pc.cyan('Sources (raw/):')}      ${status.rawFiles} markdown files`);
+  console.log(`  ${pc.cyan('Wiki pages:')}          ${status.wikiPages} pages`);
+  console.log(`  ${pc.cyan('Outputs:')}             ${status.outputFiles} files`);
+  console.log(`  ${pc.cyan('Operations logged:')}   ${status.opCount}`);
   console.log('');
 
-  if (uncompiledCount > 0) {
-    console.log(`  ${pc.yellow('⚠')} ${uncompiledCount} uncompiled source${uncompiledCount > 1 ? 's' : ''} in raw/`);
+  if (status.uncompiledCount > 0) {
+    console.log(`  ${pc.yellow('⚠')} ${status.uncompiledCount} uncompiled source${status.uncompiledCount > 1 ? 's' : ''} in raw/`);
   }
-  if (staleCount > 0) {
-    console.log(`  ${pc.yellow('⚠')} ${staleCount} stale marker${staleCount > 1 ? 's' : ''} in wiki/`);
+  if (status.staleCount > 0) {
+    console.log(`  ${pc.yellow('⚠')} ${status.staleCount} stale marker${status.staleCount > 1 ? 's' : ''} in wiki/`);
   }
-  if (!hasSchema) {
+  if (!status.hasSchema) {
     console.log(`  ${pc.yellow('⚠')} No schema file found (CLAUDE.md / AGENTS.md / .cursorrules)`);
   }
-  if (!hasIndex) {
+  if (!status.hasIndex) {
     console.log(`  ${pc.yellow('⚠')} Missing wiki/index.md`);
   }
-  if (lastOp) {
+  if (status.lastOp) {
     console.log('');
-    console.log(`  ${pc.dim('Last operation:')} ${lastOp.date} — ${lastOp.desc}`);
+    console.log(`  ${pc.dim('Last operation:')} ${status.lastOp.date} — ${status.lastOp.desc}`);
   }
 
   console.log('');

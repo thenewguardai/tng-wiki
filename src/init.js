@@ -24,6 +24,44 @@ const AGENTS = [
   { value: 'all',         label: 'Multiple / Other',  hint: 'generates all schema files' },
 ];
 
+const BASE_DIRS = [
+  'raw/announcements', 'raw/papers', 'raw/social', 'raw/transcripts', 'raw/assets',
+  'wiki/entities', 'wiki/meta',
+  'output/briefings', 'output/research',
+];
+
+export function scaffoldWiki(root, { domain, agent, wikiName }) {
+  const template = getTemplate(domain);
+
+  for (const dir of [...BASE_DIRS, ...template.extraDirs]) {
+    mkdirSync(join(root, dir), { recursive: true });
+  }
+
+  const schemas = generateSchema(agent, { domain, wikiName, template });
+  for (const [filename, content] of Object.entries(schemas)) {
+    writeFileSync(join(root, filename), content, 'utf8');
+  }
+
+  writeFileSync(join(root, 'wiki', 'index.md'), template.indexMd(wikiName), 'utf8');
+  writeFileSync(join(root, 'wiki', 'log.md'), template.logMd(wikiName, domain), 'utf8');
+
+  for (const [relPath, content] of Object.entries(template.extraFiles)) {
+    const fullPath = join(root, relPath);
+    mkdirSync(join(fullPath, '..'), { recursive: true });
+    writeFileSync(fullPath, content, 'utf8');
+  }
+
+  if (template.seedSource) {
+    const seedPath = join(root, 'raw', template.seedSource.path);
+    mkdirSync(join(seedPath, '..'), { recursive: true });
+    writeFileSync(seedPath, template.seedSource.content, 'utf8');
+  }
+
+  writeFileSync(join(root, '.gitignore'), GITIGNORE, 'utf8');
+
+  return { template, schemas: Object.keys(schemas) };
+}
+
 export async function runInit(args) {
   p.intro(pc.bgCyan(pc.black(' tng-wiki init ')));
 
@@ -92,53 +130,7 @@ export async function runInit(args) {
 
   s.start('Scaffolding wiki...');
 
-  // Create directory structure
-  const dirs = [
-    'raw/announcements', 'raw/papers', 'raw/social', 'raw/transcripts', 'raw/assets',
-    'wiki/entities', 'wiki/meta',
-    'output/briefings', 'output/research',
-  ];
-
-  // Add domain-specific directories
-  const template = getTemplate(domain);
-  const allDirs = [...dirs, ...template.extraDirs];
-
-  for (const dir of allDirs) {
-    mkdirSync(join(root, dir), { recursive: true });
-  }
-
-  s.message('Writing schema...');
-
-  // Generate agent schema file(s)
-  const schemas = generateSchema(agent, { domain, wikiName, template });
-  for (const [filename, content] of Object.entries(schemas)) {
-    writeFileSync(join(root, filename), content, 'utf8');
-  }
-
-  s.message('Writing wiki scaffold...');
-
-  // Write index.md
-  writeFileSync(join(root, 'wiki', 'index.md'), template.indexMd(wikiName), 'utf8');
-
-  // Write log.md
-  writeFileSync(join(root, 'wiki', 'log.md'), template.logMd(wikiName, domain), 'utf8');
-
-  // Write domain-specific files (scoring criteria, page templates, etc.)
-  for (const [relPath, content] of Object.entries(template.extraFiles)) {
-    const fullPath = join(root, relPath);
-    mkdirSync(join(fullPath, '..'), { recursive: true });
-    writeFileSync(fullPath, content, 'utf8');
-  }
-
-  // Write seed source
-  if (template.seedSource) {
-    const seedPath = join(root, 'raw', template.seedSource.path);
-    mkdirSync(join(seedPath, '..'), { recursive: true });
-    writeFileSync(seedPath, template.seedSource.content, 'utf8');
-  }
-
-  // Write .gitignore
-  writeFileSync(join(root, '.gitignore'), GITIGNORE, 'utf8');
+  const { template } = scaffoldWiki(root, { domain, agent, wikiName });
 
   s.message('Setting up integrations...');
 

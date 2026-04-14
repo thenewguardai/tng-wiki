@@ -1,28 +1,25 @@
 import { execSync } from 'child_process';
 import { join } from 'path';
 
-export async function setupQmd(root, wikiName) {
-  const slug = wikiName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+export function slugifyWikiName(wikiName) {
+  return wikiName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+export async function setupQmd(root, wikiName, deps = {}) {
+  const { exec = (cmd) => execSync(cmd, { stdio: 'pipe' }) } = deps;
+
+  const slug = slugifyWikiName(wikiName);
   const wikiDir = join(root, 'wiki');
 
-  // Check if qmd is installed
   try {
-    execSync('qmd --version', { stdio: 'pipe' });
+    exec('qmd --version');
   } catch {
     return { installed: false, configured: false, slug, wikiDir };
   }
 
-  // Register wiki as a QMD collection
   try {
-    execSync(`qmd collection add "${wikiDir}" --name "${slug}" --mask "**/*.md"`, {
-      stdio: 'pipe',
-    });
-
-    // Add context
-    execSync(`qmd context add qmd://${slug} "LLM-maintained wiki: ${wikiName}"`, {
-      stdio: 'pipe',
-    });
-
+    exec(`qmd collection add "${wikiDir}" --name "${slug}" --mask "**/*.md"`);
+    exec(`qmd context add qmd://${slug} "LLM-maintained wiki: ${wikiName}"`);
     return { installed: true, configured: true, slug, wikiDir };
   } catch (err) {
     return {

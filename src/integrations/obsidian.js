@@ -6,8 +6,7 @@ import { homedir } from 'os';
  * Attempts to find a likely base directory for creating a new Obsidian-backed wiki.
  * If an existing vault is found, return its parent so the new wiki is created alongside it.
  */
-export function detectObsidian() {
-  const home = homedir();
+export function detectObsidian(home = homedir()) {
 
   // Common Obsidian vault/container locations
   const candidates = [
