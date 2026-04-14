@@ -9,10 +9,10 @@ const DOMAIN_SECTIONS = {
   'blank': blankSchema,
 };
 
-export function generateClaudeMd({ domain, wikiName, template }) {
+export function generateClaudeMd({ domain, wikiName, template, header = '' }) {
   const domainSchema = (DOMAIN_SECTIONS[domain] || blankSchema)();
   return `# ${wikiName}
-
+${header ? `\n${header}\n` : ''}
 ${PREAMBLE}
 
 ${ARCHITECTURE(domain)}

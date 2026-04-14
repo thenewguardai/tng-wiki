@@ -24,6 +24,9 @@
   "bin": {
     "tng-wiki": "./bin/cli.js"
   },
+  "scripts": {
+    "test": "node --test 'test/**/*.test.js'"
+  },
   "type": "module",
   "engines": {
     "node": ">=18"
