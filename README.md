@@ -10,13 +10,13 @@ npx tng-wiki init
 
 ## What This Does
 
-You pick a domain. You pick an agent. You get a fully structured wiki — directory scaffold, agent operating instructions, index, log, scoring frameworks, and a seed source ready for your first compile. Open it in Obsidian, point your agent at it, and go.
+You pick a domain. You pick an agent. You get a structured wiki scaffold — directory layout, agent operating instructions, index, log, scoring frameworks, and a seed source ready for your first compile. Open it in Obsidian, point your agent at it, and go.
 
 **The CLI makes zero LLM calls.** It scaffolds files and configures tools. Your agent is the intelligence.
 
 ## Why This Exists
 
-Karpathy described the pattern. Dozens of people built Claude Code plugins. Nobody built the thing that gets a builder from "I just read about this" to "working wiki" in 10 minutes — with domain-specific templates, agent-agnostic schemas, and QMD search out of the box.
+Karpathy described the pattern. Dozens of people built Claude Code plugins. Nobody built the thing that gets a builder from "I just read about this" to "working wiki scaffold" in 10 minutes — with domain-specific templates, agent-agnostic schemas, and QMD-ready setup.
 
 This is that thing.
 
@@ -30,7 +30,7 @@ The interactive flow asks four questions:
 
 1. **Domain** — AI Research, Competitive Intel, Publication, Business Ops, Learning, or Blank
 2. **Agent** — Claude Code, OpenAI Codex, Cursor, or all three
-3. **Location** — where to create the wiki (auto-detects Obsidian vaults)
+3. **Location** — where to create the wiki (suggests a default path from common Obsidian locations)
 4. **Integrations** — Git and/or QMD hybrid search
 
 Then it scaffolds everything:
@@ -57,7 +57,7 @@ cd your-wiki && claude "Read CLAUDE.md, then ingest the sources in raw/"
 cd your-wiki && codex "Read AGENTS.md, then ingest the sources in raw/"
 ```
 
-The agent reads the schema, processes the source, builds wiki pages, updates the index, and logs the operation. Your knowledge base is live.
+The agent reads the schema, processes the source, builds wiki pages, updates the index, and logs the operation. The CLI gives you the scaffold; the agent runs the workflow.
 
 ## Domain Templates
 
@@ -74,21 +74,21 @@ Each template generates a tailored schema with domain-specific page types, direc
 
 ## Agent Support
 
-The schema file is the single most important file in the wiki. It turns a generic LLM into a disciplined wiki maintainer. `tng-wiki` generates the right one for your agent:
+The schema file is the single most important file in the wiki. It turns a generic LLM into a disciplined wiki maintainer. `tng-wiki` generates the matching schema file for your agent:
 
 | Agent | Schema File | Notes |
 |-------|------------|-------|
 | Claude Code | `CLAUDE.md` | Recommended. Karpathy uses this. |
-| OpenAI Codex | `AGENTS.md` | Same content, Codex conventions. |
-| Cursor | `.cursorrules` | Same content, Cursor conventions. |
+| OpenAI Codex | `AGENTS.md` | Shared core schema with a Codex-specific header. |
+| Cursor | `.cursorrules` | Shared core schema with a Cursor-specific header. |
 | All | All three | Use if you switch between agents. |
 
 ## Commands
 
 ```bash
 tng-wiki init          # Scaffold a new wiki (interactive)
-tng-wiki status        # Wiki health: pages, sources, stale claims, last operation
-tng-wiki doctor        # Environment check: agent, QMD, Obsidian, git
+tng-wiki status        # Basic wiki health snapshot: markdown counts, stale markers, last logged operation
+tng-wiki doctor        # Environment check: agent CLIs, QMD, Obsidian location, git
 tng-wiki help          # Show help
 ```
 
@@ -96,9 +96,9 @@ tng-wiki help          # Show help
 
 [QMD](https://github.com/tobi/qmd) is a local search engine by Tobi Lütke (Shopify) that combines BM25 + vector search + LLM re-ranking, all on-device. At wiki scale beyond ~100 pages, you want it.
 
-If you select QMD during `init` and it's installed, `tng-wiki` automatically:
-- Registers your `wiki/` directory as a QMD collection
-- Adds context metadata for better search results
+If you select QMD during `init` and it's installed, `tng-wiki` attempts to:
+- Register your `wiki/` directory as a QMD collection
+- Add context metadata for better search results
 
 Your agent can then use `qmd query "..."` via CLI or QMD's MCP server for search.
 

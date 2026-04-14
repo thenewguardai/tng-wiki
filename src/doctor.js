@@ -52,12 +52,12 @@ export async function runDoctor(args) {
     optional: true,
   });
 
-  // Obsidian vault
-  const vault = detectObsidian();
+  // Obsidian location
+  const obsidianLocation = detectObsidian();
   checks.push({
-    name: 'Obsidian vault',
-    ok: !!vault,
-    detail: vault || pc.dim('not detected in common locations'),
+    name: 'Obsidian location',
+    ok: !!obsidianLocation,
+    detail: obsidianLocation || pc.dim('not detected in common locations'),
     optional: true,
   });
 

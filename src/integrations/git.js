@@ -15,8 +15,8 @@ export async function setupGit(root) {
         GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || 'wiki@localhost',
       },
     });
-    return { success: true };
+    return { attempted: true, success: true };
   } catch (err) {
-    return { success: false, error: err.message };
+    return { attempted: true, success: false, error: err.message };
   }
 }

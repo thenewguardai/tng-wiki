@@ -39,8 +39,8 @@ ${pc.bold('Usage:')} tng-wiki <command>
 
 ${pc.bold('Commands:')}
   ${pc.cyan('init')}      Scaffold a new LLM wiki (interactive)
-  ${pc.cyan('status')}    Show wiki health — pages, sources, staleness
-  ${pc.cyan('doctor')}    Check environment — agent, QMD, Obsidian, git
+  ${pc.cyan('status')}    Show a basic wiki health snapshot
+  ${pc.cyan('doctor')}    Check local environment — agent, QMD, Obsidian, git
   ${pc.cyan('help')}      Show this help message
 
 ${pc.bold('Quick start:')}

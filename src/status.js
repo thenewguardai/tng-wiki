@@ -1,6 +1,6 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
 
 export async function runStatus(args) {
@@ -37,9 +37,9 @@ export async function runStatus(args) {
   let opCount = 0;
   if (hasLog) {
     const log = readFileSync(logPath, 'utf8');
-    const ops = log.match(/^## \[/gm);
-    opCount = ops ? ops.length : 0;
-    const lastMatch = log.match(/^## \[([^\]]+)\] (.+)$/m);
+    const ops = [...log.matchAll(/^## \[([^\]]+)\] (.+)$/gm)];
+    opCount = ops.length;
+    const lastMatch = ops.at(-1);
     if (lastMatch) lastOp = { date: lastMatch[1], desc: lastMatch[2] };
   }
 

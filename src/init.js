@@ -1,6 +1,6 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
-import { resolve, join, basename } from 'path';
+import { resolve, join } from 'path';
 import { mkdirSync, existsSync, writeFileSync, readdirSync } from 'fs';
 import { generateSchema } from './agents/index.js';
 import { getTemplate } from './templates/index.js';
@@ -42,9 +42,9 @@ export async function runInit(args) {
   if (p.isCancel(agent)) throw new Error('CANCELLED');
 
   // --- Location ---
-  const obsidianVault = detectObsidian();
-  const defaultPath = obsidianVault
-    ? join(obsidianVault, `${domain}-wiki`)
+  const obsidianLocation = detectObsidian();
+  const defaultPath = obsidianLocation
+    ? join(obsidianLocation, `${domain}-wiki`)
     : `./${domain}-wiki`;
 
   const targetDir = await p.text({
@@ -143,8 +143,9 @@ export async function runInit(args) {
   s.message('Setting up integrations...');
 
   // Git
+  let gitStatus = null;
   if (useGit) {
-    await setupGit(root);
+    gitStatus = await setupGit(root);
   }
 
   // QMD
@@ -172,12 +173,24 @@ export async function runInit(args) {
   }
 
   if (useGit) {
-    results.push(`${pc.green('✓')} Git initialized with first commit`);
+    if (gitStatus?.success) {
+      results.push(`${pc.green('✓')} Git initialized with first commit`);
+    } else {
+      results.push(`${pc.red('✗')} Git setup failed`);
+      if (gitStatus?.error) {
+        results.push(`  ${pc.dim(trimError(gitStatus.error))}`);
+      }
+    }
   }
 
   if (useQmd) {
-    if (qmdStatus?.installed) {
+    if (qmdStatus?.configured) {
       results.push(`${pc.green('✓')} QMD collection registered`);
+    } else if (qmdStatus?.installed) {
+      results.push(`${pc.yellow('○')} QMD detected, but collection setup failed`);
+      if (qmdStatus?.error) {
+        results.push(`  ${pc.dim(trimError(qmdStatus.error))}`);
+      }
     } else {
       results.push(`${pc.yellow('○')} QMD not found — install with: ${pc.cyan('npm i -g @tobilu/qmd')}`);
       results.push(`  ${pc.dim('Then run:')} ${pc.cyan(`qmd collection add ${join(root, 'wiki')} --name ${slugify(wikiName)}`)}`);
@@ -240,6 +253,10 @@ function schemaFileName(agent) {
 
 function slugify(str) {
   return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function trimError(err) {
+  return err.toString().trim().split('\n').filter(Boolean)[0];
 }
 
 const GITIGNORE = `# OS

@@ -1,15 +1,15 @@
 import { existsSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { homedir } from 'os';
 
 /**
- * Attempts to detect an existing Obsidian vault location.
- * Returns the first vault path found, or null.
+ * Attempts to find a likely base directory for creating a new Obsidian-backed wiki.
+ * If an existing vault is found, return its parent so the new wiki is created alongside it.
  */
 export function detectObsidian() {
   const home = homedir();
 
-  // Common Obsidian vault locations
+  // Common Obsidian vault/container locations
   const candidates = [
     join(home, 'Documents', 'Obsidian'),
     join(home, 'Documents', 'obsidian'),
@@ -23,16 +23,17 @@ export function detectObsidian() {
 
   for (const dir of candidates) {
     if (existsSync(dir)) {
-      // Check if it's an Obsidian vault (has .obsidian dir) or a vault container
+      // Existing vault: return its parent so a new wiki becomes a sibling vault.
       if (existsSync(join(dir, '.obsidian'))) {
-        return dir;
+        return dirname(dir);
       }
-      // Check if any subdirectory is a vault
+
+      // Vault container: return the container directory itself.
       try {
         const subs = readdirSync(dir, { withFileTypes: true });
         for (const sub of subs) {
           if (sub.isDirectory() && existsSync(join(dir, sub.name, '.obsidian'))) {
-            return dir; // Return the parent as the vault container
+            return dir;
           }
         }
       } catch { /* permission errors, etc */ }

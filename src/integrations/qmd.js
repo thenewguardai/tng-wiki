@@ -9,7 +9,7 @@ export async function setupQmd(root, wikiName) {
   try {
     execSync('qmd --version', { stdio: 'pipe' });
   } catch {
-    return { installed: false, slug, wikiDir };
+    return { installed: false, configured: false, slug, wikiDir };
   }
 
   // Register wiki as a QMD collection
@@ -23,8 +23,14 @@ export async function setupQmd(root, wikiName) {
       stdio: 'pipe',
     });
 
-    return { installed: true, slug, wikiDir };
+    return { installed: true, configured: true, slug, wikiDir };
   } catch (err) {
-    return { installed: true, error: err.message, slug, wikiDir };
+    return {
+      installed: true,
+      configured: false,
+      error: err.message,
+      slug,
+      wikiDir,
+    };
   }
 }
