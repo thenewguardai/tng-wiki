@@ -1,21 +1,54 @@
 # Roadmap
 
-## Architectural Direction (decided 2026-04-14)
+## Architectural Direction (decided 2026-04-14, refined 2026-04-15)
 
-Pivot from "CLAUDE.md generator" to "AGENTS.md-standard wiki scaffolder with ambient cross-project access via MCP and a Claude Code skill." Motivation: AGENTS.md has consolidated as the portable schema across Claude Code, Codex, Cursor, opencode, hermes-agent, and OpenClaw; no competitor has shipped an MCP server exposing wiki verbs (ingest/query/lint); current per-directory scope blocks ambient use across the many projects a developer touches.
+Pivot from "CLAUDE.md generator" to "AGENTS.md-standard wiki scaffolder with ambient cross-project access." Motivation: AGENTS.md has consolidated as the portable schema across Claude Code, Codex, Cursor, opencode, hermes-agent, and OpenClaw; current per-directory scope blocks ambient use across the many projects a developer touches.
 
-Four milestones, in order:
+Five milestones, in order:
 
-1. **AGENTS.md-primary generator.** `tng-wiki init` writes `AGENTS.md` as the canonical schema file and creates `CLAUDE.md` + `.cursorrules` as symlinks (or thin re-export files on platforms without symlinks). Collapses the three parallel generators, covers 7+ agents with one file, aligns with ecosystem convention. Retires the "make schema files genuinely agent-specific" item.
-2. **Multi-wiki registry.** `~/.tng-wiki/registry.toml` lists installed wikis with `{name, path, domain, default}`. Adds `tng-wiki register`, `tng-wiki list`, `tng-wiki set-default`. `init` auto-registers. This is the seam that enables ambient access without forcing one-wiki-per-user.
-3. **`tng-wiki-mcp` server.** Separate package, same repo. MCP tools: `query`, `ingest`, `lint`, `list-wikis`. Reads the registry so any number of wikis are exposed through one server. Primary differentiator — no competitor ships this today. Drops into Claude Code, Codex, Cursor, opencode, hermes-agent, OpenClaw (`~/.openclaw/openclaw.json` `mcp.servers`), and any future MCP-capable agent without per-agent work.
-4. **`tng-wiki install-skill`.** Convenience command that writes `~/.claude/skills/tng-wiki/SKILL.md` pointing at the registry. Ambient access for Claude Code users who don't want to configure MCP. Optional; MCP already covers the portability story.
+1. **AGENTS.md-primary generator.** `tng-wiki init` writes `AGENTS.md` as the canonical schema file and creates `CLAUDE.md` + `.cursorrules` as symlinks (file copies on platforms without symlink permission). Collapses the three parallel generators; covers 7+ agents with one file. **Shipped 2026-04-15 (commit 9668e6e).**
+2. **Multi-wiki registry.** `~/.tng-wiki/registry.json` lists installed wikis with `{name, path, domain, registered}`. `tng-wiki register / unregister / list / set-default` commands; `init` auto-registers. Every wiki gets a `.tng-wiki.json` metadata file. **Shipped 2026-04-15 (commit 75125b5).**
+3. **CLI verb surface.** `tng-wiki query / read / search / sources / stale / orphans` with `--wiki <slug>` routing through the registry. This is the ambient-access story for every terminal agent (Claude Code, Codex, opencode, OpenClaw, hermes-agent): the agent invokes tng-wiki via its Bash tool, paying zero token overhead when idle.
+4. **`tng-wiki-mcp` binary (same package, second `bin` entry).** Thin MCP-over-stdio wrapper that declares each CLI verb as an MCP tool and shells out. Covers the shell-less environments the CLI cannot reach: Claude Desktop, ChatGPT Desktop, Docker MCP Toolkit, any web-only chat UI. Ships copy-paste config snippets for each target host.
+5. **`tng-wiki install-skill`.** Writes `~/.claude/skills/tng-wiki/SKILL.md` that teaches Claude Code the CLI verbs (lightweight discovery, zero MCP token cost). Optional convenience.
+
+### Why CLI-first and not MCP-first
+
+Research on 2025-2026 ecosystem (Anthropic's ["Code execution with MCP"](https://www.anthropic.com/engineering/code-execution-with-mcp) Nov 2025, Armin Ronacher's ["Skills vs MCP"](https://lucumr.pocoo.org/2025/12/13/skills-vs-mcp/) Dec 2025, [onlycli.github.io benchmark](https://onlycli.github.io/OnlyCLI/blog/mcp-token-cost-benchmark/)) converged on a clear conclusion for markdown-wiki use cases:
+
+- **Token overhead is real and measured.** Anthropic reports 98.7% token reduction (150K → 2K) moving from MCP schemas to on-demand code; one benchmark shows 32× ratio (44K MCP / 1.4K CLI) for the same task. A 6-8 tool MCP would inject 3-10K tokens per session, always on.
+- **Anthropic's direction.** Skills (Oct 2025) shipped CLI-first via the Bash tool; "Code execution with MCP" proposes making MCP behave more like a CLI.
+- **Security.** CLI inherits the harness's allow/deny rules — smaller, better-understood surface than long-lived MCP servers with ambient credentials. Tool-poisoning incidents (Supabase / Cursor MCP, mid-2025) are real.
+- **No structured-output advantage lost.** Markdown *is* the structured output agents consume fluently.
+
+MCP still ships (milestone 4) because shell-less environments (Claude Desktop, ChatGPT Desktop, web UIs) cannot invoke the CLI. Users pay the MCP token cost only in those environments, by opt-in.
+
+### Distributed / remote wiki access
+
+The recommended patterns when agent and wiki live on different machines:
+
+1. **Git sync (99% case)** — wikis are git-tracked by default; remote machine clones.
+2. **SSH + CLI (single-shot queries, no sync)** — `ssh wiki-host tng-wiki search "..."` via Bash. Zero new code.
+3. **Thin HTTP wrapper (multi-user team)** — ~50 lines of `http.createServer` over the CLI verbs if SSH is impractical.
+4. **MCP (shell-less remote clients)** — milestone 4 covers this.
+
+Third-party bridges like [any-cli-mcp-server](https://lobehub.com/mcp/eirikb-any-cli-mcp-server) or [mcp2cli (reverse)](https://github.com/knowsuchagency/mcp2cli) exist for additional adapter cases; we don't need to build generic wrappers.
+
+### Documentation rigor
+
+Every new verb / command / integration point ships with a README entry containing:
+- **What it does** (one sentence)
+- **Signature** (arguments, flags, default behavior)
+- **Copy-paste example** (command + expected output shape)
+- **Config snippet** (for MCP hosts, skill hosts, or remote setups — whichever applies)
+
+Split to `docs/` once README crosses ~250 lines.
 
 ## Improvement Ideas
 
 - Add a non-interactive `init` mode so the scaffold can be created from scripts and CI, not only through prompts.
 - Expand `status` into a real wiki health check that can detect broken wikilinks, missing frontmatter, orphan pages, pages missing from the index, and uncompiled raw sources across more than markdown files.
-- Add a first-class `lint` command so contradiction checks, stale markers, coverage gaps, and other maintenance workflows exist in the CLI rather than only in generated instructions. (The MCP server in milestone 3 will expose this — the CLI command is the local-first surface.)
+- Expand the lint surface (`stale` / `orphans` are milestone 3; add `contradictions`, `coverage-gaps`, `thin-pages` as follow-ups so the full lint vocabulary in `AGENTS.md` has a CLI counterpart).
 - Improve integration setup flows so Git and QMD can surface actionable remediation steps when local setup fails.
 - Add example fixture outputs for each domain template to make the generated structure easier to review and document.
 - Let domain templates own their full `raw/` layout. `src/init.js` currently writes a hardcoded base set (`raw/announcements`, `raw/papers`, `raw/social`, `raw/transcripts`, `raw/assets`) and then merges `template.extraDirs` on top, so a domain that wants a different raw layout has to work around the defaults instead of declaring them.
