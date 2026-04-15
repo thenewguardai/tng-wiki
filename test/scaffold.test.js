@@ -22,9 +22,15 @@ test('scaffoldWiki creates the full base layout and writes AGENTS.md as canonica
     assert.ok(existsSync(join(root, 'wiki/index.md')));
     assert.ok(existsSync(join(root, 'wiki/log.md')));
     assert.ok(existsSync(join(root, '.gitignore')));
+    assert.ok(existsSync(join(root, '.tng-wiki.json')));
 
     const index = readFileSync(join(root, 'wiki/index.md'), 'utf8');
     assert.match(index, /^# Demo/);
+
+    const meta = JSON.parse(readFileSync(join(root, '.tng-wiki.json'), 'utf8'));
+    assert.equal(meta.version, 1);
+    assert.equal(meta.name, 'Demo');
+    assert.equal(meta.domain, 'blank');
   });
 });
 

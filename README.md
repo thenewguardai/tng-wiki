@@ -90,11 +90,27 @@ One schema, every agent. Edit `AGENTS.md`; every alias sees the change.
 ## Commands
 
 ```bash
-tng-wiki init          # Scaffold a new wiki (interactive)
-tng-wiki status        # Basic wiki health snapshot: markdown counts, stale markers, last logged operation
-tng-wiki doctor        # Environment check: agent CLIs, QMD, Obsidian location, git
-tng-wiki help          # Show help
+tng-wiki init                 # Scaffold a new wiki (interactive)
+tng-wiki register [path]      # Register an existing wiki in the user registry
+tng-wiki unregister <slug>    # Remove a wiki from the registry (files untouched)
+tng-wiki list                 # List registered wikis (★ marks the default)
+tng-wiki set-default <slug>   # Set the default wiki
+tng-wiki status               # Basic wiki health snapshot
+tng-wiki doctor               # Environment check: agent CLIs, QMD, Obsidian, git
+tng-wiki help                 # Show help
 ```
+
+## The Registry — one user, many wikis
+
+`tng-wiki` keeps a user-level registry at `~/.tng-wiki/registry.json` listing every wiki you've scaffolded or registered. `init` adds new wikis automatically; the first becomes the default.
+
+```bash
+tng-wiki list
+#   ★ ai-research    ai-research    ~/Documents/Obsidian/ai-research-wiki
+#     comp-intel     competitive-intel  ~/work/comp-intel-wiki
+```
+
+The registry is the foundation for ambient, cross-project access — a forthcoming MCP server (`tng-wiki-mcp`) will expose every registered wiki's `query` / `ingest` / `lint` verbs to any MCP-capable agent (Claude Code, Codex, opencode, OpenClaw, …) regardless of the directory you're working in.
 
 ## QMD Integration
 

@@ -7,6 +7,7 @@ import { getTemplate } from './templates/index.js';
 import { setupGit } from './integrations/git.js';
 import { setupQmd } from './integrations/qmd.js';
 import { detectObsidian } from './integrations/obsidian.js';
+import { loadRegistry, saveRegistry, registerWiki } from './registry.js';
 
 const DOMAINS = [
   { value: 'ai-research',       label: 'AI / Tech Research',       hint: 'tracking the landscape, models, protocols, infrastructure' },
@@ -71,6 +72,17 @@ export function scaffoldWiki(root, { domain, agent, wikiName }) {
   }
 
   writeFileSync(join(root, '.gitignore'), GITIGNORE, 'utf8');
+
+  writeFileSync(
+    join(root, '.tng-wiki.json'),
+    JSON.stringify({
+      version: 1,
+      name: wikiName,
+      domain,
+      created: new Date().toISOString(),
+    }, null, 2) + '\n',
+    'utf8',
+  );
 
   return { template, canonical, aliases: aliasResults };
 }
@@ -159,6 +171,16 @@ export async function runInit(args) {
     qmdStatus = await setupQmd(root, wikiName);
   }
 
+  // Registry
+  let registryStatus = null;
+  try {
+    const reg = registerWiki(loadRegistry(), { name: wikiName, path: root, domain });
+    saveRegistry(reg);
+    registryStatus = { success: true, isDefault: reg.default && reg.wikis[reg.default].path === root };
+  } catch (err) {
+    registryStatus = { success: false, error: err.message };
+  }
+
   s.stop(pc.green('✓ Wiki scaffolded'));
 
   // --- Summary ---
@@ -206,6 +228,13 @@ export async function runInit(args) {
       results.push(`${pc.yellow('○')} QMD not found — install with: ${pc.cyan('npm i -g @tobilu/qmd')}`);
       results.push(`  ${pc.dim('Then run:')} ${pc.cyan(`qmd collection add ${join(root, 'wiki')} --name ${slugify(wikiName)}`)}`);
     }
+  }
+
+  if (registryStatus?.success) {
+    const defaultTag = registryStatus.isDefault ? pc.dim(' (default)') : '';
+    results.push(`${pc.green('✓')} Added to tng-wiki registry${defaultTag}`);
+  } else if (registryStatus?.error) {
+    results.push(`${pc.yellow('○')} Could not register wiki: ${pc.dim(trimError(registryStatus.error))}`);
   }
 
   console.log('');

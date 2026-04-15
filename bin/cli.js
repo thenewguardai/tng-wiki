@@ -30,6 +30,26 @@ async function main() {
       await runDoctor(args);
       break;
     }
+    case 'register': {
+      const { runRegister } = await import('../src/registry-cli.js');
+      await runRegister(args);
+      break;
+    }
+    case 'unregister': {
+      const { runUnregister } = await import('../src/registry-cli.js');
+      await runUnregister(args);
+      break;
+    }
+    case 'list': {
+      const { runList } = await import('../src/registry-cli.js');
+      await runList(args);
+      break;
+    }
+    case 'set-default': {
+      const { runSetDefault } = await import('../src/registry-cli.js');
+      await runSetDefault(args);
+      break;
+    }
     case 'help':
     case '--help':
     case '-h': {
@@ -38,10 +58,14 @@ async function main() {
 ${pc.bold('Usage:')} tng-wiki <command>
 
 ${pc.bold('Commands:')}
-  ${pc.cyan('init')}      Scaffold a new LLM wiki (interactive)
-  ${pc.cyan('status')}    Show a basic wiki health snapshot
-  ${pc.cyan('doctor')}    Check local environment — agent, QMD, Obsidian, git
-  ${pc.cyan('help')}      Show this help message
+  ${pc.cyan('init')}         Scaffold a new LLM wiki (interactive)
+  ${pc.cyan('register')}     Register an existing wiki in the user registry
+  ${pc.cyan('unregister')}   Remove a wiki from the registry (files untouched)
+  ${pc.cyan('list')}         List registered wikis
+  ${pc.cyan('set-default')}  Set the default wiki
+  ${pc.cyan('status')}       Show a basic wiki health snapshot
+  ${pc.cyan('doctor')}       Check local environment — agent, QMD, Obsidian, git
+  ${pc.cyan('help')}         Show this help message
 
 ${pc.bold('Quick start:')}
   ${pc.dim('$')} npx tng-wiki init
