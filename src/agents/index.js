@@ -1,22 +1,19 @@
-import { generateClaudeMd } from './claude-code.js';
-import { generateAgentsMd } from './codex.js';
-import { generateCursorRules } from './cursor.js';
+import { generateAgentsMd } from './agents-md.js';
 
-export function generateSchema(agent, context) {
-  switch (agent) {
-    case 'claude-code':
-      return { 'CLAUDE.md': generateClaudeMd(context) };
-    case 'codex':
-      return { 'AGENTS.md': generateAgentsMd(context) };
-    case 'cursor':
-      return { '.cursorrules': generateCursorRules(context) };
-    case 'all':
-      return {
-        'CLAUDE.md': generateClaudeMd(context),
-        'AGENTS.md': generateAgentsMd(context),
-        '.cursorrules': generateCursorRules(context),
-      };
-    default:
-      return { 'CLAUDE.md': generateClaudeMd(context) };
-  }
+export { generateAgentsMd };
+
+const AGENT_ALIASES = {
+  'claude-code': ['CLAUDE.md'],
+  'codex': [],
+  'cursor': ['.cursorrules'],
+  'all': ['CLAUDE.md', '.cursorrules'],
+};
+
+export const CANONICAL_SCHEMA_FILE = 'AGENTS.md';
+
+export function schemaLayout(agent) {
+  return {
+    canonical: CANONICAL_SCHEMA_FILE,
+    aliases: AGENT_ALIASES[agent] ?? [],
+  };
 }

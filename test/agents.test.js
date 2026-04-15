@@ -1,53 +1,60 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateSchema } from '../src/agents/index.js';
-import { generateClaudeMd } from '../src/agents/claude-code.js';
-import { generateAgentsMd } from '../src/agents/codex.js';
-import { generateCursorRules } from '../src/agents/cursor.js';
+import { generateAgentsMd, schemaLayout, CANONICAL_SCHEMA_FILE } from '../src/agents/index.js';
 
 const ctx = { domain: 'ai-research', wikiName: 'Test Wiki', template: {} };
 
-test('generateClaudeMd emits no injected header by default', () => {
-  const out = generateClaudeMd(ctx);
+test('generateAgentsMd produces an agent-neutral schema with no per-agent header', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /^# Test Wiki\n\n## What This Is/);
   assert.ok(!out.includes('designed for OpenAI Codex'));
   assert.ok(!out.includes('designed for Cursor'));
-  assert.match(out, /^# Test Wiki\n\n## What This Is/);
 });
 
-test('generateAgentsMd injects the Codex header above PREAMBLE', () => {
-  const out = generateAgentsMd(ctx);
-  const headerIdx = out.indexOf('designed for OpenAI Codex');
-  const preambleIdx = out.indexOf('## What This Is');
-  assert.ok(headerIdx > 0, 'Codex header missing');
-  assert.ok(preambleIdx > headerIdx, 'header must appear before PREAMBLE');
+test('generateAgentsMd embeds domain-specific schema sections', () => {
+  const aiResearch = generateAgentsMd({ ...ctx, domain: 'ai-research' });
+  assert.match(aiResearch, /Opportunity pages/);
+  assert.match(aiResearch, /Domain: AI \/ Tech Research/);
+
+  const blank = generateAgentsMd({ ...ctx, domain: 'blank' });
+  assert.ok(!blank.includes('Opportunity pages'));
 });
 
-test('generateCursorRules injects the Cursor header above PREAMBLE', () => {
-  const out = generateCursorRules(ctx);
-  const headerIdx = out.indexOf('designed for Cursor');
-  const preambleIdx = out.indexOf('## What This Is');
-  assert.ok(headerIdx > 0, 'Cursor header missing');
-  assert.ok(preambleIdx > headerIdx, 'header must appear before PREAMBLE');
+test('CANONICAL_SCHEMA_FILE is AGENTS.md', () => {
+  assert.equal(CANONICAL_SCHEMA_FILE, 'AGENTS.md');
 });
 
-test('generateSchema("all") produces three distinct files with only the right headers', () => {
-  const files = generateSchema('all', ctx);
-  assert.deepEqual(Object.keys(files).sort(), ['.cursorrules', 'AGENTS.md', 'CLAUDE.md']);
-
-  assert.ok(!files['CLAUDE.md'].includes('designed for OpenAI Codex'));
-  assert.ok(!files['CLAUDE.md'].includes('designed for Cursor'));
-
-  assert.ok(files['AGENTS.md'].includes('designed for OpenAI Codex'));
-  assert.ok(!files['AGENTS.md'].includes('designed for Cursor'));
-
-  assert.ok(files['.cursorrules'].includes('designed for Cursor'));
-  assert.ok(!files['.cursorrules'].includes('designed for OpenAI Codex'));
+test('schemaLayout(claude-code) adds CLAUDE.md as an alias', () => {
+  assert.deepEqual(schemaLayout('claude-code'), {
+    canonical: 'AGENTS.md',
+    aliases: ['CLAUDE.md'],
+  });
 });
 
-test('header survives if PREAMBLE heading is renamed (regression: no string-match injection)', () => {
-  // The old codex.js/cursor.js relied on replacing the literal string
-  // '## What This Is'. If that heading is ever renamed, the header must
-  // still be injected because it is now passed as a parameter, not matched.
-  const out = generateAgentsMd(ctx);
-  assert.ok(out.includes('designed for OpenAI Codex'));
+test('schemaLayout(codex) has no aliases — Codex reads AGENTS.md natively', () => {
+  assert.deepEqual(schemaLayout('codex'), {
+    canonical: 'AGENTS.md',
+    aliases: [],
+  });
+});
+
+test('schemaLayout(cursor) adds .cursorrules as an alias', () => {
+  assert.deepEqual(schemaLayout('cursor'), {
+    canonical: 'AGENTS.md',
+    aliases: ['.cursorrules'],
+  });
+});
+
+test('schemaLayout(all) adds both CLAUDE.md and .cursorrules aliases', () => {
+  assert.deepEqual(schemaLayout('all'), {
+    canonical: 'AGENTS.md',
+    aliases: ['CLAUDE.md', '.cursorrules'],
+  });
+});
+
+test('schemaLayout(unknown) returns no aliases rather than throwing', () => {
+  assert.deepEqual(schemaLayout('does-not-exist'), {
+    canonical: 'AGENTS.md',
+    aliases: [],
+  });
 });

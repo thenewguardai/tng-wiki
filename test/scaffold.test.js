@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, statSync, lstatSync, readlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { scaffoldWiki } from '../src/init.js';
@@ -10,14 +10,15 @@ function inTmp(fn) {
   try { return fn(dir); } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
-test('scaffoldWiki creates the full base layout for a blank wiki', () => {
+test('scaffoldWiki creates the full base layout and writes AGENTS.md as canonical', () => {
   inTmp((root) => {
-    scaffoldWiki(root, { domain: 'blank', agent: 'claude-code', wikiName: 'Demo' });
+    const result = scaffoldWiki(root, { domain: 'blank', agent: 'claude-code', wikiName: 'Demo' });
 
     for (const d of ['raw', 'wiki', 'output', 'raw/papers', 'wiki/entities']) {
       assert.ok(statSync(join(root, d)).isDirectory(), `missing dir: ${d}`);
     }
-    assert.ok(existsSync(join(root, 'CLAUDE.md')));
+    assert.ok(existsSync(join(root, 'AGENTS.md')));
+    assert.equal(result.canonical, 'AGENTS.md');
     assert.ok(existsSync(join(root, 'wiki/index.md')));
     assert.ok(existsSync(join(root, 'wiki/log.md')));
     assert.ok(existsSync(join(root, '.gitignore')));
@@ -27,12 +28,51 @@ test('scaffoldWiki creates the full base layout for a blank wiki', () => {
   });
 });
 
-test('scaffoldWiki with agent:"all" writes CLAUDE.md, AGENTS.md, and .cursorrules', () => {
+test('scaffoldWiki for claude-code creates a CLAUDE.md symlink (or copy) pointing at AGENTS.md', () => {
   inTmp((root) => {
-    const { schemas } = scaffoldWiki(root, { domain: 'blank', agent: 'all', wikiName: 'Demo' });
-    assert.deepEqual(schemas.sort(), ['.cursorrules', 'AGENTS.md', 'CLAUDE.md']);
-    for (const f of schemas) {
-      assert.ok(existsSync(join(root, f)), `missing schema file: ${f}`);
+    const { aliases } = scaffoldWiki(root, { domain: 'blank', agent: 'claude-code', wikiName: 'Demo' });
+    assert.deepEqual(aliases.map(a => a.alias), ['CLAUDE.md']);
+    const [{ kind }] = aliases;
+    assert.ok(['symlink', 'copy'].includes(kind), `unexpected alias kind: ${kind}`);
+    assert.ok(existsSync(join(root, 'CLAUDE.md')));
+    if (kind === 'symlink') {
+      assert.ok(lstatSync(join(root, 'CLAUDE.md')).isSymbolicLink());
+      assert.equal(readlinkSync(join(root, 'CLAUDE.md')), 'AGENTS.md');
+    } else {
+      // on platforms without symlink permission (e.g. Windows w/o Dev Mode),
+      // fall back to a copy — content must match
+      assert.equal(
+        readFileSync(join(root, 'CLAUDE.md'), 'utf8'),
+        readFileSync(join(root, 'AGENTS.md'), 'utf8'),
+      );
+    }
+  });
+});
+
+test('scaffoldWiki for codex writes AGENTS.md and no aliases (Codex reads it natively)', () => {
+  inTmp((root) => {
+    const { aliases } = scaffoldWiki(root, { domain: 'blank', agent: 'codex', wikiName: 'Demo' });
+    assert.equal(aliases.length, 0);
+    assert.ok(existsSync(join(root, 'AGENTS.md')));
+    assert.ok(!existsSync(join(root, 'CLAUDE.md')));
+    assert.ok(!existsSync(join(root, '.cursorrules')));
+  });
+});
+
+test('scaffoldWiki for cursor adds a .cursorrules alias', () => {
+  inTmp((root) => {
+    const { aliases } = scaffoldWiki(root, { domain: 'blank', agent: 'cursor', wikiName: 'Demo' });
+    assert.deepEqual(aliases.map(a => a.alias), ['.cursorrules']);
+    assert.ok(existsSync(join(root, '.cursorrules')));
+  });
+});
+
+test('scaffoldWiki with agent:"all" writes AGENTS.md plus CLAUDE.md + .cursorrules aliases', () => {
+  inTmp((root) => {
+    const { aliases } = scaffoldWiki(root, { domain: 'blank', agent: 'all', wikiName: 'Demo' });
+    assert.deepEqual(aliases.map(a => a.alias).sort(), ['.cursorrules', 'CLAUDE.md']);
+    for (const f of ['AGENTS.md', 'CLAUDE.md', '.cursorrules']) {
+      assert.ok(existsSync(join(root, f)), `missing: ${f}`);
     }
   });
 });

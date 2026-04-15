@@ -1,8 +1,8 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { resolve, join } from 'path';
-import { mkdirSync, existsSync, writeFileSync, readdirSync } from 'fs';
-import { generateSchema } from './agents/index.js';
+import { mkdirSync, existsSync, writeFileSync, readdirSync, symlinkSync } from 'fs';
+import { generateAgentsMd, schemaLayout, CANONICAL_SCHEMA_FILE } from './agents/index.js';
 import { getTemplate } from './templates/index.js';
 import { setupGit } from './integrations/git.js';
 import { setupQmd } from './integrations/qmd.js';
@@ -18,10 +18,10 @@ const DOMAINS = [
 ];
 
 const AGENTS = [
-  { value: 'claude-code', label: 'Claude Code',       hint: 'generates CLAUDE.md' },
-  { value: 'codex',       label: 'OpenAI Codex',      hint: 'generates AGENTS.md' },
-  { value: 'cursor',      label: 'Cursor',            hint: 'generates .cursorrules' },
-  { value: 'all',         label: 'Multiple / Other',  hint: 'generates all schema files' },
+  { value: 'claude-code', label: 'Claude Code',       hint: 'AGENTS.md + CLAUDE.md alias' },
+  { value: 'codex',       label: 'OpenAI Codex',      hint: 'AGENTS.md (read natively)' },
+  { value: 'cursor',      label: 'Cursor',            hint: 'AGENTS.md + .cursorrules alias' },
+  { value: 'all',         label: 'Multiple / Other',  hint: 'AGENTS.md + CLAUDE.md + .cursorrules' },
 ];
 
 const BASE_DIRS = [
@@ -30,6 +30,18 @@ const BASE_DIRS = [
   'output/briefings', 'output/research',
 ];
 
+export function writeSchemaAlias(root, aliasName, canonical = CANONICAL_SCHEMA_FILE, content) {
+  const aliasPath = join(root, aliasName);
+  if (existsSync(aliasPath)) return { alias: aliasName, kind: 'skipped' };
+  try {
+    symlinkSync(canonical, aliasPath, 'file');
+    return { alias: aliasName, kind: 'symlink' };
+  } catch {
+    writeFileSync(aliasPath, content, 'utf8');
+    return { alias: aliasName, kind: 'copy' };
+  }
+}
+
 export function scaffoldWiki(root, { domain, agent, wikiName }) {
   const template = getTemplate(domain);
 
@@ -37,10 +49,11 @@ export function scaffoldWiki(root, { domain, agent, wikiName }) {
     mkdirSync(join(root, dir), { recursive: true });
   }
 
-  const schemas = generateSchema(agent, { domain, wikiName, template });
-  for (const [filename, content] of Object.entries(schemas)) {
-    writeFileSync(join(root, filename), content, 'utf8');
-  }
+  const schemaContent = generateAgentsMd({ domain, wikiName, template });
+  const { canonical, aliases } = schemaLayout(agent);
+
+  writeFileSync(join(root, canonical), schemaContent, 'utf8');
+  const aliasResults = aliases.map(a => writeSchemaAlias(root, a, canonical, schemaContent));
 
   writeFileSync(join(root, 'wiki', 'index.md'), template.indexMd(wikiName), 'utf8');
   writeFileSync(join(root, 'wiki', 'log.md'), template.logMd(wikiName, domain), 'utf8');
@@ -59,7 +72,7 @@ export function scaffoldWiki(root, { domain, agent, wikiName }) {
 
   writeFileSync(join(root, '.gitignore'), GITIGNORE, 'utf8');
 
-  return { template, schemas: Object.keys(schemas) };
+  return { template, canonical, aliases: aliasResults };
 }
 
 export async function runInit(args) {
@@ -130,7 +143,7 @@ export async function runInit(args) {
 
   s.start('Scaffolding wiki...');
 
-  const { template } = scaffoldWiki(root, { domain, agent, wikiName });
+  const { template, canonical, aliases } = scaffoldWiki(root, { domain, agent, wikiName });
 
   s.message('Setting up integrations...');
 
@@ -151,10 +164,16 @@ export async function runInit(args) {
   // --- Summary ---
   const results = [
     `${pc.green('✓')} Directory structure created`,
-    `${pc.green('✓')} ${schemaFileName(agent)} generated ${pc.dim(`(${domainLabel(domain)} template)`)}`,
-    `${pc.green('✓')} wiki/index.md initialized`,
-    `${pc.green('✓')} wiki/log.md initialized`,
+    `${pc.green('✓')} ${canonical} generated ${pc.dim(`(${domainLabel(domain)} template)`)}`,
   ];
+  for (const { alias, kind } of aliases) {
+    const tag = kind === 'symlink' ? 'symlink → ' + canonical
+      : kind === 'copy' ? 'copy of ' + canonical + ' (symlink unavailable)'
+      : 'already existed, left alone';
+    results.push(`${pc.green('✓')} ${alias} ${pc.dim(`(${tag})`)}`);
+  }
+  results.push(`${pc.green('✓')} wiki/index.md initialized`);
+  results.push(`${pc.green('✓')} wiki/log.md initialized`);
 
   if (template.extraFiles && Object.keys(template.extraFiles).length > 0) {
     results.push(`${pc.green('✓')} ${Object.keys(template.extraFiles).length} template files installed`);
@@ -201,11 +220,11 @@ export async function runInit(args) {
   console.log(`  ${pc.dim('2.')} Drop your first sources into ${pc.cyan('raw/')}`);
 
   if (agent === 'claude-code' || agent === 'all') {
-    console.log(`  ${pc.dim('3.')} Run: ${pc.cyan(`cd ${root} && claude "Read CLAUDE.md, then ingest the sources in raw/"`)}`);
+    console.log(`  ${pc.dim('3.')} Run: ${pc.cyan(`cd ${root} && claude "Read AGENTS.md, then ingest the sources in raw/"`)}`);
   } else if (agent === 'codex') {
     console.log(`  ${pc.dim('3.')} Run: ${pc.cyan(`cd ${root} && codex "Read AGENTS.md, then ingest the sources in raw/"`)}`);
   } else {
-    console.log(`  ${pc.dim('3.')} Point your agent at this directory and tell it to read the schema file`);
+    console.log(`  ${pc.dim('3.')} Point your agent at this directory and tell it to read AGENTS.md`);
   }
 
   console.log('');
@@ -231,16 +250,6 @@ function domainToName(domain) {
 
 function domainLabel(domain) {
   return DOMAINS.find(d => d.value === domain)?.label || domain;
-}
-
-function schemaFileName(agent) {
-  const names = {
-    'claude-code': 'CLAUDE.md',
-    'codex': 'AGENTS.md',
-    'cursor': '.cursorrules',
-    'all': 'CLAUDE.md + AGENTS.md + .cursorrules',
-  };
-  return names[agent] || 'schema';
 }
 
 function slugify(str) {

@@ -43,7 +43,9 @@ your-wiki/
 │   ├── log.md        ← Append-only operations log
 │   └── ...           ← Domain-specific directories
 ├── output/           ← Query results, drafts, slides
-├── CLAUDE.md         ← Agent operating instructions
+├── AGENTS.md         ← Canonical agent operating instructions
+├── CLAUDE.md         ← Symlink → AGENTS.md (for Claude Code)
+├── .cursorrules      ← Symlink → AGENTS.md (for Cursor)
 └── .gitignore
 ```
 
@@ -51,7 +53,7 @@ Open in Obsidian. Drop your first sources into `raw/`. Then:
 
 ```bash
 # Claude Code
-cd your-wiki && claude "Read CLAUDE.md, then ingest the sources in raw/"
+cd your-wiki && claude "Read AGENTS.md, then ingest the sources in raw/"
 
 # OpenAI Codex
 cd your-wiki && codex "Read AGENTS.md, then ingest the sources in raw/"
@@ -74,14 +76,16 @@ Each template generates a tailored schema with domain-specific page types, direc
 
 ## Agent Support
 
-The schema file is the single most important file in the wiki. It turns a generic LLM into a disciplined wiki maintainer. `tng-wiki` generates the matching schema file for your agent:
+`AGENTS.md` is the canonical schema file — the [agents.md](https://agents.md/) convention is read natively by Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and others. `tng-wiki init` always writes `AGENTS.md` and creates per-agent filename aliases (symlinks where the filesystem supports them, file copies otherwise) so each agent finds the file it expects to find.
 
-| Agent | Schema File | Notes |
-|-------|------------|-------|
-| Claude Code | `CLAUDE.md` | Recommended. Karpathy uses this. |
-| OpenAI Codex | `AGENTS.md` | Shared core schema with a Codex-specific header. |
-| Cursor | `.cursorrules` | Shared core schema with a Cursor-specific header. |
-| All | All three | Use if you switch between agents. |
+| Agent | File it reads | How `tng-wiki` provides it |
+|-------|--------------|----------------------------|
+| Claude Code | `CLAUDE.md` | Symlink → `AGENTS.md` |
+| OpenAI Codex | `AGENTS.md` | Direct |
+| Cursor | `.cursorrules` | Symlink → `AGENTS.md` |
+| opencode / hermes-agent / OpenClaw / Aider / others | `AGENTS.md` | Direct |
+
+One schema, every agent. Edit `AGENTS.md`; every alias sees the change.
 
 ## Commands
 
