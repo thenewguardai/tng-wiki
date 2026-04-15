@@ -22,7 +22,8 @@
     "url": "https://github.com/thenewguard/tng-wiki"
   },
   "bin": {
-    "tng-wiki": "./bin/cli.js"
+    "tng-wiki": "./bin/cli.js",
+    "tng-wiki-mcp": "./bin/tng-wiki-mcp.js"
   },
   "scripts": {
     "test": "node --test 'test/**/*.test.js'"
@@ -39,6 +40,8 @@
   ],
   "dependencies": {
     "@clack/prompts": "^0.9.1",
-    "picocolors": "^1.1.1"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "picocolors": "^1.1.1",
+    "zod": "^3.25.76"
   }
 }

@@ -227,7 +227,9 @@ target a specific registered wiki.
 
 ### Shell-less / chat-app agents (Claude Desktop, ChatGPT Desktop, web UIs)
 
-These can only call MCP servers — no Bash. A thin `tng-wiki-mcp` binary (coming in the next release) will expose the same verbs as MCP tools. Configuration snippet for Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+These can only call MCP servers — no Bash. `tng-wiki-mcp` ships alongside `tng-wiki` (same `npm i -g tng-wiki` installs both) and exposes seven MCP tools: `list_wikis`, `query`, `read`, `search`, `sources`, `stale`, `orphans`. Each tool routes through the registry so every wiki you've registered is reachable by slug.
+
+**Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -240,7 +242,23 @@ These can only call MCP servers — no Bash. A thin `tng-wiki-mcp` binary (comin
 }
 ```
 
-Same pattern works for Docker's MCP Toolkit, ChatGPT Desktop's MCP config, and any other host that speaks stdio MCP.
+Restart Claude Desktop. The tools appear under the server name `tng-wiki`.
+
+**Claude Code** (you'd only enable this if you want MCP specifically rather than the direct CLI, which is usually more token-efficient) — `~/.claude/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "tng-wiki": { "command": "tng-wiki-mcp" }
+  }
+}
+```
+
+**Codex / opencode / OpenClaw** — each has its own MCP config file (`~/.codex/mcp.json`, `~/.config/opencode/mcp.json`, `~/.openclaw/openclaw.json → mcp.servers`). Same shape.
+
+**Docker MCP Toolkit** — add a custom server pointing at your installed binary. See [Docker's MCP Toolkit CLI docs](https://docs.docker.com/ai/mcp-catalog-and-toolkit/cli/).
+
+> **Why you'd use CLI over MCP when you have the choice:** MCP tool schemas are injected into the agent's context every session. Typical cost is 3-10K tokens for a 7-tool server, paid whether you use it or not. The CLI path pays zero tokens until you invoke a verb. So: use CLI in shell-capable environments, MCP only where CLI isn't reachable.
 
 ### Cross-machine (wiki on one box, agent on another)
 
