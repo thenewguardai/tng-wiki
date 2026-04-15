@@ -50,6 +50,36 @@ async function main() {
       await runSetDefault(args);
       break;
     }
+    case 'query': {
+      const { runQuery } = await import('../src/verbs-cli.js');
+      await runQuery(args);
+      break;
+    }
+    case 'read': {
+      const { runRead } = await import('../src/verbs-cli.js');
+      await runRead(args);
+      break;
+    }
+    case 'search': {
+      const { runSearch } = await import('../src/verbs-cli.js');
+      await runSearch(args);
+      break;
+    }
+    case 'sources': {
+      const { runSources } = await import('../src/verbs-cli.js');
+      await runSources(args);
+      break;
+    }
+    case 'stale': {
+      const { runStale } = await import('../src/verbs-cli.js');
+      await runStale(args);
+      break;
+    }
+    case 'orphans': {
+      const { runOrphans } = await import('../src/verbs-cli.js');
+      await runOrphans(args);
+      break;
+    }
     case 'help':
     case '--help':
     case '-h': {
@@ -57,15 +87,30 @@ async function main() {
       console.log(`
 ${pc.bold('Usage:')} tng-wiki <command>
 
-${pc.bold('Commands:')}
+${pc.bold('Scaffolding:')}
   ${pc.cyan('init')}         Scaffold a new LLM wiki (interactive)
+
+${pc.bold('Registry:')}
   ${pc.cyan('register')}     Register an existing wiki in the user registry
   ${pc.cyan('unregister')}   Remove a wiki from the registry (files untouched)
   ${pc.cyan('list')}         List registered wikis
   ${pc.cyan('set-default')}  Set the default wiki
-  ${pc.cyan('status')}       Show a basic wiki health snapshot
+
+${pc.bold('Wiki access (CLI verbs — stable, low-token, agent-friendly):')}
+  ${pc.cyan('query')}        Print wiki/index.md for the default (or --wiki <slug>) wiki
+  ${pc.cyan('read')}         Print a wiki page by path (relative to wiki/)
+  ${pc.cyan('search')}       Case-insensitive search across wiki pages
+  ${pc.cyan('sources')}      List raw sources (--uncompiled for uncompiled only)
+  ${pc.cyan('stale')}        List pages with ⚠️ STALE? markers
+  ${pc.cyan('orphans')}      List wiki pages with no inbound wikilinks
+
+${pc.bold('Diagnostics:')}
+  ${pc.cyan('status')}       Basic wiki health snapshot
   ${pc.cyan('doctor')}       Check local environment — agent, QMD, Obsidian, git
   ${pc.cyan('help')}         Show this help message
+
+${pc.dim('Most verbs accept --wiki <slug> to target a specific registered wiki')}
+${pc.dim('and --json to emit structured output (for MCP wrappers and scripts).')}
 
 ${pc.bold('Quick start:')}
   ${pc.dim('$')} npx tng-wiki init

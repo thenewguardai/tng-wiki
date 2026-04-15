@@ -90,27 +90,164 @@ One schema, every agent. Edit `AGENTS.md`; every alias sees the change.
 ## Commands
 
 ```bash
-tng-wiki init                 # Scaffold a new wiki (interactive)
-tng-wiki register [path]      # Register an existing wiki in the user registry
-tng-wiki unregister <slug>    # Remove a wiki from the registry (files untouched)
-tng-wiki list                 # List registered wikis (★ marks the default)
-tng-wiki set-default <slug>   # Set the default wiki
-tng-wiki status               # Basic wiki health snapshot
-tng-wiki doctor               # Environment check: agent CLIs, QMD, Obsidian, git
-tng-wiki help                 # Show help
+# Scaffolding
+tng-wiki init                       # Scaffold a new wiki (interactive)
+
+# Registry
+tng-wiki register [path]            # Register an existing wiki
+tng-wiki unregister <slug>          # Remove from the registry (files untouched)
+tng-wiki list                       # List registered wikis (★ marks default)
+tng-wiki set-default <slug>         # Set the default wiki
+
+# Wiki access (the verbs your agent will call)
+tng-wiki query      [--wiki <slug>] [--json]
+tng-wiki read       <path> [--wiki <slug>] [--json]
+tng-wiki search     <query> [--wiki <slug>] [--regex] [--json]
+tng-wiki sources    [--wiki <slug>] [--uncompiled] [--json]
+tng-wiki stale      [--wiki <slug>] [--json]
+tng-wiki orphans    [--wiki <slug>] [--json]
+
+# Diagnostics
+tng-wiki status                     # Basic wiki health snapshot
+tng-wiki doctor                     # Environment check: agent CLIs, QMD, git
+tng-wiki help
 ```
 
 ## The Registry — one user, many wikis
 
-`tng-wiki` keeps a user-level registry at `~/.tng-wiki/registry.json` listing every wiki you've scaffolded or registered. `init` adds new wikis automatically; the first becomes the default.
+`tng-wiki` keeps a user-level registry at `~/.tng-wiki/registry.json` listing every wiki you've scaffolded or registered. `init` adds new wikis automatically; the first becomes the default. Every registered wiki is reachable from any working directory by its slug.
 
 ```bash
 tng-wiki list
-#   ★ ai-research    ai-research    ~/Documents/Obsidian/ai-research-wiki
-#     comp-intel     competitive-intel  ~/work/comp-intel-wiki
+#   ★ ai-research    ai-research         ~/Documents/Obsidian/ai-research-wiki
+#     comp-intel     competitive-intel   ~/work/comp-intel-wiki
 ```
 
-The registry is the foundation for ambient, cross-project access — a forthcoming MCP server (`tng-wiki-mcp`) will expose every registered wiki's `query` / `ingest` / `lint` verbs to any MCP-capable agent (Claude Code, Codex, opencode, OpenClaw, …) regardless of the directory you're working in.
+## Wiki Access Verbs
+
+These are the commands an agent invokes (via its Bash tool) to read and navigate a wiki. They're intentionally plain-text and line-oriented by default so agents can parse them fluently and Unix tools can pipe them. Every verb accepts `--wiki <slug>` (defaults to the registry default) and `--json` (machine-readable structured output for scripts and MCP wrappers).
+
+### `query` — read the wiki's index
+
+Prints `wiki/index.md` for the chosen wiki. An agent's first call when answering any question about the wiki.
+
+```bash
+$ tng-wiki query
+# AI Research Wiki — Index
+
+_Last updated: 2026-04-15 | Total pages: 23 | Total sources: 41_
+...
+
+$ tng-wiki query --wiki comp-intel
+# Competitive Intelligence Wiki — Index
+...
+
+$ tng-wiki query --json | jq .wiki
+"ai-research"
+```
+
+### `read` — fetch a specific page
+
+Prints the content of a wiki page by its path relative to `wiki/`. Refuses paths that escape the wiki directory.
+
+```bash
+$ tng-wiki read entities/openai.md
+---
+title: "OpenAI"
+type: entity
+...
+
+$ tng-wiki read opportunities/wiki-mcp-server.md --wiki ai-research
+...
+```
+
+### `search` — case-insensitive search across wiki pages
+
+Prints `path:line: matching text` (grep-compatible). Use `--regex` for regex patterns. Searches only `wiki/` — not `raw/` — because the wiki is the compiled, canonical content.
+
+```bash
+$ tng-wiki search karpathy
+wiki/narratives/llm-knowledge-bases.md:12: Karpathy described the pattern
+wiki/timelines/llm-tooling-2026.md:8: Karpathy post catalyzes wave of clones
+
+$ tng-wiki search "v\d+\.\d+\.\d+" --regex --wiki ai-research
+wiki/entities/anthropic.md:42: Claude 4.6 (released v4.6.0)
+
+$ tng-wiki search karpathy --json | jq '.hits | length'
+2
+```
+
+### `sources` — list raw source files
+
+Enumerates everything under `raw/` with `compiled` status from frontmatter. `--uncompiled` filters to sources the wiki hasn't ingested yet — useful for an agent to drive the ingest loop.
+
+```bash
+$ tng-wiki sources --uncompiled
+[uncompiled] raw/announcements/2026-04-15-openai-new-model.md  — OpenAI announces GPT-6
+[uncompiled] raw/papers/2026-karpathy-followup.md              — Karpathy on LLM knowledge compounding
+
+$ tng-wiki sources --json | jq '.sources | map(select(.compiled == false)) | length'
+2
+```
+
+### `stale` — list pages with `⚠️ STALE?` markers
+
+```bash
+$ tng-wiki stale
+wiki/entities/anthropic.md    (3 markers)
+wiki/opportunities/ide-for-agents.md  (1 marker)
+```
+
+### `orphans` — pages with no inbound wikilinks
+
+Lists pages nothing else in the wiki links to (excluding structural pages `wiki/index.md` and `wiki/log.md`). Helpful for linting coverage — a well-connected wiki has few orphans.
+
+```bash
+$ tng-wiki orphans
+wiki/entities/some-forgotten-entity.md
+wiki/opportunities/_scoring-criteria.md
+```
+
+## Ambient Cross-Project Access
+
+Once your wiki is registered, it's reachable from any project you're working in. How to plumb it into your agent depends on whether the agent has shell access.
+
+### Terminal agents (Claude Code, Codex, opencode, OpenClaw, hermes-agent)
+
+These can invoke `tng-wiki` directly via their Bash tool. No MCP server, no schema tokens burned per session — the agent pays nothing until it actually uses a verb. Just install `tng-wiki` globally and tell your agent about the verbs. A one-liner in your project's `AGENTS.md`:
+
+```markdown
+## Knowledge Base
+
+Your long-term memory is a tng-wiki. Start any research task with
+`tng-wiki query` to see the index. Use `tng-wiki search <term>` and
+`tng-wiki read <path>` to navigate. Pass `--wiki ai-research` to
+target a specific registered wiki.
+```
+
+### Shell-less / chat-app agents (Claude Desktop, ChatGPT Desktop, web UIs)
+
+These can only call MCP servers — no Bash. A thin `tng-wiki-mcp` binary (coming in the next release) will expose the same verbs as MCP tools. Configuration snippet for Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+
+```json
+{
+  "mcpServers": {
+    "tng-wiki": {
+      "command": "tng-wiki-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Same pattern works for Docker's MCP Toolkit, ChatGPT Desktop's MCP config, and any other host that speaks stdio MCP.
+
+### Cross-machine (wiki on one box, agent on another)
+
+- **Git sync** — the wiki is git-tracked; `git clone` on the remote machine and `git pull` to keep fresh. Natural versioning, offline-friendly.
+- **SSH + CLI** — `ssh wiki-host "tng-wiki search karpathy --wiki ai-research"` for ad-hoc queries without a full clone.
+- **Thin HTTP wrapper** — wrap the CLI in ~50 lines of `http.createServer` if you want multiple remote agents hitting one wiki without SSH.
+- **MCP for remote chat-app agents** — same `tng-wiki-mcp` binary; run it on the wiki host and point remote MCP clients at it.
 
 ## QMD Integration
 
