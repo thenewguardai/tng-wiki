@@ -102,10 +102,16 @@ tng-wiki set-default <slug>         # Set the default wiki
 # Wiki access (the verbs your agent will call)
 tng-wiki query      [--wiki <slug>] [--json]
 tng-wiki read       <path> [--wiki <slug>] [--json]
-tng-wiki search     <query> [--wiki <slug>] [--regex] [--json]
+tng-wiki search     <query> [--wiki <slug>] [--regex] [--include-raw] [--json]
 tng-wiki sources    [--wiki <slug>] [--uncompiled] [--json]
-tng-wiki stale      [--wiki <slug>] [--json]
-tng-wiki orphans    [--wiki <slug>] [--json]
+
+# Grounding + lint (keeping the wiki honest)
+tng-wiki ground     [--wiki <slug>] [--page <path>] [--json]   # structural ground-check
+tng-wiki drift      [--wiki <slug>] [--json]                   # ⚠️ DRIFT?      markers
+tng-wiki unsourced  [--wiki <slug>] [--json]                   # ⚠️ UNSOURCED?  markers
+tng-wiki unverified [--wiki <slug>] [--json]                   # ⚠️ UNVERIFIED? markers
+tng-wiki stale      [--wiki <slug>] [--json]                   # ⚠️ STALE?      markers
+tng-wiki orphans    [--wiki <slug>] [--json]                   # pages with no inbound wikilinks
 
 # Agent integration
 tng-wiki install-skill              # Install the Claude Code skill (~/.claude/skills/tng-wiki)
@@ -217,6 +223,80 @@ $ tng-wiki orphans
 wiki/entities/some-forgotten-entity.md
 wiki/opportunities/_scoring-criteria.md
 ```
+
+## Grounding — keeping the wiki honest over time
+
+LLM-maintained wikis drift. Claims age, sources update, confidence inflates past the evidence, citations go stale. `tng-wiki` ships a three-layer grounding pipeline to catch and reconcile drift without auto-repairing its way into deeper errors.
+
+**Schema invariant:** every wiki page carries a frontmatter `sources:` list of raw paths, and every factual claim cites one of them inline using footnote syntax:
+
+```markdown
+---
+sources:
+  - raw/announcements/2026-anthropic-series-f.md
+  - raw/papers/anthropic-origins.md
+---
+
+Anthropic raised $8B in Series F.[^raw/announcements/2026-anthropic-series-f.md]
+The company was founded in 2021.[^raw/papers/anthropic-origins.md]
+```
+
+The `sources:` list is the trust anchor. Every grounding workflow walks it. The four markers (`⚠️ STALE?`, `⚠️ UNSOURCED?`, `⚠️ UNVERIFIED?`, `⚠️ DRIFT?`) are documented with specific resolution actions inside every generated `AGENTS.md` — agents follow those instructions, not a README.
+
+### Layer 1 — `ground` (structural, zero-LLM)
+
+```bash
+$ tng-wiki ground
+wiki/entities/openai.md
+  empty_sources: empty or missing frontmatter `sources:`
+wiki/entities/anthropic.md
+  missing_raw: cited raw file does not exist → raw/papers/deleted.md (line 12)
+  undeclared_cite: cited inline but not in frontmatter `sources:` → raw/social/tweet.md (line 8)
+  source_updated_after_page: raw source modified after page `updated` (page 2026-02-01, source 2026-04-15)
+
+3 issue(s) across 2 page(s), 47 scanned
+
+$ tng-wiki ground --page entities/openai.md          # scope to one page
+$ tng-wiki ground --json | jq '.issues | group_by(.issue)'    # structured for agents + scripts
+```
+
+Detects five classes of structural issue: empty/missing `sources:`, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (frontmatter-only, never cited), and raw sources whose mtime is newer than the page's `updated` date. Skips `wiki/index.md`, `wiki/log.md`, `_`-prefixed template files, and `wiki/meta/*`.
+
+### Layer 2 — semantic re-verification (agent-driven)
+
+Agents re-read raw sources, compare against wiki claims, and emit `⚠️ DRIFT?` markers where they diverge:
+
+```markdown
+Claim that may have drifted.[^raw/papers/source.md] ⚠️ DRIFT?
+[source: raw/papers/source.md says "released Q2 2026";
+ wiki says "released Q1 2026";
+ suggested: "released Q2 2026"]
+```
+
+The marker is self-contained evidence. Reconcile interactively:
+
+```bash
+$ tng-wiki drift
+wiki/entities/anthropic.md  (2 markers)
+wiki/entities/openai.md  (1 marker)
+```
+
+The agent walks each marker with the user — **accept / edit / reject / defer** — and removes it on resolution. Never auto-apply.
+
+### Layer 3 — external validation (opt-in)
+
+When you explicitly ask an agent to check claims against live external authority, it uses `WebFetch`/`WebSearch` restricted to URLs cited within the page's raw sources (default) or a per-wiki allow-list you configure. Produces the same `⚠️ DRIFT?` markers for Layer 2–style reconcile. Never free-range web search — that's how confident-wrong creeps in.
+
+### Marker lint verbs
+
+```bash
+$ tng-wiki stale        # ⚠️ STALE?       (time-based, human/agent-written)
+$ tng-wiki unsourced    # ⚠️ UNSOURCED?   (ground Layer 1)
+$ tng-wiki unverified   # ⚠️ UNVERIFIED?  (ground Layer 1)
+$ tng-wiki drift        # ⚠️ DRIFT?       (Layer 2/3)
+```
+
+All accept `--wiki <slug>` and `--json`. Output shape is `path (N markers)` for parity with the existing `stale`/`orphans` verbs.
 
 ## Ambient Cross-Project Access
 

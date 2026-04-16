@@ -12,6 +12,20 @@ Five milestones, in order:
 4. **`tng-wiki-mcp` binary (same package, second `bin` entry).** Thin MCP-over-stdio wrapper that declares each CLI verb as an MCP tool and shells out. Covers the shell-less environments the CLI cannot reach: Claude Desktop, ChatGPT Desktop, Docker MCP Toolkit, any web-only chat UI. Ships copy-paste config snippets for each target host.
 5. **`tng-wiki install-skill`.** Writes `~/.claude/skills/tng-wiki/SKILL.md` that teaches Claude Code the CLI verbs (lightweight discovery, zero MCP token cost). Supports `--force` / `--uninstall` / `--claude-home`. **Shipped 2026-04-16.**
 
+## Grounding Pipeline (in progress, 2026-04-16)
+
+Three-layer approach to keeping wikis honest against source material and external authority.
+
+- **Phase 1A — Schema + Marker Taxonomy + AGENTS.md workflow.** `sources:` frontmatter as YAML list, `[^raw/<path>]` inline citations, four-marker taxonomy with per-marker resolution actions, new `### Grounding` + `### Reconcile Drifts` operations. **Shipped 2026-04-16 ([`a692b94`](../../commit/a692b94)).**
+- **Phase 1B+1C — `ground` verb + marker lint verbs.** `tng-wiki ground` Layer 1 structural check (5 issue classes, page-scoped, JSON output). `drift`, `unsourced`, `unverified` lint verbs mirror `stale`/`orphans`. MCP tools extended from 7 to 11. **Shipped 2026-04-16 ([`c080257`](../../commit/c080257)).**
+- **Phase 1D — Docs consolidation.** README grounding section with copy-paste examples, CHANGELOG entry, skill teaches full grounding vocabulary. **Shipped 2026-04-16.**
+- **Phase 2 — Semantic re-verification (agent-driven).** No CLI code — documented as a workflow inside each AGENTS.md. Agent re-reads raw sources listed in page frontmatter, compares claims, writes `⚠️ DRIFT?` markers with evidence. Reconcile is interactive (accept/edit/reject/defer). **Next.**
+- **Phase 3 — External validation (opt-in, expensive).** Agent cross-checks claims against live external sources, restricted to URLs cited within the raw source or a per-wiki allow-list. Never free-range web search. **After Phase 2 and SE/Arch domain.**
+
+## Software Engineering & Architecture Domain
+
+New domain template. Page types: Decisions (ADR format with status lifecycle), Components, Systems, Patterns, Incidents, Runbooks, Tech Debt. Uses the grounding pipeline natively from day one. **Queued after Phase 2.**
+
 ### Why CLI-first and not MCP-first
 
 Research on 2025-2026 ecosystem (Anthropic's ["Code execution with MCP"](https://www.anthropic.com/engineering/code-execution-with-mcp) Nov 2025, Armin Ronacher's ["Skills vs MCP"](https://lucumr.pocoo.org/2025/12/13/skills-vs-mcp/) Dec 2025, [onlycli.github.io benchmark](https://onlycli.github.io/OnlyCLI/blog/mcp-token-cost-benchmark/)) converged on a clear conclusion for markdown-wiki use cases:

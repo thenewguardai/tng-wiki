@@ -7,6 +7,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 ## [Unreleased]
 
 ### Added
+- **Grounding pipeline — Phase 1.** Three-layer approach to keeping LLM-maintained wikis honest over time, with the CLI doing only the structural (zero-LLM) work and agents driving Layers 2–3 via AGENTS.md-documented workflows.
+  - **Schema:** wiki page frontmatter `sources:` is now a YAML list of raw paths (replacing the legacy numeric count), and every factual claim gets an inline `[^raw/<path>]` footnote-style citation. The `sources:` list is the trust anchor every grounding workflow walks.
+  - **Marker taxonomy:** four markers (`⚠️ STALE?`, `⚠️ UNSOURCED?`, `⚠️ UNVERIFIED?`, `⚠️ DRIFT?`), each with dedicated meaning / producer / resolution-action documentation in every generated `AGENTS.md`.
+  - **`tng-wiki ground [--wiki <slug>] [--page <path>] [--json]`** — Layer 1 structural check (zero-LLM). Detects empty/missing frontmatter sources, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (frontmatter-only, never cited inline), and raw sources modified after the page's `updated` date. Skips `wiki/index.md`, `wiki/log.md`, `_`-prefixed template files, and `wiki/meta/*`.
+  - **`tng-wiki drift` / `unsourced` / `unverified`** — pattern-matching lint verbs for the new markers, mirroring the shape of the existing `stale` / `orphans`. Feed the reconcile workflow.
+  - **MCP tools:** `ground`, `drift`, `unsourced`, `unverified` added to `tng-wiki-mcp` for shell-less hosts. Total MCP tool count: 11 (was 7).
+  - **AGENTS.md workflow:** new `### Grounding` operation documents all three layers; new `### Reconcile Drifts` workflow walks the interactive accept / edit / reject / defer flow that `⚠️ DRIFT?` markers feed into. Ingest step now requires per-claim citations and `⚠️ DRIFT?` on newly-contradicted claims rather than silent overwrites.
+  - **Skill:** Claude Code skill teaches the grounding vocabulary, when to reach for `ground` / `drift` / `unsourced` / `unverified`, and the reconcile workflow — all while never auto-applying drift fixes.
 - **`tng-wiki search --include-raw`** — opt-in deep search that also scans `raw/` source material. Each hit is tagged `[wiki]` or `[raw]` in plain output and `source: "wiki"|"raw"` in `--json`, so callers always know which layer produced the match. Use when verifying claims, consulting originals, or when a detail might live in archival source that hasn't been distilled into a wiki page yet. Default behavior unchanged — `search` without the flag still returns only compiled wiki content.
 - MCP `search` tool gains matching `include_raw` boolean parameter.
 - Claude Code skill teaches when to reach for deep search ("search deep", "consult the sources", "verify", "confirm this is accurate", no compiled hit found).

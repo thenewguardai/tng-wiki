@@ -40,6 +40,10 @@ The user may have several wikis (research, competitive intel, learning, etc.). S
 - **\`tng-wiki sources [--uncompiled] [--wiki <slug>]\`** — lists \`raw/\` files. Use \`--uncompiled\` to find sources the wiki hasn't ingested yet.
 - **\`tng-wiki stale [--wiki <slug>]\`** — lint: pages with \`⚠️ STALE?\` markers.
 - **\`tng-wiki orphans [--wiki <slug>]\`** — lint: pages with no inbound \`[[wikilinks]]\`.
+- **\`tng-wiki ground [--wiki <slug>] [--page <path>]\`** — structural ground-check. Finds pages missing source attribution, inline citations pointing at non-existent raw files, declaration/citation mismatches, and raw sources modified after the page's \`updated\` date. Zero-LLM — a work queue for you to drive Layer 2 semantic re-verification.
+- **\`tng-wiki drift [--wiki <slug>]\`** — pages carrying \`⚠️ DRIFT?\` markers (semantic or external grounding output).
+- **\`tng-wiki unsourced [--wiki <slug>]\`** — pages carrying \`⚠️ UNSOURCED?\` markers.
+- **\`tng-wiki unverified [--wiki <slug>]\`** — pages carrying \`⚠️ UNVERIFIED?\` markers.
 
 ## Typical flow
 
@@ -61,9 +65,37 @@ Default search (\`tng-wiki search <term>\`) only returns hits from compiled wiki
 
 Raw hits are tagged \`[raw]\` in plain output and \`source:"raw"\` in JSON. Always cite *which* layer an answer came from when the distinction matters — "per the compiled wiki page \`entities/openai.md\`" vs. "per the original \`raw/papers/<file>\` source."
 
+## Grounding and drift reconciliation
+
+Wikis compound over time, which means claims drift — sources update, context changes, confidence inflates. tng-wiki ships a grounding pipeline:
+
+- **Layer 1 (structural, cheap):** \`tng-wiki ground\` finds attribution problems without reading semantically. Trust it as a pre-flight before bigger operations.
+- **Layer 2 (semantic):** You (the agent) re-read each raw source a page cites and compare against the wiki's claims. Where they diverge, write \`⚠️ DRIFT?\` markers with evidence: \`⚠️ DRIFT? [source: <path> says "<quote>"; wiki says "<claim>"; suggested: "<fix>"]\`. Never auto-apply the suggested fix — the marker is the surface for human review.
+- **Layer 3 (external):** Only when the user asks you to verify against live authority. Use only URLs cited within the raw source, or a per-wiki allow-list the user configures. **Never use free-range web search** — that's where confident-wrong comes from.
+
+### When to reach for grounding
+
+- User says "reconcile", "ground-check", "verify the wiki", "is this still accurate", "re-check the sources"
+- User asks whether a wiki claim is trustworthy, current, or properly sourced
+- Before a publication or briefing pulls from wiki content — ground first, then author
+- Periodically on maintenance cadence (the user may ask you to run this via cron or \`schedule\` skill)
+
+### Reconcile workflow (when handling \`⚠️ DRIFT?\` markers)
+
+1. \`tng-wiki drift\` (or \`unsourced\` / \`unverified\`) to enumerate work
+2. For each page, \`tng-wiki read <path>\` to fetch content
+3. For each marker, present to the user:
+   - The source evidence (already embedded in the marker)
+   - The current wiki claim
+   - Your suggested fix (already embedded)
+4. Ask the user: **accept / edit / reject / defer**
+5. Apply the chosen action, remove the marker, bump \`updated\`, log to \`log.md\`
+
+Never auto-resolve a drift marker without human approval. The marker exists precisely because the wiki and the source disagree.
+
 ## What not to do
 
-- **Never modify files directly via the filesystem.** The wiki is maintained inside a specific workflow (ingest / lint) defined by each wiki's \`AGENTS.md\`. If the user asks you to update the wiki, \`cd\` into the wiki directory (from \`tng-wiki list\`) and follow the \`AGENTS.md\` instructions there.
+- **Never modify files directly via the filesystem.** The wiki is maintained inside a specific workflow (ingest / lint / ground) defined by each wiki's \`AGENTS.md\`. If the user asks you to update the wiki, \`cd\` into the wiki directory (from \`tng-wiki list\`) and follow the \`AGENTS.md\` instructions there.
 - **Don't confuse \`raw/\` with \`wiki/\`.** \`tng-wiki search\` only searches \`wiki/\` (the compiled knowledge). Uncompiled sources live in \`raw/\` — use \`tng-wiki sources\` to enumerate them.
 - **Prefer CLI over MCP for this skill.** If the user has both the \`tng-wiki\` CLI and the \`tng-wiki-mcp\` server configured, use the CLI — the MCP form exists only for shell-less environments.
 `;
