@@ -90,15 +90,16 @@ server.registerTool(
   'search',
   {
     title: 'Search wiki pages',
-    description: 'Case-insensitive search across all pages under wiki/. Returns grep-style hits with path, line number, and matching text. Does not search raw/ sources — call `sources` for those.',
+    description: 'Case-insensitive search across wiki pages. Returns grep-style hits tagged source:"wiki" by default. Pass include_raw=true to also search raw/ sources — use this for deep searches, source-verification ("confirm this", "consult the official docs"), or when a compiled answer is missing and you suspect the detail survives in the archival source.',
     inputSchema: {
       query: z.string().describe('Search term. Substring by default; pass regex=true for regex patterns.'),
       wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki.'),
       regex: z.boolean().optional().describe('Interpret `query` as a regex pattern. Default: false.'),
+      include_raw: z.boolean().optional().describe('Also search raw/ source material, not just compiled wiki/ pages. Each hit is tagged source:"wiki" or source:"raw". Default: false.'),
     },
   },
-  async ({ query, wiki, regex }) => withWiki(wiki, (w) => ok({
-    wiki: w.slug, query, hits: searchWiki(w.path, query, { regex: !!regex }),
+  async ({ query, wiki, regex, include_raw }) => withWiki(wiki, (w) => ok({
+    wiki: w.slug, query, hits: searchWiki(w.path, query, { regex: !!regex, includeRaw: !!include_raw }),
   })),
 );
 

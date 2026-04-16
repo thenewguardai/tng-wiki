@@ -55,14 +55,18 @@ export async function runRead(args) {
 export async function runSearch(args) {
   const query = firstPositional(args);
   if (!query) {
-    process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug>] [--regex] [--json]\n');
+    process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--json]\n');
     process.exit(1);
   }
   const wiki = wikiFromArgs(args);
-  const hits = searchWiki(wiki.path, query, { regex: args.includes('--regex') });
+  const hits = searchWiki(wiki.path, query, {
+    regex: args.includes('--regex'),
+    includeRaw: args.includes('--include-raw'),
+  });
   maybeJson(args, { wiki: wiki.slug, query, hits }, () => {
     for (const h of hits) {
-      process.stdout.write(`${h.path}:${h.line}: ${h.text}\n`);
+      const tag = h.source === 'raw' ? pc.yellow('[raw] ') : pc.dim('[wiki]');
+      process.stdout.write(`${tag} ${h.path}:${h.line}: ${h.text}\n`);
     }
   });
 }

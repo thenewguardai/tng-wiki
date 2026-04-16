@@ -43,26 +43,32 @@ function walkMd(dir) {
   return out;
 }
 
-export function searchWiki(wikiPath, query, { regex = false } = {}) {
+export function searchWiki(wikiPath, query, { regex = false, includeRaw = false } = {}) {
   if (!query) return [];
   const pattern = regex
     ? new RegExp(query, 'i')
     : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
-  const wikiDir = join(wikiPath, 'wiki');
   const hits = [];
-  for (const file of walkMd(wikiDir)) {
-    const lines = readFileSync(file, 'utf8').split('\n');
-    lines.forEach((line, i) => {
-      if (pattern.test(line)) {
-        hits.push({
-          path: relative(wikiPath, file),
-          line: i + 1,
-          text: line.trim(),
-        });
-      }
-    });
-  }
+  const scan = (dir, source) => {
+    for (const file of walkMd(dir)) {
+      const lines = readFileSync(file, 'utf8').split('\n');
+      lines.forEach((line, i) => {
+        if (pattern.test(line)) {
+          hits.push({
+            source,
+            path: relative(wikiPath, file),
+            line: i + 1,
+            text: line.trim(),
+          });
+        }
+      });
+    }
+  };
+
+  scan(join(wikiPath, 'wiki'), 'wiki');
+  if (includeRaw) scan(join(wikiPath, 'raw'), 'raw');
+
   return hits;
 }
 

@@ -167,18 +167,24 @@ $ tng-wiki read opportunities/wiki-mcp-server.md --wiki ai-research
 
 ### `search` — case-insensitive search across wiki pages
 
-Prints `path:line: matching text` (grep-compatible). Use `--regex` for regex patterns. Searches only `wiki/` — not `raw/` — because the wiki is the compiled, canonical content.
+Prints `[wiki] path:line: matching text` (grep-compatible). Use `--regex` for regex patterns. By default searches only compiled `wiki/` content — that's the canonical distilled knowledge.
+
+Pass `--include-raw` to **search deep** into archival `raw/` sources as well. Use this when verifying claims, consulting originals, or when a detail might live in uncompiled source material. Each hit is tagged `[wiki]` or `[raw]` so you always know which layer it came from.
 
 ```bash
 $ tng-wiki search karpathy
-wiki/narratives/llm-knowledge-bases.md:12: Karpathy described the pattern
-wiki/timelines/llm-tooling-2026.md:8: Karpathy post catalyzes wave of clones
+[wiki] wiki/narratives/llm-knowledge-bases.md:12: Karpathy described the pattern
+[wiki] wiki/timelines/llm-tooling-2026.md:8: Karpathy post catalyzes wave of clones
+
+$ tng-wiki search karpathy --include-raw
+[wiki] wiki/narratives/llm-knowledge-bases.md:12: Karpathy described the pattern
+[raw]  raw/announcements/2026-04-04-karpathy-llm-knowledge-bases.md:5: "There is room here for an incredible new product..."
 
 $ tng-wiki search "v\d+\.\d+\.\d+" --regex --wiki ai-research
-wiki/entities/anthropic.md:42: Claude 4.6 (released v4.6.0)
+[wiki] wiki/entities/anthropic.md:42: Claude 4.6 (released v4.6.0)
 
-$ tng-wiki search karpathy --json | jq '.hits | length'
-2
+$ tng-wiki search karpathy --include-raw --json | jq '.hits | group_by(.source) | map({source: .[0].source, count: length})'
+[{"source": "raw", "count": 3}, {"source": "wiki", "count": 2}]
 ```
 
 ### `sources` — list raw source files

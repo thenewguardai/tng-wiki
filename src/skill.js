@@ -35,7 +35,7 @@ The user may have several wikis (research, competitive intel, learning, etc.). S
 ## Verbs (invoke via Bash)
 
 - **\`tng-wiki query [--wiki <slug>]\`** — prints \`wiki/index.md\`. Always start here to see what pages exist before searching or reading.
-- **\`tng-wiki search <term> [--wiki <slug>] [--regex]\`** — case-insensitive search across wiki pages. Returns grep-style \`path:line: text\`.
+- **\`tng-wiki search <term> [--wiki <slug>] [--regex] [--include-raw]\`** — case-insensitive search. By default searches compiled \`wiki/\` only. Pass \`--include-raw\` to also search archival \`raw/\` sources — each hit is tagged \`[wiki]\` or \`[raw]\`.
 - **\`tng-wiki read <path> [--wiki <slug>]\`** — fetches a specific page. Path is relative to \`wiki/\` (e.g. \`entities/openai.md\`).
 - **\`tng-wiki sources [--uncompiled] [--wiki <slug>]\`** — lists \`raw/\` files. Use \`--uncompiled\` to find sources the wiki hasn't ingested yet.
 - **\`tng-wiki stale [--wiki <slug>]\`** — lint: pages with \`⚠️ STALE?\` markers.
@@ -44,11 +44,22 @@ The user may have several wikis (research, competitive intel, learning, etc.). S
 ## Typical flow
 
 1. \`tng-wiki query\` → see what pages exist
-2. \`tng-wiki search <term>\` → find specific matches
+2. \`tng-wiki search <term>\` → find specific matches in compiled knowledge
 3. \`tng-wiki read <path>\` → fetch one or more relevant pages
 4. Synthesize an answer citing specific wiki pages by path
 
 If the topic isn't covered, say so clearly — the user may want to add it to the wiki. Don't fabricate coverage.
+
+## When to search deep (include raw sources)
+
+Default search (\`tng-wiki search <term>\`) only returns hits from compiled wiki pages — the distilled knowledge. Reach for \`--include-raw\` when:
+
+- The user says "search deep", "consult the sources", "check the original", "verify", "where did this come from", or asks for primary-source confirmation
+- The user asks you to confirm that information is accurate or hasn't drifted
+- Your default search returns nothing but you suspect the detail survives in raw source material that hasn't been distilled yet
+- You're about to make a claim that should be double-checked against the source of truth before stating it confidently
+
+Raw hits are tagged \`[raw]\` in plain output and \`source:"raw"\` in JSON. Always cite *which* layer an answer came from when the distinction matters — "per the compiled wiki page \`entities/openai.md\`" vs. "per the original \`raw/papers/<file>\` source."
 
 ## What not to do
 

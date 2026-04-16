@@ -82,16 +82,50 @@ test('readPage returns a specific page; rejects ../ escape', () => {
 
 // --- searchWiki ---
 
-test('searchWiki finds case-insensitive substring matches with path:line:text shape', () => {
+test('searchWiki finds case-insensitive substring matches with source/path/line/text shape', () => {
   const dir = makeWiki();
   try {
     writePage(dir, 'wiki/entities/acme.md', '# Acme\nLaunched Karpathy-style wiki\nmore stuff');
     writePage(dir, 'wiki/entities/beta.md', '# Beta\nnothing related');
     const hits = searchWiki(dir, 'karpathy');
     assert.equal(hits.length, 1);
+    assert.equal(hits[0].source, 'wiki');
     assert.equal(hits[0].path, 'wiki/entities/acme.md');
     assert.equal(hits[0].line, 2);
     assert.match(hits[0].text, /Karpathy/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('searchWiki defaults to wiki/ only; raw/ hits require includeRaw', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'raw/papers/source.md', 'body mentions Karpathy and nothing else relevant');
+    // without includeRaw: no hits (wiki/ is empty of the term)
+    const wikiOnly = searchWiki(dir, 'Karpathy');
+    assert.equal(wikiOnly.length, 0);
+
+    // with includeRaw: finds the raw hit, tagged source:'raw'
+    const deep = searchWiki(dir, 'Karpathy', { includeRaw: true });
+    assert.equal(deep.length, 1);
+    assert.equal(deep[0].source, 'raw');
+    assert.equal(deep[0].path, 'raw/papers/source.md');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('searchWiki with includeRaw returns wiki hits before raw hits', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'wiki/entities/a.md', 'compiled knowledge: Karpathy pattern');
+    writePage(dir, 'raw/papers/src.md', 'raw source: Karpathy original post');
+    const hits = searchWiki(dir, 'Karpathy', { includeRaw: true });
+    assert.equal(hits.length, 2);
+    // wiki hits scanned first, then raw
+    assert.equal(hits[0].source, 'wiki');
+    assert.equal(hits[1].source, 'raw');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
