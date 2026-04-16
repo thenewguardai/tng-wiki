@@ -85,6 +85,26 @@ async function main() {
       await runInstallSkill(args);
       break;
     }
+    case 'ground': {
+      const { runGround } = await import('../src/verbs-cli.js');
+      await runGround(args);
+      break;
+    }
+    case 'drift': {
+      const { runDrift } = await import('../src/verbs-cli.js');
+      await runDrift(args);
+      break;
+    }
+    case 'unsourced': {
+      const { runUnsourced } = await import('../src/verbs-cli.js');
+      await runUnsourced(args);
+      break;
+    }
+    case 'unverified': {
+      const { runUnverified } = await import('../src/verbs-cli.js');
+      await runUnverified(args);
+      break;
+    }
     case 'help':
     case '--help':
     case '-h': {
@@ -104,8 +124,14 @@ ${pc.bold('Registry:')}
 ${pc.bold('Wiki access (CLI verbs — stable, low-token, agent-friendly):')}
   ${pc.cyan('query')}        Print wiki/index.md for the default (or --wiki <slug>) wiki
   ${pc.cyan('read')}         Print a wiki page by path (relative to wiki/)
-  ${pc.cyan('search')}       Case-insensitive search across wiki pages
+  ${pc.cyan('search')}       Case-insensitive search across wiki pages (--include-raw for deep search)
   ${pc.cyan('sources')}      List raw sources (--uncompiled for uncompiled only)
+
+${pc.bold('Grounding & lint (the wiki health surface):')}
+  ${pc.cyan('ground')}       Structural ground-check: attribution, dead cites, updated vs source mtime
+  ${pc.cyan('drift')}        List pages with ⚠️ DRIFT? markers (semantic/external grounding output)
+  ${pc.cyan('unsourced')}    List pages with ⚠️ UNSOURCED? markers
+  ${pc.cyan('unverified')}   List pages with ⚠️ UNVERIFIED? markers
   ${pc.cyan('stale')}        List pages with ⚠️ STALE? markers
   ${pc.cyan('orphans')}      List wiki pages with no inbound wikilinks
 

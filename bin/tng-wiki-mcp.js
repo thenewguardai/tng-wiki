@@ -11,6 +11,9 @@ import {
   resolveWiki, queryIndex, readPage, searchWiki,
   listSources, listStalePages, listOrphanPages,
 } from '../src/verbs.js';
+import {
+  checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages,
+} from '../src/ground.js';
 import { loadRegistry, listWikis } from '../src/registry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -145,6 +148,39 @@ server.registerTool(
     wiki: w.slug, pages: listOrphanPages(w.path),
   })),
 );
+
+server.registerTool(
+  'ground',
+  {
+    title: 'Structural ground-check (Layer 1)',
+    description: 'Pure-structural grounding check: finds pages with empty frontmatter sources, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (in frontmatter but not cited), and raw sources whose mtime is newer than the page `updated` date. Returns a structured punch list the agent consumes to drive Layer 2 semantic re-verification. Skips structural pages (index.md, log.md), _-prefixed template files, and wiki/meta/*. Scope with `page` to target a single page.',
+    inputSchema: {
+      wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki.'),
+      page: z.string().optional().describe('Single page to scope the check to (relative to wiki/, e.g. "entities/openai.md").'),
+    },
+  },
+  async ({ wiki, page }) => withWiki(wiki, (w) => ok({
+    wiki: w.slug, ...checkGrounding(w.path, page ? { page } : {}),
+  })),
+);
+
+function registerMarkerTool(name, title, markerLabel, lister) {
+  server.registerTool(
+    name,
+    {
+      title,
+      description: `Returns wiki pages carrying the ${markerLabel} marker, with per-page marker count. Consume this output when reconciling markers: fetch each page with \`read\`, present marker evidence and suggested fix to the user, apply their accept/edit/reject/defer choice.`,
+      inputSchema: {
+        wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki.'),
+      },
+    },
+    async ({ wiki }) => withWiki(wiki, (w) => ok({ wiki: w.slug, pages: lister(w.path) })),
+  );
+}
+
+registerMarkerTool('drift', 'List drift pages', '⚠️ DRIFT?', listDriftPages);
+registerMarkerTool('unsourced', 'List unsourced pages', '⚠️ UNSOURCED?', listUnsourcedPages);
+registerMarkerTool('unverified', 'List unverified pages', '⚠️ UNVERIFIED?', listUnverifiedPages);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

@@ -60,13 +60,16 @@ const INIT = {
 
 const INITIALIZED = { jsonrpc: '2.0', method: 'notifications/initialized' };
 
-test('MCP server lists all seven tools with names we ship', async () => {
+test('MCP server lists all shipped tools with the expected names', async () => {
   const env = withEnv();
   try {
     const msgs = await mcpCall(env.home, [INIT, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }]);
     const listMsg = msgs.find(m => m.id === 2);
     const names = listMsg.result.tools.map(t => t.name).sort();
-    assert.deepEqual(names, ['list_wikis', 'orphans', 'query', 'read', 'search', 'sources', 'stale']);
+    assert.deepEqual(names, [
+      'drift', 'ground', 'list_wikis', 'orphans', 'query', 'read',
+      'search', 'sources', 'stale', 'unsourced', 'unverified',
+    ]);
   } finally {
     env.cleanup();
   }

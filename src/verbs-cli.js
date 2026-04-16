@@ -3,6 +3,9 @@ import {
   resolveWiki, queryIndex, readPage, searchWiki,
   listSources, listStalePages, listOrphanPages,
 } from './verbs.js';
+import {
+  checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages,
+} from './ground.js';
 
 function argValue(args, flag) {
   const idx = args.indexOf(flag);
@@ -101,3 +104,55 @@ export async function runOrphans(args) {
     for (const p of pages) process.stdout.write(`${p.path}\n`);
   });
 }
+
+const ISSUE_LABEL = {
+  empty_sources: 'empty or missing frontmatter `sources:`',
+  missing_raw: 'cited raw file does not exist',
+  undeclared_cite: 'cited inline but not in frontmatter `sources:`',
+  orphan_source_decl: 'declared in frontmatter but not cited inline',
+  source_updated_after_page: 'raw source modified after page `updated`',
+  page_not_found: 'page does not exist',
+};
+
+export async function runGround(args) {
+  const wiki = wikiFromArgs(args);
+  const page = argValue(args, '--page');
+  const result = checkGrounding(wiki.path, page ? { page } : {});
+  maybeJson(args, { wiki: wiki.slug, ...result }, () => {
+    if (result.issues.length === 0) {
+      process.stdout.write(`${pc.green('✓')} ${pc.dim(`${result.scanned} pages clean`)}\n`);
+      return;
+    }
+    const byPage = new Map();
+    for (const i of result.issues) {
+      if (!byPage.has(i.page)) byPage.set(i.page, []);
+      byPage.get(i.page).push(i);
+    }
+    for (const [p, issues] of byPage) {
+      process.stdout.write(`${pc.bold(p)}\n`);
+      for (const i of issues) {
+        const label = ISSUE_LABEL[i.issue] ?? i.issue;
+        const detail = i.raw ? ` ${pc.dim('→')} ${i.raw}` : '';
+        const loc = i.line ? pc.dim(` (line ${i.line})`) : '';
+        const ts = i.source_mtime ? pc.dim(` (page ${i.page_updated}, source ${i.source_mtime})`) : '';
+        process.stdout.write(`  ${pc.yellow(i.issue)}: ${label}${detail}${loc}${ts}\n`);
+      }
+    }
+    process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);
+  });
+}
+
+function runMarkerVerb(args, lister) {
+  const wiki = wikiFromArgs(args);
+  const pages = lister(wiki.path);
+  maybeJson(args, { wiki: wiki.slug, pages }, () => {
+    for (const p of pages) {
+      const tag = p.count === 1 ? '1 marker' : `${p.count} markers`;
+      process.stdout.write(`${p.path}  ${pc.dim(`(${tag})`)}\n`);
+    }
+  });
+}
+
+export const runDrift = (args) => runMarkerVerb(args, listDriftPages);
+export const runUnsourced = (args) => runMarkerVerb(args, listUnsourcedPages);
+export const runUnverified = (args) => runMarkerVerb(args, listUnverifiedPages);
