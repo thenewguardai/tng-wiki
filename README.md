@@ -107,6 +107,10 @@ tng-wiki sources    [--wiki <slug>] [--uncompiled] [--json]
 tng-wiki stale      [--wiki <slug>] [--json]
 tng-wiki orphans    [--wiki <slug>] [--json]
 
+# Agent integration
+tng-wiki install-skill              # Install the Claude Code skill (~/.claude/skills/tng-wiki)
+                                    #   [--force] overwrite  [--uninstall] remove
+
 # Diagnostics
 tng-wiki status                     # Basic wiki health snapshot
 tng-wiki doctor                     # Environment check: agent CLIs, QMD, git
@@ -214,15 +218,26 @@ Once your wiki is registered, it's reachable from any project you're working in.
 
 ### Terminal agents (Claude Code, Codex, opencode, OpenClaw, hermes-agent)
 
-These can invoke `tng-wiki` directly via their Bash tool. No MCP server, no schema tokens burned per session — the agent pays nothing until it actually uses a verb. Just install `tng-wiki` globally and tell your agent about the verbs. A one-liner in your project's `AGENTS.md`:
+These can invoke `tng-wiki` directly via their Bash tool. No MCP server, no schema tokens burned per session — the agent pays nothing until it actually uses a verb.
+
+**Claude Code — install the skill (recommended):**
+
+```bash
+tng-wiki install-skill
+# ✓ Installed tng-wiki skill → ~/.claude/skills/tng-wiki/SKILL.md
+```
+
+This writes a Claude Code skill that teaches every future session the verbs and when to use them. Claude Code picks it up within the current session via live change detection (no restart). You can invoke the skill directly with `/tng-wiki` or let Claude load it automatically when your question matches the skill description. Re-run with `--force` to update after an upgrade, or `--uninstall` to remove.
+
+**Other terminal agents** — drop a one-liner in your project's `AGENTS.md`:
 
 ```markdown
 ## Knowledge Base
 
 Your long-term memory is a tng-wiki. Start any research task with
 `tng-wiki query` to see the index. Use `tng-wiki search <term>` and
-`tng-wiki read <path>` to navigate. Pass `--wiki ai-research` to
-target a specific registered wiki.
+`tng-wiki read <path>` to navigate. Pass `--wiki <slug>` to target
+a specific registered wiki (list them with `tng-wiki list`).
 ```
 
 ### Shell-less / chat-app agents (Claude Desktop, ChatGPT Desktop, web UIs)

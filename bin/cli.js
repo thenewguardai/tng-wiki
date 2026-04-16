@@ -80,6 +80,11 @@ async function main() {
       await runOrphans(args);
       break;
     }
+    case 'install-skill': {
+      const { runInstallSkill } = await import('../src/skill-cli.js');
+      await runInstallSkill(args);
+      break;
+    }
     case 'help':
     case '--help':
     case '-h': {
@@ -103,6 +108,9 @@ ${pc.bold('Wiki access (CLI verbs — stable, low-token, agent-friendly):')}
   ${pc.cyan('sources')}      List raw sources (--uncompiled for uncompiled only)
   ${pc.cyan('stale')}        List pages with ⚠️ STALE? markers
   ${pc.cyan('orphans')}      List wiki pages with no inbound wikilinks
+
+${pc.bold('Agent integration:')}
+  ${pc.cyan('install-skill')}  Install the Claude Code skill at ~/.claude/skills/tng-wiki
 
 ${pc.bold('Diagnostics:')}
   ${pc.cyan('status')}       Basic wiki health snapshot

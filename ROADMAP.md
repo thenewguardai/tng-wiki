@@ -10,7 +10,7 @@ Five milestones, in order:
 2. **Multi-wiki registry.** `~/.tng-wiki/registry.json` lists installed wikis with `{name, path, domain, registered}`. `tng-wiki register / unregister / list / set-default` commands; `init` auto-registers. Every wiki gets a `.tng-wiki.json` metadata file. **Shipped 2026-04-15 (commit 75125b5).**
 3. **CLI verb surface.** `tng-wiki query / read / search / sources / stale / orphans` with `--wiki <slug>` routing through the registry. This is the ambient-access story for every terminal agent (Claude Code, Codex, opencode, OpenClaw, hermes-agent): the agent invokes tng-wiki via its Bash tool, paying zero token overhead when idle.
 4. **`tng-wiki-mcp` binary (same package, second `bin` entry).** Thin MCP-over-stdio wrapper that declares each CLI verb as an MCP tool and shells out. Covers the shell-less environments the CLI cannot reach: Claude Desktop, ChatGPT Desktop, Docker MCP Toolkit, any web-only chat UI. Ships copy-paste config snippets for each target host.
-5. **`tng-wiki install-skill`.** Writes `~/.claude/skills/tng-wiki/SKILL.md` that teaches Claude Code the CLI verbs (lightweight discovery, zero MCP token cost). Optional convenience.
+5. **`tng-wiki install-skill`.** Writes `~/.claude/skills/tng-wiki/SKILL.md` that teaches Claude Code the CLI verbs (lightweight discovery, zero MCP token cost). Supports `--force` / `--uninstall` / `--claude-home`. **Shipped 2026-04-16.**
 
 ### Why CLI-first and not MCP-first
 
