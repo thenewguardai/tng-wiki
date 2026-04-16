@@ -19,6 +19,8 @@ ${ARCHITECTURE(domain)}
 
 ${PAGE_CONVENTIONS}
 
+${MARKER_TAXONOMY}
+
 ${domainSchema}
 
 ${OPERATIONS(domain)}
@@ -73,24 +75,39 @@ title: "Page Title"
 type: entity              # varies by domain — see domain-specific section
 created: ${today()}
 updated: ${today()}
-sources: 0                # count of raw sources informing this page
+sources:                  # every raw file that informed this page — paths relative to wiki root
+  - raw/papers/foo.md
+  - raw/announcements/bar.md
 tags: []
 confidence: medium        # high | medium | low
 ---
 \`\`\`
 
+\`sources\` is the **trust anchor** of the page. Grounding workflows re-open every file listed here to verify the page's claims. An empty \`sources:\` list means the page has no verifiable attribution — that's an \`⚠️ UNSOURCED?\` state, not normal.
+
+### Per-Claim Citations
+
+Every factual claim must cite at least one raw source inline using footnote-style syntax:
+
+\`\`\`markdown
+Anthropic raised $8B in Series F.[^raw/announcements/2026-anthropic-series-f.md]
+
+The company was founded in 2021[^raw/papers/anthropic-origins.md] by Dario and Daniela Amodei.[^raw/papers/anthropic-origins.md]
+\`\`\`
+
+Citations use \`[^<path-relative-to-wiki-root>]\` form. Multiple citations for one claim stack: \`[^raw/a.md][^raw/b.md]\`. Every path cited inline must also appear in the frontmatter \`sources:\` list — that's the invariant \`tng-wiki ground\` checks. Claims without a citation are subject to \`⚠️ UNSOURCED?\` marking.
+
 ### Writing Style
 
 - **Dense and scannable.** Use headers. Use tables. No fluff.
-- **Show your work.** Every claim links to a source or is marked as inference.
-- **Confidence markers** (inline):
-  - \`[confirmed]\` — multiple reliable sources agree
-  - \`[reported]\` — single source, unverified
-  - \`[inference]\` — logical deduction from evidence
-  - \`[rumor]\` — unconfirmed
+- **Show your work.** Every claim cites at least one source or is marked as inference.
+- **Confidence markers** (inline, paired with the claim):
+  - \`[confirmed]\` — multiple Tier 1–2 sources agree
+  - \`[reported]\` — single Tier 1–2 source, or multiple Tier 3 sources
+  - \`[inference]\` — logical deduction from cited evidence
+  - \`[rumor]\` — Tier 4 only, treat with extreme caution
 - **Numbers always have sources.** Never state a figure without attribution.
 - Use Obsidian-style \`[[wikilinks]]\` for all internal cross-references.
-- Mark potentially stale claims with \`⚠️ STALE?\` inline.
 
 ### Source Quality Tiers
 
@@ -99,7 +116,41 @@ confidence: medium        # high | medium | low
 - **Tier 3 — Commentary:** Newsletters, substacks, credible practitioner social media
 - **Tier 4 — Aggregation/rumor:** Forums, anonymous sources, unverified claims
 
-Prefer Tier 1-2 for factual claims. Tier 3-4 inform narrative and sentiment — mark them as such.`;
+Prefer Tier 1-2 for factual claims. Tier 3-4 inform narrative and sentiment — mark them as such. A \`[confirmed]\` tag on a claim whose only cited source is Tier 3/4 will be flagged \`⚠️ UNVERIFIED?\` by grounding.`;
+
+const MARKER_TAXONOMY = `## Marker Taxonomy
+
+Inline markers make wiki health visible without running tools. Each has a specific meaning, a specific producer, and a specific resolution path. Never remove a marker without completing its resolution action and writing to \`log.md\`.
+
+### \`⚠️ STALE?\`
+
+- **Meaning:** The claim may be out of date. Time-based, not evidence-based.
+- **Produced by:** Humans, or agents during Ingest/Query when they notice the underlying fact likely churns.
+- **Resolution action:** Re-verify against a current source. If still accurate, remove the marker and bump \`updated\`. If changed, update the claim, add/replace citations, bump \`updated\`. Either way, log.
+
+### \`⚠️ UNSOURCED?\`
+
+- **Meaning:** The claim has no inline citation, or cites a path missing from frontmatter \`sources:\`.
+- **Produced by:** \`tng-wiki ground\` (Layer 1, structural).
+- **Resolution action:** Either find a raw source that supports the claim and add the citation + frontmatter entry, or reduce the claim's confidence tag (e.g. \`[reported]\` → \`[inference]\`), or remove the claim entirely. If no source can be found, the claim should not be stated as fact. Log.
+
+### \`⚠️ UNVERIFIED?\`
+
+- **Meaning:** Confidence tag is stronger than the cited source tier warrants — e.g. \`[confirmed]\` backed only by Tier 3/4.
+- **Produced by:** \`tng-wiki ground\` (Layer 1, structural).
+- **Resolution action:** Either (a) find a Tier 1–2 source and add the citation, or (b) downgrade the confidence tag to match the evidence. Log.
+
+### \`⚠️ DRIFT?\`
+
+- **Meaning:** The claim has diverged from what its cited raw source actually says. The marker includes evidence: \`⚠️ DRIFT? [source: <path> says "<what the source says>"; wiki says "<current claim>"; suggested: "<agent's proposed fix>"]\`
+- **Produced by:** Layer 2 grounding (semantic re-verification) or Layer 3 grounding (external validation).
+- **Resolution action — interactive reconcile:** For each marker, present the source evidence + current claim + suggested fix to the human. The human chooses \`accept\` / \`edit\` / \`reject\` / \`defer\`:
+  - **accept:** Apply the suggested fix verbatim, remove the marker, bump \`updated\`, log.
+  - **edit:** Apply a human-edited claim, remove the marker, bump \`updated\`, log.
+  - **reject:** Remove the marker without changing the claim (the human has evidence the wiki is right and the marker is wrong — log the reasoning), optionally add a counter-citation.
+  - **defer:** Leave the marker in place; log the defer with a reason.
+
+Never auto-apply a \`⚠️ DRIFT?\` resolution without human approval. The marker exists precisely because the agent is uncertain which side is correct.`;
 
 function OPERATIONS(domain) {
   const isPublication = domain === 'publication';
@@ -114,10 +165,11 @@ When the human drops a new source into \`raw/\` and asks you to process it:
 1. **Read the source fully.** If it has images, read text first, then view images separately.
 2. **Discuss key takeaways** with the human. What's new? What does it confirm or contradict?
 3. **Integrate into existing wiki pages** — don't create a separate summary-per-source. A single source typically touches 5-15 pages.
-4. **Check for contradictions** — if new data conflicts with existing claims, flag it.
-5. **Update \`wiki/index.md\`** — add or revise entries for changed pages.
-6. **Append to \`wiki/log.md\`** — record what you did.
-7. **Update frontmatter** — increment \`sources\` count, update \`updated\` date, adjust \`confidence\`.
+4. **Cite every claim.** Every new or updated claim gets a \`[^raw/<path>]\` inline citation to the source it came from. Add the raw path to the page's frontmatter \`sources:\` list if not already present.
+5. **Check for contradictions** — if new data conflicts with existing claims, flag with \`⚠️ DRIFT?\` and include both sides in the marker so the human can reconcile.
+6. **Update \`wiki/index.md\`** — add or revise entries for changed pages.
+7. **Append to \`wiki/log.md\`** — record what you did.
+8. **Update frontmatter** — refresh \`updated\` date, adjust \`confidence\` based on evidence tier.
 
 The human prefers to ingest one source at a time and stay involved unless they say otherwise.
 
@@ -137,13 +189,40 @@ When asked to health-check the wiki:
 
 1. Contradictions — claims that conflict across pages
 2. Stale claims — \`⚠️ STALE?\` markers or claims older than 2 weeks without fresh sourcing
-3. Orphan pages — no inbound links
+3. Orphan pages — \`tng-wiki orphans\` — no inbound wikilinks
 4. Missing pages — concepts mentioned but lacking their own page
 5. Missing cross-references — pages that should link but don't
 6. Thin pages — fewer than 3 sources or missing key sections
 7. Coverage gaps — areas with few or no pages
 
-Output a lint report. Suggest specific actions.`;
+Output a lint report. Suggest specific actions.
+
+### Grounding
+
+Ground-truth the wiki against its source material. Three layers, escalating in cost and thoroughness:
+
+**Layer 1 — Structural (cheap, always safe):** Run \`tng-wiki ground [--page <path>]\`. This is a pure-CLI check — no re-reading content — that catches:
+- Pages with empty or missing \`sources:\` frontmatter (→ \`⚠️ UNSOURCED?\`)
+- Inline \`[^raw/...]\` citations pointing at raw files that don't exist
+- Inline citations not registered in frontmatter \`sources:\` (and vice-versa — dead cites)
+- Pages whose \`updated\` is older than the mtime of a cited raw source (source changed after distillation)
+- Confidence tag inflation: \`[confirmed]\` claims with only Tier 3/4 citations (→ \`⚠️ UNVERIFIED?\`)
+
+Apply the appropriate markers inline. Log the ground pass.
+
+**Layer 2 — Semantic re-verification (agent-driven, per-page or per-wiki):** For each wiki page in scope, re-read every raw source listed in frontmatter \`sources:\`. For each claim in the page, check whether the cited source still supports it. If the claim has drifted from the source, write a \`⚠️ DRIFT?\` marker that includes:
+\`\`\`
+⚠️ DRIFT? [source: raw/<path> says "<quote or summary of what the source actually says>";
+           wiki says "<current wiki claim>";
+           suggested: "<your proposed fix>"]
+\`\`\`
+Do **not** auto-apply the fix. The human reconciles interactively (see Marker Taxonomy → \`⚠️ DRIFT?\`).
+
+**Layer 3 — External validation (opt-in, expensive, scoped):** When the human asks you to verify a specific claim, page, or entity against live external authority, use \`WebFetch\` / \`WebSearch\` and cross-check. Default authorities: URLs cited within the page's raw sources. Optional additional authorities: a per-wiki allow-list the human configures. **Never** use free-range web search — unconstrained search is where confident-wrong comes from. Mark divergences with \`⚠️ DRIFT?\` using the same format; the human reconciles.
+
+### Reconcile Drifts
+
+When the human asks you to reconcile, walk \`tng-wiki drift\` (and \`tng-wiki unsourced\`) output. For each marker, present the source evidence, current claim, and suggested fix, then ask the human: **accept / edit / reject / defer**. Apply the chosen action, remove the marker on accept/edit/reject, log each decision.`;
 
   if (isPublication) {
     ops += `

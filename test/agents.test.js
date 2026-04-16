@@ -20,6 +20,29 @@ test('generateAgentsMd embeds domain-specific schema sections', () => {
   assert.ok(!blank.includes('Opportunity pages'));
 });
 
+test('generateAgentsMd teaches the four-marker taxonomy with resolution actions', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /## Marker Taxonomy/);
+  for (const marker of ['⚠️ STALE?', '⚠️ UNSOURCED?', '⚠️ UNVERIFIED?', '⚠️ DRIFT?']) {
+    assert.ok(out.includes(marker), `missing marker section: ${marker}`);
+  }
+});
+
+test('generateAgentsMd documents per-claim citations and sources as a path list', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /\[\^raw\/announcements\/2026-anthropic-series-f\.md\]/);
+  assert.match(out, /sources:[ \t]*#[^\n]*\n\s*-\s*raw\//);
+});
+
+test('generateAgentsMd includes Grounding and Reconcile Drifts operations', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /### Grounding/);
+  assert.match(out, /### Reconcile Drifts/);
+  assert.match(out, /Layer 1 — Structural/);
+  assert.match(out, /Layer 2 — Semantic re-verification/);
+  assert.match(out, /Layer 3 — External validation/);
+});
+
 test('CANONICAL_SCHEMA_FILE is AGENTS.md', () => {
   assert.equal(CANONICAL_SCHEMA_FILE, 'AGENTS.md');
 });
