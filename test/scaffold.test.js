@@ -31,6 +31,8 @@ test('scaffoldWiki creates the full base layout and writes AGENTS.md as canonica
     assert.equal(meta.version, 1);
     assert.equal(meta.name, 'Demo');
     assert.equal(meta.domain, 'blank');
+    // trusted_authorities ships empty — users opt in per wiki for Layer 3 external validation
+    assert.deepEqual(meta.trusted_authorities, []);
   });
 });
 

@@ -7,6 +7,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 ## [Unreleased]
 
 ### Added
+- **Software Engineering & Architecture domain.** New `init` template for engineering teams. Seven page types: ADRs (with `proposed → accepted → deprecated → superseded` status lifecycle and `supersedes:` / `superseded-by:` relation tracking), components (owner, SLOs, dependencies), systems (higher-level groupings), patterns (when to use / tradeoffs), incidents (P0–P3 severity, timeline, root cause, action items), runbooks, tech debt (impact × effort scored). Ships with ADR/component/incident templates, tech-debt scoring grid, severity taxonomy, and an ownership register. Seed source is an actual ADR from this project ("Adopt AGENTS.md as canonical agent schema"). Uses the grounding pipeline natively from day one.
+- **Grounding pipeline — Phases 2 & 3 (agent-driven workflows in `AGENTS.md`).** Layers 2 (semantic re-verification) and 3 (external validation) are specified as detailed agent procedures rather than CLI code — because the semantic work requires an LLM and the CLI principle is "zero LLM calls." Every domain's generated `AGENTS.md` now includes:
+  - **Layer 2 triage order** (pages flagged by Layer 1 first, then recent un-logged edits, then oldest/most-cited, then `[confirmed]`-heavy).
+  - **Four per-claim outcomes** (Supported / Partially supported — downgrade confidence / Drifted — `⚠️ DRIFT?` marker / Unsourceable — `⚠️ UNSOURCED?`).
+  - **`⚠️ DRIFT?` evidence format** — self-contained source quote + current claim + suggested fix so reconcile needs no round-trip to the raw source.
+  - **Dependency chains** — wiki A → wiki B → raw C verified as independent links, no transitivity shortcuts.
+  - **Batching etiquette** — announce scope, check in every 10–20 pages.
+  - **Layer 3 authority priority** — (1) URLs cited in raw sources, (2) per-wiki `trusted_authorities`, (3) explicit user permission. Explicit ban on free-range `WebSearch`.
+  - **Layer 3 failure modes** — unreachable URLs, rate limits, conflicting authorities — documented with required agent responses.
+  - **Reconcile Drifts workflow** — per-marker accept / edit / reject / defer flow including natural-language user responses and a final summary.
+- **`.tng-wiki.json` gains `trusted_authorities: []`** — per-wiki opt-in allow-list for Layer 3 external validation. Empty by default so agents can only reach URLs already cited in raw sources until you authorize more.
 - **Grounding pipeline — Phase 1.** Three-layer approach to keeping LLM-maintained wikis honest over time, with the CLI doing only the structural (zero-LLM) work and agents driving Layers 2–3 via AGENTS.md-documented workflows.
   - **Schema:** wiki page frontmatter `sources:` is now a YAML list of raw paths (replacing the legacy numeric count), and every factual claim gets an inline `[^raw/<path>]` footnote-style citation. The `sources:` list is the trust anchor every grounding workflow walks.
   - **Marker taxonomy:** four markers (`⚠️ STALE?`, `⚠️ UNSOURCED?`, `⚠️ UNVERIFIED?`, `⚠️ DRIFT?`), each with dedicated meaning / producer / resolution-action documentation in every generated `AGENTS.md`.

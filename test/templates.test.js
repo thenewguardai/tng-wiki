@@ -8,6 +8,7 @@ const DOMAINS = [
   'publication',
   'business-ops',
   'learning',
+  'software-engineering',
   'blank',
 ];
 

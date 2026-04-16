@@ -3,6 +3,7 @@ import { competitiveIntelTemplate } from './competitive-intel/template.js';
 import { publicationTemplate } from './publication/template.js';
 import { businessOpsTemplate } from './business-ops/template.js';
 import { learningTemplate } from './learning/template.js';
+import { softwareEngineeringTemplate } from './software-engineering/template.js';
 import { blankTemplate } from './blank/template.js';
 
 const templates = {
@@ -11,6 +12,7 @@ const templates = {
   'publication': publicationTemplate,
   'business-ops': businessOpsTemplate,
   'learning': learningTemplate,
+  'software-engineering': softwareEngineeringTemplate,
   'blank': blankTemplate,
 };
 

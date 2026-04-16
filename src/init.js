@@ -10,12 +10,13 @@ import { detectObsidian } from './integrations/obsidian.js';
 import { loadRegistry, saveRegistry, registerWiki } from './registry.js';
 
 const DOMAINS = [
-  { value: 'ai-research',       label: 'AI / Tech Research',       hint: 'tracking the landscape, models, protocols, infrastructure' },
-  { value: 'competitive-intel',  label: 'Competitive Intelligence', hint: 'companies, products, market moves, SWOT' },
-  { value: 'publication',        label: 'Publication / Newsletter', hint: 'research → content pipeline with issue prep' },
-  { value: 'business-ops',       label: 'Business Operations',      hint: 'meetings, decisions, strategy, team knowledge' },
-  { value: 'learning',           label: 'Learning / Deep Study',    hint: 'books, courses, papers, building expertise' },
-  { value: 'blank',              label: 'Blank',                    hint: 'just the structure, I\'ll customize' },
+  { value: 'ai-research',           label: 'AI / Tech Research',            hint: 'tracking the landscape, models, protocols, infrastructure' },
+  { value: 'competitive-intel',     label: 'Competitive Intelligence',      hint: 'companies, products, market moves, SWOT' },
+  { value: 'publication',           label: 'Publication / Newsletter',      hint: 'research → content pipeline with issue prep' },
+  { value: 'business-ops',          label: 'Business Operations',           hint: 'meetings, decisions, strategy, team knowledge' },
+  { value: 'learning',              label: 'Learning / Deep Study',         hint: 'books, courses, papers, building expertise' },
+  { value: 'software-engineering',  label: 'Software Engineering & Architecture', hint: 'ADRs, components, systems, patterns, incidents, runbooks, tech debt' },
+  { value: 'blank',                 label: 'Blank',                         hint: 'just the structure, I\'ll customize' },
 ];
 
 const AGENTS = [
@@ -80,6 +81,10 @@ export function scaffoldWiki(root, { domain, agent, wikiName }) {
       name: wikiName,
       domain,
       created: new Date().toISOString(),
+      // Domains whose trust chain is authorized for Layer 3 external validation.
+      // Empty by default — agents can only fetch URLs already cited in raw sources
+      // until you add entries here. Example: ["docs.python.org", "spec.commonmark.org"]
+      trusted_authorities: [],
     }, null, 2) + '\n',
     'utf8',
   );

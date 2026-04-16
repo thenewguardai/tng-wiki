@@ -72,6 +72,7 @@ Each template generates a tailored schema with domain-specific page types, direc
 | **Publication** | Everything in AI Research + issue tracking | Issue prep workflow, post-publish loop, editorial calendar |
 | **Business Ops** | Projects, decisions, people, processes, retrospectives | Decision tracking, retrospective templates |
 | **Learning** | Concepts, people, connections, open questions | Connection pages for non-obvious links |
+| **Software Engineering & Architecture** | ADRs (with status lifecycle + supersedes chain), components, systems, patterns, incidents (P0–P3 severity), runbooks, tech debt (impact × effort scored) | ADR template, incident template, component template, severity taxonomy, ownership register, tech-debt scoring grid |
 | **Blank** | Topics | Minimal — structure emerges from content |
 
 ## Agent Support
@@ -283,9 +284,30 @@ wiki/entities/openai.md  (1 marker)
 
 The agent walks each marker with the user — **accept / edit / reject / defer** — and removes it on resolution. Never auto-apply.
 
+The full Layer 2 workflow (triage order, per-claim outcomes, dependency chains between wiki pages, batching etiquette for large runs) is documented in every generated `AGENTS.md` under `## Operations → ### Grounding → Layer 2`. Agents follow that guidance directly.
+
 ### Layer 3 — external validation (opt-in)
 
-When you explicitly ask an agent to check claims against live external authority, it uses `WebFetch`/`WebSearch` restricted to URLs cited within the page's raw sources (default) or a per-wiki allow-list you configure. Produces the same `⚠️ DRIFT?` markers for Layer 2–style reconcile. Never free-range web search — that's how confident-wrong creeps in.
+When you ask an agent to check claims against live external authority, it uses `WebFetch` / `WebSearch` under strict authority rules — never free-range search, which is where confident-wrong creeps in.
+
+**Authority priority**, highest first:
+
+1. URLs cited within the raw source itself (the primary trust chain).
+2. Domains listed in the wiki's `.tng-wiki.json` under `trusted_authorities`:
+
+   ```json
+   {
+     "version": 1,
+     "name": "AI Research Wiki",
+     "domain": "ai-research",
+     "trusted_authorities": ["docs.anthropic.com", "openai.com", "arxiv.org"]
+   }
+   ```
+3. Explicit sources the user names in the ground-check request.
+
+Empty `trusted_authorities` (the default on `init`) means Layer 3 can only reach URLs cited in raw sources. Opt in per-wiki when you want your agent to consult specific authorities automatically.
+
+Outcomes map to three actions — confirm (no marker), external-wiki agree / external-raw disagree (`⚠️ STALE?` on raw, flag for re-ingest), external-wiki disagree (`⚠️ DRIFT?` with both raw and external quotes for reconcile). Full workflow lives in `AGENTS.md → ### Grounding → Layer 3`.
 
 ### Marker lint verbs
 

@@ -43,6 +43,34 @@ test('generateAgentsMd includes Grounding and Reconcile Drifts operations', () =
   assert.match(out, /Layer 3 — External validation/);
 });
 
+test('generateAgentsMd Layer 2 documents triage order, per-claim outcomes, and dependency chains', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /Triage order when scope is a whole wiki/);
+  assert.match(out, /Supported/);
+  assert.match(out, /Partially supported/);
+  assert.match(out, /Drifted/);
+  assert.match(out, /Unsourceable/);
+  assert.match(out, /Dependency chains/);
+});
+
+test('generateAgentsMd Layer 3 documents the authority priority and forbids free-range search', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /URLs cited in the raw source itself/);
+  assert.match(out, /trusted_authorities/);
+  assert.match(out, /Never.*[Ff]ree-range/s);
+  assert.match(out, /Rate-limited/);
+});
+
+test('generateAgentsMd software-engineering domain has ADR + component + incident page types', () => {
+  const out = generateAgentsMd({ ...ctx, domain: 'software-engineering' });
+  assert.match(out, /Domain: Software Engineering & Architecture/);
+  assert.match(out, /Decision pages.*wiki\/decisions/s);
+  assert.match(out, /Component pages.*wiki\/components/s);
+  assert.match(out, /Incident pages.*wiki\/incidents/s);
+  assert.match(out, /ADR Status Lifecycle/);
+  assert.match(out, /supersedes/);
+});
+
 test('CANONICAL_SCHEMA_FILE is AGENTS.md', () => {
   assert.equal(CANONICAL_SCHEMA_FILE, 'AGENTS.md');
 });

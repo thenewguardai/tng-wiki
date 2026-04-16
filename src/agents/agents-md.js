@@ -6,6 +6,7 @@ const DOMAIN_SECTIONS = {
   'publication': publicationSchema,
   'business-ops': businessOpsSchema,
   'learning': learningSchema,
+  'software-engineering': softwareEngineeringSchema,
   'blank': blankSchema,
 };
 
@@ -199,30 +200,103 @@ Output a lint report. Suggest specific actions.
 
 ### Grounding
 
-Ground-truth the wiki against its source material. Three layers, escalating in cost and thoroughness:
+Ground-truth the wiki against its source material. Three layers, escalating in cost and thoroughness. Run them in order — Layer 1 before Layer 2, Layer 2 before Layer 3 — so cheap structural checks catch the easy problems before you pay for semantic re-reading.
 
-**Layer 1 — Structural (cheap, always safe):** Run \`tng-wiki ground [--page <path>]\`. This is a pure-CLI check — no re-reading content — that catches:
-- Pages with empty or missing \`sources:\` frontmatter (→ \`⚠️ UNSOURCED?\`)
-- Inline \`[^raw/...]\` citations pointing at raw files that don't exist
-- Inline citations not registered in frontmatter \`sources:\` (and vice-versa — dead cites)
-- Pages whose \`updated\` is older than the mtime of a cited raw source (source changed after distillation)
-- Confidence tag inflation: \`[confirmed]\` claims with only Tier 3/4 citations (→ \`⚠️ UNVERIFIED?\`)
+#### Layer 1 — Structural (cheap, always safe)
 
-Apply the appropriate markers inline. Log the ground pass.
+Run \`tng-wiki ground [--page <path>]\`. Pure-CLI, zero-LLM. It catches:
 
-**Layer 2 — Semantic re-verification (agent-driven, per-page or per-wiki):** For each wiki page in scope, re-read every raw source listed in frontmatter \`sources:\`. For each claim in the page, check whether the cited source still supports it. If the claim has drifted from the source, write a \`⚠️ DRIFT?\` marker that includes:
+- Pages with empty or missing \`sources:\` frontmatter (→ apply \`⚠️ UNSOURCED?\`)
+- Inline \`[^raw/...]\` citations pointing at raw files that don't exist (→ fix the path, or remove the claim)
+- Inline citations not registered in frontmatter \`sources:\` (undeclared cites)
+- Frontmatter \`sources:\` entries not cited inline (orphan declarations — the page added a source it never used)
+- Pages whose \`updated\` is older than the mtime of a cited raw source (source changed after distillation — candidate for Layer 2)
+- Confidence tag inflation: \`[confirmed]\` claims with only Tier 3/4 citations (→ apply \`⚠️ UNVERIFIED?\`)
+
+Apply the appropriate markers inline. Log the pass with issue counts.
+
+#### Layer 2 — Semantic re-verification (agent-driven)
+
+You re-read each raw source and compare it against the wiki claims it's supposed to support. Where they diverge, you write a \`⚠️ DRIFT?\` marker that carries its own evidence so a human can reconcile without re-reading the source.
+
+**Triage order when scope is a whole wiki:**
+
+1. Pages flagged \`source_updated_after_page\` by Layer 1 (strongest signal of drift).
+2. Pages with recent \`updated\` dates that changed without a new ingest log entry (possible manual edit without citation update).
+3. Oldest pages with the most citations (long-tail decay).
+4. Pages tagged \`[confirmed]\` extensively (highest stakes if drift exists).
+
+Prefer per-page (\`--page <path>\`) runs when the user asks to verify something specific. Reserve whole-wiki passes for explicit ground-check requests or scheduled maintenance.
+
+**Per-claim verification procedure:**
+
+1. Read every raw source in frontmatter \`sources:\`.
+2. For each claim in the wiki page, identify which cited source supports it (inline \`[^raw/...]\` is the mapping).
+3. Does the source still say what the wiki says? Apply one of four outcomes:
+   - **Supported** — no action.
+   - **Partially supported** — the source supports a weaker claim than the wiki states. Either downgrade the wiki's confidence tag (\`[confirmed]\` → \`[reported]\`, etc.) or narrow the claim. Log.
+   - **Drifted** — source and wiki disagree. Write \`⚠️ DRIFT?\` with source quote, current claim, and suggested fix (see below). Never auto-apply.
+   - **Unsourceable** — the cited source does not support this claim at all. Write \`⚠️ UNSOURCED?\` inline and flag for human review — something was distilled incorrectly.
+
+**\`⚠️ DRIFT?\` marker format (self-contained evidence):**
+
 \`\`\`
-⚠️ DRIFT? [source: raw/<path> says "<quote or summary of what the source actually says>";
+⚠️ DRIFT? [source: raw/<path> says "<1–3 sentence quote, or a paraphrase if quoting is impractical>";
            wiki says "<current wiki claim>";
-           suggested: "<your proposed fix>"]
+           suggested: "<your proposed fix — the exact replacement text>"]
 \`\`\`
-Do **not** auto-apply the fix. The human reconciles interactively (see Marker Taxonomy → \`⚠️ DRIFT?\`).
 
-**Layer 3 — External validation (opt-in, expensive, scoped):** When the human asks you to verify a specific claim, page, or entity against live external authority, use \`WebFetch\` / \`WebSearch\` and cross-check. Default authorities: URLs cited within the page's raw sources. Optional additional authorities: a per-wiki allow-list the human configures. **Never** use free-range web search — unconstrained search is where confident-wrong comes from. Mark divergences with \`⚠️ DRIFT?\` using the same format; the human reconciles.
+Keep quotes tight. Paraphrase long-form material. The marker should be readable in isolation — a human reviewing six months from now shouldn't need to re-open the source to understand the evidence.
+
+**Dependency chains:** If wiki page A cites wiki page B which cites raw source C, treat as two separate links. Verify A→B (B supports A) and B→C (C supports B) as independent checks. Never shortcut A→C by assuming transitivity — intermediate distillations are where most drift hides.
+
+**Batching:** A whole-wiki semantic pass on a 100-page wiki is expensive. Announce the scope before starting. Check in with the user every 10–20 pages with a running total ("12 pages verified, 3 drift markers applied so far — continue?").
+
+#### Layer 3 — External validation (opt-in, expensive, scoped)
+
+When the user asks you to verify against live external authority, use \`WebFetch\` / \`WebSearch\` under strict rules:
+
+**Authorized sources, in priority order:**
+
+1. **URLs cited in the raw source itself** — the primary trust chain. If the raw source links to the vendor docs, fetch those docs.
+2. **Per-wiki trusted authorities** — if the wiki's \`.tng-wiki.json\` lists a \`trusted_authorities\` array (e.g. \`["docs.python.org", "spec.commonmark.org"]\`), those domains are always authorized.
+3. **Explicit user permission** — the user names a specific source in the ground-check request.
+
+**Never:**
+- Free-range \`WebSearch\` without specific authority targets. Unconstrained search latches onto the wrong voice and produces confident-wrong results.
+- Trust a single external source to override a raw source without human review. External disagrees with raw = \`⚠️ DRIFT?\` for reconcile, not auto-rewrite.
+- Refetch the same URL multiple times per ground run — cache per-URL within a single run.
+
+**Procedure:**
+
+1. For each claim in scope, identify the authority URL(s) it should be checked against.
+2. Fetch each URL once. Summarize what it says about the claim.
+3. Three possible outcomes per claim:
+   - **External confirms wiki + raw:** note the concurrence in the log; no marker.
+   - **External confirms wiki but contradicts raw:** the raw source is out of date. Apply \`⚠️ STALE?\` to the raw-file-level reference in the wiki's frontmatter comment, and flag for human review — may want to re-ingest from the current authority.
+   - **External contradicts wiki:** apply \`⚠️ DRIFT?\` with both the raw-source quote and the external-source quote in the evidence. Reconcile interactively.
+
+**Failure modes to handle gracefully:**
+
+- **Unreachable / 404:** the authority URL moved. Mark the source with \`⚠️ STALE?\` and log — do not delete the citation.
+- **Rate-limited:** back off and surface to the user rather than retrying blindly.
+- **Two external authorities disagree:** record both, do not pick one silently, escalate to human.
 
 ### Reconcile Drifts
 
-When the human asks you to reconcile, walk \`tng-wiki drift\` (and \`tng-wiki unsourced\`) output. For each marker, present the source evidence, current claim, and suggested fix, then ask the human: **accept / edit / reject / defer**. Apply the chosen action, remove the marker on accept/edit/reject, log each decision.`;
+When the user asks you to reconcile, walk \`tng-wiki drift\` (and \`unsourced\` / \`unverified\`) output. For each marker:
+
+1. \`tng-wiki read <page>\` to fetch the current page.
+2. Extract the marker's evidence (source quote, current claim, suggested fix).
+3. Present all three to the user in a compact form.
+4. Ask: **accept / edit / reject / defer**. Support natural-language variations ("yes", "fix it", "no, the wiki is right", "skip this one").
+5. Apply the chosen action:
+   - **accept:** replace the claim with the suggested fix, remove the marker, bump \`updated\`, log.
+   - **edit:** take the user's edited claim, replace, remove the marker, bump \`updated\`, log.
+   - **reject:** remove the marker without changing the claim. Capture the user's reasoning in the log (the wiki was right; the external source was wrong; etc.). Optionally add a counter-citation.
+   - **defer:** leave the marker in place. Log the defer with the user's reason.
+
+After walking all markers, produce a summary: N accepted / N edited / N rejected / N deferred. If more than a handful were deferred, ask whether to schedule a follow-up.`;
 
   if (isPublication) {
     ops += `
@@ -368,6 +442,44 @@ function businessOpsSchema() {
 **Process pages** (\`wiki/processes/\`) — How things work. Include: description, owner, dependencies, known issues.
 
 **Retrospective pages** (\`wiki/retrospectives/\`) — What we learned. Include: date, context, what went well, what didn't, action items.`;
+}
+
+function softwareEngineeringSchema() {
+  return `## Domain: Software Engineering & Architecture
+
+### Page Types
+
+**Decision pages** (\`wiki/decisions/\`) — Architecture Decision Records (ADRs). Each page uses the ADR template (\`wiki/decisions/_adr-template.md\`). Include: **status** (\`proposed\` → \`accepted\` → \`deprecated\` or \`superseded\`), **context** (forces and constraints), **decision** (what was chosen, with citations), **consequences** (positive / negative / neutral), **alternatives considered**, **links**. Track relationships via \`supersedes:\` and \`superseded-by:\` frontmatter fields so the lineage is queryable.
+
+**Component pages** (\`wiki/components/\`) — Services, libraries, modules. Include: **purpose**, **API surface**, **upstream/downstream dependencies**, **data stores**, **SLOs** (availability / latency / throughput), **linked runbooks**, **known tech debt**, **recent decisions** that shaped the component. Ownership lives in \`wiki/meta/ownership.md\`, not per-page.
+
+**System pages** (\`wiki/systems/\`) — Higher-level groupings of components. Include: boundary definitions, data flow, cross-component interactions, failure modes.
+
+**Pattern pages** (\`wiki/patterns/\`) — Reusable approaches. Include: description, **when to use** / **when not to use**, **tradeoffs**, example implementations, known instances in the codebase.
+
+**Incident pages** (\`wiki/incidents/\`) — Postmortems following the incident template (\`wiki/incidents/_incident-template.md\`). Include: **severity** (P0–P3, see \`wiki/meta/severity-taxonomy.md\`), **timeline**, **root cause**, **contributing factors**, **resolution**, **action items** table with owners and status, links to any tech-debt items the incident exposed.
+
+**Runbook pages** (\`wiki/runbooks/\`) — Operational procedures for humans or agents. Include: **trigger** (when to run this), **prerequisites**, **steps** (numbered, copy-pastable), **verification**, **rollback**. Link from the owning component.
+
+**Tech debt pages** (\`wiki/tech-debt/\`) — Known compromises scored on the impact × effort grid (\`wiki/tech-debt/_scoring-criteria.md\`). Include: **impact** (Critical/High/Medium/Low), **effort** (S/M/L/XL), **what's blocked**, links to decisions that created or would resolve it.
+
+### ADR Status Lifecycle
+
+ADR statuses are intentional, not decorative:
+
+- \`proposed\` — under review. No downstream code/docs should depend on the outcome yet.
+- \`accepted\` — in effect. Record the acceptance date in the Status section.
+- \`deprecated\` — no longer the preferred approach, but not yet replaced. New work should avoid it.
+- \`superseded\` — replaced by a later ADR. Both ADRs get \`supersedes:\` / \`superseded-by:\` entries, and \`tng-wiki ground\` can verify the back-link is bidirectional.
+
+Never delete an ADR. Deprecation and supersession preserve the historical context that made the original decision reasonable at the time.
+
+### Operational Conventions
+
+- **One decision per ADR.** If a review generates multiple decisions, file multiple ADRs that cross-link.
+- **Cite the evidence.** Every ADR claim gets a \`[^raw/rfcs/...]\` or \`[^raw/prs/...]\` citation so grounding catches drift when the evidence moves.
+- **Incidents always produce tech-debt entries** for latent issues exposed, even when the immediate fix is landed — future-you needs the trail.
+- **Runbooks age fast.** Add \`⚠️ STALE?\` proactively if a runbook hasn't been exercised in two quarters.`;
 }
 
 function learningSchema() {
