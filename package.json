@@ -26,7 +26,12 @@
     "tng-wiki-mcp": "./bin/tng-wiki-mcp.js"
   },
   "scripts": {
-    "test": "node --test 'test/**/*.test.js'"
+    "test": "node --test 'test/**/*.test.js'",
+    "smoke": "node --check bin/cli.js && node --check bin/tng-wiki-mcp.js && node bin/cli.js --version",
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "npm test && npm run smoke",
+    "preversion": "npm test",
+    "postversion": "git push && git push --tags"
   },
   "type": "module",
   "engines": {
