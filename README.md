@@ -5,7 +5,7 @@
 Built by [The New Guard](https://thenewguard.ai). Inspired by [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
 ```
-npx tng-wiki init
+npx @thenewguard/tng-wiki init
 ```
 
 ## What You Get Out of the Box
@@ -36,7 +36,7 @@ This is that thing.
 ## Quick Start
 
 ```bash
-npx tng-wiki init
+npx @thenewguard/tng-wiki init
 ```
 
 The interactive flow asks four questions:
@@ -363,7 +363,7 @@ a specific registered wiki (list them with `tng-wiki list`).
 
 ### Shell-less / chat-app agents (Claude Desktop, ChatGPT Desktop, web UIs)
 
-These can only call MCP servers — no Bash. `tng-wiki-mcp` ships alongside `tng-wiki` (same `npm i -g tng-wiki` installs both) and exposes seven MCP tools: `list_wikis`, `query`, `read`, `search`, `sources`, `stale`, `orphans`. Each tool routes through the registry so every wiki you've registered is reachable by slug.
+These can only call MCP servers — no Bash. `tng-wiki-mcp` ships alongside `tng-wiki` (same `npm i -g @thenewguard/tng-wiki` installs both) and exposes seven MCP tools: `list_wikis`, `query`, `read`, `search`, `sources`, `stale`, `orphans`. Each tool routes through the registry so every wiki you've registered is reachable by slug.
 
 **Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 

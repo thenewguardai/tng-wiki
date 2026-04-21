@@ -147,7 +147,7 @@ ${pc.dim('Most verbs accept --wiki <slug> to target a specific registered wiki')
 ${pc.dim('and --json to emit structured output (for MCP wrappers and scripts).')}
 
 ${pc.bold('Quick start:')}
-  ${pc.dim('$')} npx tng-wiki init
+  ${pc.dim('$')} npx @thenewguard/tng-wiki init
   ${pc.dim('$')} cd my-wiki
   ${pc.dim('$')} claude "Read CLAUDE.md, then ingest the sources in raw/"
 
