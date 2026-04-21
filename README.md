@@ -8,6 +8,19 @@ Built by [The New Guard](https://thenewguard.ai). Inspired by [Karpathy's LLM Wi
 npx tng-wiki init
 ```
 
+## What You Get Out of the Box
+
+- **7 domain templates** — AI Research, Competitive Intel, Publication, Business Ops, Learning, Software Engineering & Architecture, or Blank. Each ships a tailored schema, directory layout, and page types.
+- **Agent-agnostic schema** — one canonical `AGENTS.md` with per-agent aliases (`CLAUDE.md`, `.cursorrules`) for Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and anything else that reads the [agents.md](https://agents.md/) convention.
+- **Multi-wiki registry** — one user, many wikis. Reach any registered wiki from any directory by slug.
+- **Wiki access verbs** — `query`, `read`, `search` (with `--include-raw` deep search), `sources` — plain-text by default, `--json` for scripts and MCP.
+- **Three-layer grounding pipeline** — structural lint (`ground`), agent-driven semantic re-verification (`⚠️ DRIFT?`), and opt-in external validation under strict authority rules. Marker lint verbs: `drift`, `stale`, `unsourced`, `unverified`, `orphans`.
+- **Claude Code skill** — `tng-wiki install-skill` teaches every Claude Code session the verbs and when to use them. Zero token cost until invoked.
+- **MCP server** — `tng-wiki-mcp` ships alongside the CLI for shell-less agents (Claude Desktop, ChatGPT Desktop, web UIs).
+- **QMD hybrid search** — optional BM25 + vector + LLM re-rank integration for wikis past ~100 pages.
+- **Git + Obsidian ready** — `git init` with initial commit on scaffold; suggests a default path from common Obsidian vault locations.
+- **Zero LLM calls in the CLI** — it scaffolds files and configures tools. Your agent is the intelligence.
+
 ## What This Does
 
 You pick a domain. You pick an agent. You get a structured wiki scaffold — directory layout, agent operating instructions, index, log, scoring frameworks, and a seed source ready for your first compile. Open it in Obsidian, point your agent at it, and go.
