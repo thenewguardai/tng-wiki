@@ -14,7 +14,7 @@ npx @thenewguard/tng-wiki init
 - **Agent-agnostic schema** — one canonical `AGENTS.md` with per-agent aliases (`CLAUDE.md`, `.cursorrules`) for Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and anything else that reads the [agents.md](https://agents.md/) convention.
 - **Multi-wiki registry** — one user, many wikis. Reach any registered wiki from any directory by slug.
 - **Wiki access verbs** — `query`, `read`, `search` (with `--include-raw` deep search), `sources` — plain-text by default, `--json` for scripts and MCP.
-- **Three-layer grounding pipeline** — structural lint (`ground`), agent-driven semantic re-verification (`⚠️ DRIFT?`), and opt-in external validation under strict authority rules. Marker lint verbs: `drift`, `stale`, `unsourced`, `unverified`, `orphans`.
+- **Three-layer grounding pipeline** — structural lint (`ground`), agent-driven semantic re-verification (`⚠️ DRIFT?`), and opt-in authority validation against web sources *or* local code authorities (for reverse-engineering / porting workflows where the codebase is truth and the AI-generated PRDs are hypotheses). Marker lint verbs: `drift`, `stale`, `unsourced`, `unverified`, `orphans`.
 - **Claude Code skill** — `tng-wiki install-skill` teaches every Claude Code session the verbs and when to use them. Zero token cost until invoked.
 - **MCP server** — `tng-wiki-mcp` ships alongside the CLI for shell-less agents (Claude Desktop, ChatGPT Desktop, web UIs).
 - **QMD hybrid search** — optional BM25 + vector + LLM re-rank integration for wikis past ~100 pages.
@@ -299,9 +299,13 @@ The agent walks each marker with the user — **accept / edit / reject / defer**
 
 The full Layer 2 workflow (triage order, per-claim outcomes, dependency chains between wiki pages, batching etiquette for large runs) is documented in every generated `AGENTS.md` under `## Operations → ### Grounding → Layer 2`. Agents follow that guidance directly.
 
-### Layer 3 — external validation (opt-in)
+### Layer 3 — authority validation (opt-in)
 
-When you ask an agent to check claims against live external authority, it uses `WebFetch` / `WebSearch` under strict authority rules — never free-range search, which is where confident-wrong creeps in.
+Two kinds of authority, same semantics. Disagreement surfaces as `⚠️ DRIFT?` with evidence; human reconciles. Never auto-applied.
+
+#### 3A — Web authorities
+
+Agent uses `WebFetch` / `WebSearch` under strict authority rules — never free-range search, which is where confident-wrong creeps in.
 
 **Authority priority**, highest first:
 
@@ -318,9 +322,56 @@ When you ask an agent to check claims against live external authority, it uses `
    ```
 3. Explicit sources the user names in the ground-check request.
 
-Empty `trusted_authorities` (the default on `init`) means Layer 3 can only reach URLs cited in raw sources. Opt in per-wiki when you want your agent to consult specific authorities automatically.
+Empty `trusted_authorities` (the default on `init`) means Layer 3A can only reach URLs cited in raw sources. Opt in per-wiki when you want your agent to consult specific authorities automatically.
 
-Outcomes map to three actions — confirm (no marker), external-wiki agree / external-raw disagree (`⚠️ STALE?` on raw, flag for re-ingest), external-wiki disagree (`⚠️ DRIFT?` with both raw and external quotes for reconcile). Full workflow lives in `AGENTS.md → ### Grounding → Layer 3`.
+#### 3B — Code authorities (local filesystem)
+
+Built for reverse-engineering, porting, and M&A / IP-acquisition workflows where `raw/` holds AI-generated PRDs and overview docs (fallible — they hallucinate APIs, invert precedence, miss edge cases) and the actual implementation is the ground truth. Cheaper and often higher-trust than web authorities — local filesystem, no network, no SEO drift.
+
+Configure in `.tng-wiki.json`:
+
+```json
+{
+  "code_authorities": [
+    {
+      "name": "legacy-app",
+      "path": "../customer-portal-v1",
+      "description": "Source implementation being ported.",
+      "exclude": ["**/*.md", "docs/**", "**/*.test.*", "**/node_modules/**", "**/dist/**"],
+      "language": "typescript"
+    }
+  ]
+}
+```
+
+Inline citation form, GitHub-style `#L` anchor (clickable in VS Code, jumps to the line):
+
+```markdown
+The login flow uses OAuth2 implicit grant — no PKCE parameters sent.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
+```
+
+Frontmatter `sources:` declares the authority alongside raw paths:
+
+```yaml
+sources:
+  - raw/prd-auth.md
+  - code:legacy-app
+```
+
+Scope during grounding is implementation-only — the agent disregards comments, docstrings, JSDoc, and any markdown/text files inside the authority tree, even ones the `exclude` globs didn't catch. Comments rot; the AI docs in `raw/` already did; the implementation is what the code *does*.
+
+Extended `⚠️ DRIFT?` marker format when a code authority is involved:
+
+```
+⚠️ DRIFT? [source: raw/prd-auth.md says "OAuth2 with PKCE";
+           code: legacy-app/src/auth/oauth.ts#L42-L58 shows "implicit flow, no code_challenge parameter sent";
+           wiki says "OAuth2 with PKCE";
+           suggested: "OAuth2 implicit flow — legacy-app does not implement PKCE"]
+```
+
+Code authorities are **advisory**, not absolute — disagreement always surfaces as `⚠️ DRIFT?` for human reconcile, never auto-applied. Structural checks (`tng-wiki ground`) catch two code-authority failure classes: `unknown_code_authority` (cited authority not registered) and `missing_code_file` (cited file path doesn't exist).
+
+Full workflow lives in `AGENTS.md → ### Grounding → Layer 3`. The Software Engineering & Architecture template ships a scaffolded example ADR (`wiki/decisions/_adr-code-authority-example.md`) showing the full pattern end-to-end.
 
 ### Marker lint verbs
 

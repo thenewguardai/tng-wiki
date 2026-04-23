@@ -25,6 +25,9 @@
     "tng-wiki": "./bin/cli.js",
     "tng-wiki-mcp": "./bin/tng-wiki-mcp.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "node --test 'test/**/*.test.js'",
     "smoke": "node --check bin/cli.js && node --check bin/tng-wiki-mcp.js && node bin/cli.js --version",

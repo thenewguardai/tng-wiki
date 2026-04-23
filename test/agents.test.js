@@ -40,7 +40,7 @@ test('generateAgentsMd includes Grounding and Reconcile Drifts operations', () =
   assert.match(out, /### Reconcile Drifts/);
   assert.match(out, /Layer 1 — Structural/);
   assert.match(out, /Layer 2 — Semantic re-verification/);
-  assert.match(out, /Layer 3 — External validation/);
+  assert.match(out, /Layer 3 — Authority validation/);
 });
 
 test('generateAgentsMd Layer 2 documents triage order, per-claim outcomes, and dependency chains', () => {
@@ -53,12 +53,38 @@ test('generateAgentsMd Layer 2 documents triage order, per-claim outcomes, and d
   assert.match(out, /Dependency chains/);
 });
 
-test('generateAgentsMd Layer 3 documents the authority priority and forbids free-range search', () => {
+test('generateAgentsMd Layer 3A documents the web authority priority and forbids free-range search', () => {
   const out = generateAgentsMd(ctx);
+  assert.match(out, /3A\. Web authorities/);
   assert.match(out, /URLs cited in the raw source itself/);
   assert.match(out, /trusted_authorities/);
   assert.match(out, /Never.*[Ff]ree-range/s);
   assert.match(out, /Rate-limited/);
+});
+
+test('generateAgentsMd Layer 3B documents code authorities for reverse-engineering workflows', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /3B\. Code authorities/);
+  assert.match(out, /code_authorities/);
+  assert.match(out, /\[\^code:legacy-app\/src\/auth\/oauth\.ts#L42-L58\]/);
+  assert.match(out, /disregard its comments, docstrings, JSDoc/);
+  // advisory precedence — never auto-apply
+  assert.match(out, /advisory/i);
+  assert.match(out, /Never auto-apply/);
+});
+
+test('generateAgentsMd teaches both raw and code inline citation forms', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /\[\^raw\/announcements\/2026-anthropic-series-f\.md\]/);
+  assert.match(out, /\[\^code:legacy-app\/src\/auth\/oauth\.ts#L42-L58\]/);
+  // frontmatter example includes a code: entry
+  assert.match(out, /- code:legacy-app/);
+});
+
+test('generateAgentsMd Layer 1 lists unknown_code_authority and missing_code_file checks', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /unknown_code_authority/);
+  assert.match(out, /missing_code_file/);
 });
 
 test('generateAgentsMd software-engineering domain has ADR + component + incident page types', () => {

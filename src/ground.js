@@ -1,5 +1,16 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
-import { join, relative } from 'path';
+import { join, relative, resolve } from 'path';
+
+function loadCodeAuthorities(wikiPath) {
+  const metaPath = join(wikiPath, '.tng-wiki.json');
+  if (!existsSync(metaPath)) return [];
+  try {
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+    return Array.isArray(meta.code_authorities) ? meta.code_authorities : [];
+  } catch {
+    return [];
+  }
+}
 
 function walkMd(dir) {
   if (!existsSync(dir)) return [];
@@ -61,8 +72,23 @@ export function extractCitations(body, bodyStartLine = 1) {
   const hits = [];
   const lines = body.split('\n');
   for (let i = 0; i < lines.length; i++) {
+    const line = i + bodyStartLine;
     for (const m of lines[i].matchAll(/\[\^(raw\/[^\]]+)\]/g)) {
-      hits.push({ path: m[1], line: bodyStartLine + i });
+      hits.push({ kind: 'raw', path: m[1], line });
+    }
+    // Code citations: [^code:<authority>/<file-path>[#L<start>[-L<end>]]]
+    // The GitHub-style #L anchor is optional; when absent, the cite points at a whole file.
+    for (const m of lines[i].matchAll(/\[\^code:([^\/\]]+)(?:\/([^\]#]+))?(?:#L(\d+)(?:-L(\d+))?)?\]/g)) {
+      const [, authority, file, lStart, lEnd] = m;
+      const hit = {
+        kind: 'code',
+        path: `code:${authority}`,   // matches the frontmatter `sources:` key
+        authority,
+        file: file || null,
+        line,
+      };
+      if (lStart) hit.range = { start: Number(lStart), end: lEnd ? Number(lEnd) : Number(lStart) };
+      hits.push(hit);
     }
   }
   return hits;
@@ -95,6 +121,9 @@ export function checkGrounding(wikiPath, { page } = {}) {
     ? [join(wikiPath, page.startsWith('wiki/') ? page : `wiki/${page}`)]
     : allFiles.filter((f) => isGroundable(relative(wikiPath, f)));
 
+  const codeAuthorities = loadCodeAuthorities(wikiPath);
+  const authorityByName = new Map(codeAuthorities.map((a) => [a.name, a]));
+
   const issues = [];
 
   for (const file of targets) {
@@ -114,11 +143,17 @@ export function checkGrounding(wikiPath, { page } = {}) {
       issues.push({ page: rel, issue: 'empty_sources' });
     }
 
+    const citedRaw = cited.filter((c) => c.kind === 'raw');
+    const citedCode = cited.filter((c) => c.kind === 'code');
+
+    const declaredRaw = (declared || []).filter((d) => !d.startsWith('code:'));
+    const declaredCode = (declared || []).filter((d) => d.startsWith('code:'));
+
     // missing raw files (union of declared + cited)
-    const allPaths = new Set([...(declared || []), ...cited.map((c) => c.path)]);
-    for (const refPath of allPaths) {
+    const allRawPaths = new Set([...declaredRaw, ...citedRaw.map((c) => c.path)]);
+    for (const refPath of allRawPaths) {
       if (!existsSync(join(wikiPath, refPath))) {
-        const citedHere = cited.filter((c) => c.path === refPath);
+        const citedHere = citedRaw.filter((c) => c.path === refPath);
         if (citedHere.length > 0) {
           for (const c of citedHere) {
             issues.push({ page: rel, issue: 'missing_raw', raw: refPath, line: c.line });
@@ -130,6 +165,7 @@ export function checkGrounding(wikiPath, { page } = {}) {
     }
 
     // undeclared inline citations (cited inline, not in frontmatter `sources:`)
+    // Applies uniformly to raw and code cites — both must be declared in frontmatter.
     if (declared !== null) {
       const declaredSet = new Set(declared);
       const seen = new Set();
@@ -151,10 +187,35 @@ export function checkGrounding(wikiPath, { page } = {}) {
       }
     }
 
+    // unknown code authority (frontmatter declares `code:<name>` not in .tng-wiki.json)
+    for (const d of declaredCode) {
+      const name = d.slice('code:'.length);
+      if (!authorityByName.has(name)) {
+        issues.push({ page: rel, issue: 'unknown_code_authority', authority: name });
+      }
+    }
+
+    // missing code file (inline `[^code:<name>/<path>...]` resolves to nothing on disk)
+    for (const c of citedCode) {
+      if (!c.file) continue;  // whole-authority reference — no file to check
+      const authority = authorityByName.get(c.authority);
+      if (!authority) continue;  // unknown authority already flagged above
+      const abs = resolve(wikiPath, authority.path, c.file);
+      if (!existsSync(abs)) {
+        issues.push({
+          page: rel,
+          issue: 'missing_code_file',
+          authority: c.authority,
+          file: c.file,
+          line: c.line,
+        });
+      }
+    }
+
     // page updated before raw source mtime
     const updated = extractUpdated(frontmatter);
     if (declared && updated) {
-      for (const d of declared) {
+      for (const d of declaredRaw) {
         const abs = join(wikiPath, d);
         if (existsSync(abs)) {
           const mtime = statSync(abs).mtime;

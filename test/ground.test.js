@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { scaffoldWiki } from '../src/init.js';
@@ -62,16 +62,42 @@ test('extractCitations finds [^raw/...] citations with file-relative line number
   const body = 'Line one.\nClaim with ref.[^raw/a.md]\nTwo refs[^raw/b.md][^raw/c.md]';
   // bodyStartLine defaults to 1 — body-only input
   assert.deepEqual(extractCitations(body), [
-    { path: 'raw/a.md', line: 2 },
-    { path: 'raw/b.md', line: 3 },
-    { path: 'raw/c.md', line: 3 },
+    { kind: 'raw', path: 'raw/a.md', line: 2 },
+    { kind: 'raw', path: 'raw/b.md', line: 3 },
+    { kind: 'raw', path: 'raw/c.md', line: 3 },
   ]);
   // bodyStartLine offsets to produce file-relative numbers
   assert.deepEqual(extractCitations(body, 5), [
-    { path: 'raw/a.md', line: 6 },
-    { path: 'raw/b.md', line: 7 },
-    { path: 'raw/c.md', line: 7 },
+    { kind: 'raw', path: 'raw/a.md', line: 6 },
+    { kind: 'raw', path: 'raw/b.md', line: 7 },
+    { kind: 'raw', path: 'raw/c.md', line: 7 },
   ]);
+});
+
+test('extractCitations recognizes [^code:<name>/<path>#L<start>-L<end>] with GitHub-style anchors', () => {
+  const body = 'Claim.[^code:legacy-app/src/auth/oauth.ts#L42-L58]';
+  assert.deepEqual(extractCitations(body), [{
+    kind: 'code',
+    path: 'code:legacy-app',
+    authority: 'legacy-app',
+    file: 'src/auth/oauth.ts',
+    range: { start: 42, end: 58 },
+    line: 1,
+  }]);
+});
+
+test('extractCitations recognizes single-line and whole-file code citations', () => {
+  const singleLine = extractCitations('Claim.[^code:app/src/a.ts#L42]');
+  assert.equal(singleLine[0].range.start, 42);
+  assert.equal(singleLine[0].range.end, 42);
+
+  const wholeFile = extractCitations('Claim.[^code:app/src/a.ts]');
+  assert.equal(wholeFile[0].file, 'src/a.ts');
+  assert.ok(!wholeFile[0].range);
+
+  const authorityOnly = extractCitations('Claim.[^code:app]');
+  assert.equal(authorityOnly[0].authority, 'app');
+  assert.equal(authorityOnly[0].file, null);
 });
 
 // --- checkGrounding ---
@@ -201,6 +227,76 @@ test('checkGrounding returns zero issues on a clean page', () => {
     assert.deepEqual(issues, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- code authorities ---
+
+function setCodeAuthorities(wikiRoot, authorities) {
+  const metaPath = join(wikiRoot, '.tng-wiki.json');
+  const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+  meta.code_authorities = authorities;
+  writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+}
+
+test('checkGrounding flags unknown_code_authority when frontmatter names an authority not in .tng-wiki.json', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/entities/c.md', '---\nsources:\n  - code:ghost\n---\nClaim.[^code:ghost/src/a.ts]');
+    const { issues } = checkGrounding(dir);
+    const hit = issues.find((i) => i.issue === 'unknown_code_authority' && i.authority === 'ghost');
+    assert.ok(hit);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkGrounding flags missing_code_file when a code citation resolves to nothing on disk', () => {
+  const dir = makeWiki();
+  try {
+    // stand up a fake code authority tree alongside the wiki
+    writeFile(dir, '../legacy-app/src/real.ts', 'export const ok = 1;');
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '../legacy-app' }]);
+    writeFile(dir, 'wiki/entities/c.md', '---\nsources:\n  - code:legacy\n---\nClaim.[^code:legacy/src/gone.ts#L1-L10]');
+    const { issues } = checkGrounding(dir);
+    const hit = issues.find((i) => i.issue === 'missing_code_file' && i.file === 'src/gone.ts');
+    assert.ok(hit);
+    assert.equal(hit.authority, 'legacy');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(dir, '..', 'legacy-app'), { recursive: true, force: true });
+  }
+});
+
+test('checkGrounding is clean on a page cited purely against a registered code authority', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, '../legacy-app/src/auth/oauth.ts', Array(100).fill('line').join('\n'));
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '../legacy-app' }]);
+    writeFile(dir, 'wiki/entities/auth.md',
+      '---\ntitle: Auth\nupdated: 2099-01-01\nsources:\n  - code:legacy\n---\n' +
+      'Implicit flow, no PKCE.[^code:legacy/src/auth/oauth.ts#L42-L58]');
+    const { issues } = checkGrounding(dir, { page: 'entities/auth.md' });
+    assert.deepEqual(issues, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(dir, '..', 'legacy-app'), { recursive: true, force: true });
+  }
+});
+
+test('checkGrounding flags undeclared_cite when an inline [^code:...] has no frontmatter entry', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, '../legacy-app/src/a.ts', 'x');
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '../legacy-app' }]);
+    writeFile(dir, 'wiki/entities/u.md',
+      '---\nsources: []\n---\nClaim.[^code:legacy/src/a.ts]');
+    const { issues } = checkGrounding(dir);
+    const hit = issues.find((i) => i.issue === 'undeclared_cite' && i.raw === 'code:legacy');
+    assert.ok(hit);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(dir, '..', 'legacy-app'), { recursive: true, force: true });
   }
 });
 

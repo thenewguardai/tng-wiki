@@ -112,6 +112,8 @@ const ISSUE_LABEL = {
   orphan_source_decl: 'declared in frontmatter but not cited inline',
   source_updated_after_page: 'raw source modified after page `updated`',
   page_not_found: 'page does not exist',
+  unknown_code_authority: '`code:<name>` authority not registered in `.tng-wiki.json`',
+  missing_code_file: 'cited code file does not exist in the authority tree',
 };
 
 export async function runGround(args) {
@@ -132,7 +134,11 @@ export async function runGround(args) {
       process.stdout.write(`${pc.bold(p)}\n`);
       for (const i of issues) {
         const label = ISSUE_LABEL[i.issue] ?? i.issue;
-        const detail = i.raw ? ` ${pc.dim('→')} ${i.raw}` : '';
+        const target = i.raw
+          ?? (i.authority && i.file ? `${i.authority}/${i.file}` : null)
+          ?? i.authority
+          ?? null;
+        const detail = target ? ` ${pc.dim('→')} ${target}` : '';
         const loc = i.line ? pc.dim(` (line ${i.line})`) : '';
         const ts = i.source_mtime ? pc.dim(` (page ${i.page_updated}, source ${i.source_mtime})`) : '';
         process.stdout.write(`  ${pc.yellow(i.issue)}: ${label}${detail}${loc}${ts}\n`);

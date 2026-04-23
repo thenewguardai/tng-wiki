@@ -82,6 +82,84 @@ Treat \`AGENTS.md\` as the single canonical schema file. Generate \`CLAUDE.md\` 
   },
 
   extraFiles: {
+    'wiki/decisions/_adr-code-authority-example.md': `---
+title: "ADR-example: Code as advisory authority during Discovery"
+type: decision
+status: accepted
+created: ${today()}
+updated: ${today()}
+sources:
+  # Uncomment when you wire up a real code authority for your Discovery wiki:
+  # - code:legacy-app
+tags: [adr, grounding, example]
+---
+
+# ADR-example: Code as advisory authority during Discovery
+
+> This is a scaffolded example — delete or rewrite when you start a real ADR.
+> It exists to show what a wiki that uses \`code_authorities\` looks like in practice,
+> especially for reverse-engineering / porting / M&A-integration workflows.
+
+## Status
+
+Accepted — ${today()}
+
+## Context
+
+This wiki is being built from AI-generated Discovery artifacts: PRDs, component overviews, implementation guides produced by prompting an LLM against a source codebase. Those artifacts live in \`raw/\` and inform every wiki page we distill. They are *fallible*. LLM-generated docs hallucinate APIs, miss edge cases, invert precedence, and invent plausibility. Treating them as ground truth compounds the error as the wiki grows.
+
+The real ground truth is the codebase itself — the exact control flow, the exact parameter names, the exact error paths. Comments and docstrings in that codebase are not authoritative; they rot the same way the AI docs rot. **The implementation is truth; everything else is hypothesis.**
+
+## Decision
+
+Register the source codebase as a \`code_authority\` in \`.tng-wiki.json\`, and treat it as *advisory* authority during Layer 3 grounding.
+
+\`\`\`json
+{
+  "code_authorities": [
+    {
+      "name": "legacy-app",
+      "path": "../customer-portal-v1",
+      "description": "Source implementation being ported. Code is authoritative over any raw/ document.",
+      "exclude": ["**/*.md", "**/*.rst", "docs/**", "**/*.test.*", "**/node_modules/**", "**/dist/**"],
+      "language": "typescript"
+    }
+  ]
+}
+\`\`\`
+
+Every factual claim that can be verified against the implementation gets a \`[^code:...]\` citation alongside its \`[^raw/...]\` citation. Example:
+
+\`\`\`markdown
+The login flow uses OAuth2 implicit grant — no PKCE parameters are sent.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
+\`\`\`
+
+Cite specific line ranges (\`#L42-L58\`), not whole files. GitHub-style \`#L\` anchors mean the citation is clickable in VS Code and GitHub — future-you lands on the evidence instead of re-hunting.
+
+## Consequences
+
+**Positive:**
+- AI hallucinations in \`raw/\` docs get caught at grounding time — code disagreement surfaces as \`⚠️ DRIFT?\` with both raw and code quotes side by side.
+- Wiki pages accumulate direct, clickable jumps into the authoritative implementation. A reviewer six months later doesn't have to trust the PRD; they can see the code.
+- Claims cited against code are more durable than claims cited against prose — code is versioned, comments are not.
+
+**Negative:**
+- Citing code takes slightly longer than citing a doc. Discovery agents must \`Grep\` or \`Read\` the authority to produce a precise \`#L\` range.
+- Path drift: if the authority repo refactors, \`tng-wiki ground\` flags \`missing_code_file\`. Fix the cite or mark the page \`⚠️ STALE?\` pending re-verification. Budget the toil.
+- Code authorities are *advisory*, not absolute. Disagreements still need human reconcile. This is deliberate — auto-applying code-derived corrections risks propagating equally-wrong inferences about the code's behavior.
+
+## Alternatives considered
+
+- **Trust the AI-generated Discovery docs alone.** Simplest, but compounds hallucinations as the wiki grows.
+- **Treat code as *absolute* authority.** Tempting, but the agent can still misread code (async/await timing, implicit type coercion, framework magic). Keeping code *advisory* preserves the human-in-the-loop reconcile step.
+- **Re-generate the PRDs from code periodically.** Possible, but the AI that reads the code is the same AI that wrote the PRDs — the drift risk doesn't diminish.
+
+## Links
+
+- \`.tng-wiki.json\` (\`code_authorities\` section)
+- \`AGENTS.md\` → \`## Operations\` → \`### Grounding\` → \`Layer 3B. Code authorities\`
+`,
+
     'wiki/decisions/_adr-template.md': `---
 title: "ADR-NNNN: <decision title>"
 type: decision

@@ -76,27 +76,40 @@ title: "Page Title"
 type: entity              # varies by domain — see domain-specific section
 created: ${today()}
 updated: ${today()}
-sources:                  # every raw file that informed this page — paths relative to wiki root
+sources:                  # trust anchors for this page — raw paths or code authorities
   - raw/papers/foo.md
   - raw/announcements/bar.md
+  - code:legacy-app         # optional, when the page cites a code authority (see .tng-wiki.json)
 tags: []
 confidence: medium        # high | medium | low
 ---
 \`\`\`
 
-\`sources\` is the **trust anchor** of the page. Grounding workflows re-open every file listed here to verify the page's claims. An empty \`sources:\` list means the page has no verifiable attribution — that's an \`⚠️ UNSOURCED?\` state, not normal.
+\`sources\` is the **trust anchor** of the page. Grounding workflows re-open every raw file and re-read every code authority listed here to verify the page's claims. An empty \`sources:\` list means the page has no verifiable attribution — that's an \`⚠️ UNSOURCED?\` state, not normal.
 
 ### Per-Claim Citations
 
-Every factual claim must cite at least one raw source inline using footnote-style syntax:
+Every factual claim must cite at least one authority inline using footnote-style syntax. Two citation forms are supported:
+
+**Raw-source citation** — the primary trust chain for \`raw/\`-derived claims:
 
 \`\`\`markdown
 Anthropic raised $8B in Series F.[^raw/announcements/2026-anthropic-series-f.md]
-
-The company was founded in 2021[^raw/papers/anthropic-origins.md] by Dario and Daniela Amodei.[^raw/papers/anthropic-origins.md]
 \`\`\`
 
-Citations use \`[^<path-relative-to-wiki-root>]\` form. Multiple citations for one claim stack: \`[^raw/a.md][^raw/b.md]\`. Every path cited inline must also appear in the frontmatter \`sources:\` list — that's the invariant \`tng-wiki ground\` checks. Claims without a citation are subject to \`⚠️ UNSOURCED?\` marking.
+**Code-authority citation** — for claims derived from or verified against a local code authority (see \`.tng-wiki.json → code_authorities\` and Layer 3B grounding):
+
+\`\`\`markdown
+The login flow uses OAuth2 implicit grant — no PKCE.[^code:legacy-app/src/auth/oauth.ts#L42-L58]
+\`\`\`
+
+- \`code:<authority>\` names a registered code authority.
+- \`<path>\` is the file within that authority's tree.
+- \`#L<start>-L<end>\` is a GitHub-style line anchor (optional; omit for whole-file claims, single-line: \`#L42\`). VS Code jumps to the line when the cite is a real link.
+
+Multiple citations stack: \`[^raw/a.md][^code:legacy-app/src/x.ts#L10-L20]\`. Pair raw + code when both apply — raw is where the page *learned* the claim, code is the ground truth that *verifies* it.
+
+Every path or authority cited inline must also appear in the frontmatter \`sources:\` list (raw as \`raw/<path>\`, code as \`code:<authority>\`) — that's the invariant \`tng-wiki ground\` checks. Claims without a citation are subject to \`⚠️ UNSOURCED?\` marking.
 
 ### Writing Style
 
@@ -208,9 +221,10 @@ Run \`tng-wiki ground [--page <path>]\`. Pure-CLI, zero-LLM. It catches:
 
 - Pages with empty or missing \`sources:\` frontmatter (→ apply \`⚠️ UNSOURCED?\`)
 - Inline \`[^raw/...]\` citations pointing at raw files that don't exist (→ fix the path, or remove the claim)
-- Inline citations not registered in frontmatter \`sources:\` (undeclared cites)
+- Inline citations not registered in frontmatter \`sources:\` (undeclared cites — applies to both raw and \`code:<name>\` entries)
 - Frontmatter \`sources:\` entries not cited inline (orphan declarations — the page added a source it never used)
 - Pages whose \`updated\` is older than the mtime of a cited raw source (source changed after distillation — candidate for Layer 2)
+- Inline \`[^code:<name>/...]\` citations where \`<name>\` is not a registered code authority in \`.tng-wiki.json\` (\`unknown_code_authority\`) or where the file path resolves to nothing on disk (\`missing_code_file\`)
 - Confidence tag inflation: \`[confirmed]\` claims with only Tier 3/4 citations (→ apply \`⚠️ UNVERIFIED?\`)
 
 Apply the appropriate markers inline. Log the pass with issue counts.
@@ -252,9 +266,13 @@ Keep quotes tight. Paraphrase long-form material. The marker should be readable 
 
 **Batching:** A whole-wiki semantic pass on a 100-page wiki is expensive. Announce the scope before starting. Check in with the user every 10–20 pages with a running total ("12 pages verified, 3 drift markers applied so far — continue?").
 
-#### Layer 3 — External validation (opt-in, expensive, scoped)
+#### Layer 3 — Authority validation (opt-in, scoped)
 
-When the user asks you to verify against live external authority, use \`WebFetch\` / \`WebSearch\` under strict rules:
+Cross-check wiki claims against external authority. Two kinds of authority exist; they're orthogonal and can both be configured per-wiki in \`.tng-wiki.json\`.
+
+##### 3A. Web authorities
+
+When the user asks you to verify against live external web sources, use \`WebFetch\` / \`WebSearch\` under strict rules:
 
 **Authorized sources, in priority order:**
 
@@ -281,6 +299,88 @@ When the user asks you to verify against live external authority, use \`WebFetch
 - **Unreachable / 404:** the authority URL moved. Mark the source with \`⚠️ STALE?\` and log — do not delete the citation.
 - **Rate-limited:** back off and surface to the user rather than retrying blindly.
 - **Two external authorities disagree:** record both, do not pick one silently, escalate to human.
+
+##### 3B. Code authorities (local filesystem)
+
+Use when the wiki is built around a real codebase — typical in reverse-engineering, porting, or M&A / IP-acquisition workflows where \`raw/\` holds AI-generated PRDs, overview docs, and implementation guides that may hallucinate, and the actual implementation is the ground truth the wiki needs to validate against.
+
+**Configuration.** \`.tng-wiki.json\` lists each authoritative codebase in \`code_authorities\`:
+
+\`\`\`json
+"code_authorities": [
+  {
+    "name": "legacy-app",
+    "path": "../customer-portal-v1",
+    "description": "Source implementation being ported.",
+    "exclude": ["**/*.md", "docs/**", "**/*.test.*", "**/node_modules/**", "**/dist/**"],
+    "language": "typescript"
+  }
+]
+\`\`\`
+
+- \`name\` — short handle used in citations (\`[^code:legacy-app/...]\`).
+- \`path\` — tree root, resolved relative to the wiki root.
+- \`exclude\` — gitignore-style globs; skip these when traversing the authority.
+- \`language\` — optional hint; helps you pick appropriate comment/doc syntax to ignore.
+
+**Tools.** \`Read\`, \`Grep\`, \`Glob\`. Not \`WebFetch\`. Code authorities are local filesystem; fetching is free and instant.
+
+**Scope filter — implementation only.** The user has chosen a code authority because documentation is fallible. Return the favor: when treating a code file as authoritative, disregard its comments, docstrings, JSDoc, type-annotation descriptions, and any markdown/text files even if \`exclude\` did not catch them. Concretely, ignore:
+
+- Single-line comments: \`// ...\`, \`# ...\`, \`-- ...\`.
+- Block comments: \`/* ... */\`, \`""" ... """\`, \`''' ... '''\`, \`<!-- ... -->\`.
+- Doc blocks: JSDoc (\`/** ... */\`), Python docstrings, rustdoc (\`/// ...\`), Javadoc, XML doc comments.
+- Whole files: \`*.md\`, \`*.rst\`, \`*.txt\`, \`README\`, \`CHANGELOG\` — even if not excluded by config.
+
+The implementation is authority. The comments may be stale or aspirational; the PRDs in \`raw/\` *already are*. You are not hunting for what the code *claims*, you are deriving what it *does*.
+
+**Citation form.** When Discovery- or Ingest-phase work grounds a claim in code, emit an inline citation:
+
+\`\`\`markdown
+[^code:<authority-name>/<path-within-tree>[#L<start>[-L<end>]]]
+\`\`\`
+
+- \`<authority-name>\` matches a \`code_authorities\` entry.
+- \`<path-within-tree>\` is the file path inside the authority's \`path\`.
+- \`#L<start>-L<end>\` — GitHub-style line range anchor. Optional (omit for whole-file claims). Single line: \`#L42\`.
+
+Frontmatter \`sources:\` must list \`code:<name>\` for every code authority the page cites — same invariant raw sources follow. Pair raw + code cites when both apply:
+
+\`\`\`markdown
+The login flow uses OAuth2 implicit grant — no PKCE.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
+\`\`\`
+
+Engineers and future agents clicking the code citation in a capable editor (VS Code, GitHub preview) jump straight to the cited lines. Cite specifically — aim for ranges of 1–30 lines, not whole files, so the human following the cite lands on the evidence without re-hunting.
+
+**Precedence — advisory.** Code is advisory authority, not absolute. Disagreement between code and raw or code and wiki produces a \`⚠️ DRIFT?\` marker with evidence; the human reconciles. Never auto-apply a code-derived correction.
+
+**Procedure.**
+
+1. For each claim in scope, identify which code authority (if any) could verify it. Not every claim has a code authority — e.g. "why" claims, strategic-context claims, and claims about external systems.
+2. \`Read\` / \`Grep\` the authority for the cited or plausibly-relevant file. Honor \`exclude\` globs; ignore comments/docs per the scope filter.
+3. Four possible outcomes:
+   - **Code confirms wiki + raw:** log the concurrence. No marker. Add a \`[^code:...]\` citation alongside the existing \`[^raw/...]\` so the evidence chain is explicit.
+   - **Code confirms wiki, contradicts raw:** the raw doc is a hallucination or out-of-date. Write \`⚠️ DRIFT?\` naming the raw source, with both raw and code quotes, and propose updating the wiki claim to match code (which it already matches — the marker flags the raw source as suspect so it gets re-ingested or retired).
+   - **Code contradicts wiki:** the wiki propagated a raw-doc hallucination or distilled incorrectly. Write \`⚠️ DRIFT?\` with \`code:\` evidence line; the suggested fix reflects the code's behavior.
+   - **Code silent on the claim:** the authority doesn't cover this. No marker; this is the boundary of what code can verify.
+
+**DRIFT marker format — extended for code authority:**
+
+\`\`\`
+⚠️ DRIFT? [source: raw/prd-auth.md says "OAuth2 with PKCE";
+           code: legacy-app/src/auth/oauth.ts#L42-L58 shows "implicit flow, no code_challenge parameter sent";
+           wiki says "OAuth2 with PKCE";
+           suggested: "OAuth2 implicit flow — legacy-app does not implement PKCE"]
+\`\`\`
+
+Keep code paraphrase tight — summarize what the implementation *does*, quote sparingly. The \`#L\` anchor gives the reader the exact landing spot.
+
+**Failure modes to handle gracefully:**
+
+- **Authority \`path\` missing or unreadable:** log; surface to the user as a configuration issue (the authority moved, permissions, git submodule not initialized). Do not mark pages — you can't verify.
+- **\`exclude\` filters out every candidate file:** likely misconfigured globs. Report to the user.
+- **Cited file moved or was deleted:** \`tng-wiki ground\` already flags this as \`missing_code_file\`. Resolve per structural lint — update the cite or mark \`⚠️ STALE?\` on the page pending human decision.
+- **Two authorities disagree:** rare, but possible (e.g. a forked codebase and its upstream). Record both, escalate; do not silently prefer one.
 
 ### Reconcile Drifts
 

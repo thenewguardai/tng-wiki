@@ -81,10 +81,23 @@ export function scaffoldWiki(root, { domain, agent, wikiName }) {
       name: wikiName,
       domain,
       created: new Date().toISOString(),
-      // Domains whose trust chain is authorized for Layer 3 external validation.
+      // Web domains whose trust chain is authorized for Layer 3A authority validation.
       // Empty by default — agents can only fetch URLs already cited in raw sources
       // until you add entries here. Example: ["docs.python.org", "spec.commonmark.org"]
       trusted_authorities: [],
+      // Local code trees treated as authoritative ground truth for Layer 3B.
+      // Useful when the wiki is reverse-engineering a codebase: raw/ holds the
+      // fallible AI-generated docs, code_authorities names the implementation
+      // you're treating as truth. Each entry: { name, path, description?, exclude?, language? }.
+      // Example:
+      //   [{
+      //     "name": "legacy-app",
+      //     "path": "../customer-portal-v1",
+      //     "description": "Source implementation being ported.",
+      //     "exclude": ["**/*.md", "docs/**", "**/*.test.*", "**/node_modules/**"],
+      //     "language": "typescript"
+      //   }]
+      code_authorities: [],
     }, null, 2) + '\n',
     'utf8',
   );

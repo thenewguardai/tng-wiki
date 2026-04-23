@@ -21,6 +21,7 @@ Three-layer approach to keeping wikis honest against source material and externa
 - **Phase 1D — Docs consolidation.** README grounding section with copy-paste examples, CHANGELOG entry, skill teaches full grounding vocabulary. **Shipped 2026-04-16.**
 - **Phase 2 — Semantic re-verification (agent-driven).** Documented as a workflow inside each `AGENTS.md`. Expanded triage order, per-claim outcomes, `⚠️ DRIFT?` evidence format, dependency-chain verification, batching etiquette. **Shipped 2026-04-16.**
 - **Phase 3 — External validation (opt-in, expensive).** Agent cross-checks claims against live external sources, restricted to URLs cited within the raw source or per-wiki `trusted_authorities`. Never free-range web search. `.tng-wiki.json` extended with `trusted_authorities: []`. **Shipped 2026-04-16.**
+- **Phase 4 — Code authorities in Layer 3.** Layer 3 split into 3A (web) and 3B (code). 3B treats a local codebase as advisory ground truth for reverse-engineering / porting / M&A-integration wikis where `raw/` holds AI-generated PRDs (fallible) and the implementation is the authority the wiki validates against. `.tng-wiki.json` gains `code_authorities: []`; frontmatter `sources:` accepts `code:<name>` entries; inline citation form `[^code:<authority>/<path>#L<start>-L<end>]` uses GitHub-style anchors for VS Code and GitHub click-through. Two new `ground` structural checks: `unknown_code_authority`, `missing_code_file`. SE template ships a scaffolded example ADR. **Shipped 2026-04-23 (v0.2.0).**
 
 ## Software Engineering & Architecture Domain
 
@@ -60,6 +61,13 @@ Split to `docs/` once README crosses ~250 lines.
 
 ## Improvement Ideas
 
+- **Code-authority follow-ups (deferred from Phase 4).**
+  - Interactive `init` prompt for `code_authorities` on the Software Engineering and Blank domains — today users edit `.tng-wiki.json` post-scaffold.
+  - `tng-wiki ground --against-code <name>` guided entry point for Layer 3B verification runs. Layer 3B is agent-driven today; a CLI shortcut would let the agent (or a human) kick off a scoped pass without prose.
+  - Git-ref pinning: `{ name, path, ref: "v2.1.0" }` so authorities can be frozen at a specific commit/tag — useful for ports where the source is actively evolving.
+  - Per-language comment-handling rules in config, for codebases where the default "ignore comments/docstrings/JSDoc" filter needs tighter language-specific treatment.
+  - Line-range validation in `tng-wiki ground` — today `missing_code_file` checks path existence but not that the cited `#L<start>-L<end>` range is within the file's line count.
+  - `exclude`-glob validation: flag inline citations that point at files the agent would skip per the authority's `exclude` list.
 - Add a non-interactive `init` mode so the scaffold can be created from scripts and CI, not only through prompts.
 - Expand `status` into a real wiki health check that can detect broken wikilinks, missing frontmatter, orphan pages, pages missing from the index, and uncompiled raw sources across more than markdown files.
 - Expand the lint surface (`stale` / `orphans` are milestone 3; add `contradictions`, `coverage-gaps`, `thin-pages` as follow-ups so the full lint vocabulary in `AGENTS.md` has a CLI counterpart).
