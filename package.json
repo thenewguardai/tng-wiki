@@ -1,6 +1,6 @@
 {
   "name": "@thenewguard/tng-wiki",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scaffold an LLM-maintained knowledge base in under 10 minutes. Domain templates, agent-agnostic, QMD-ready.",
   "keywords": [
     "llm",
