@@ -383,7 +383,9 @@ export async function promptCodeAuthorities(wikiRoot) {
       placeholder: defaultName,
       defaultValue: defaultName,
       validate: (val) => {
-        if (!/^[a-z0-9][a-z0-9_-]*$/i.test(val || '')) {
+        // Empty is fine — clack substitutes defaultValue when validation passes
+        // on empty input. Validating a non-empty value blocks junk like spaces.
+        if (val && !/^[a-z0-9][a-z0-9_-]*$/i.test(val)) {
           return 'Use letters, numbers, dashes, underscores only.';
         }
       },
