@@ -322,8 +322,20 @@ Use when the wiki is built around a real codebase — typical in reverse-enginee
 - \`path\` — tree root, resolved relative to the wiki root.
 - \`exclude\` — gitignore-style globs; skip these when traversing the authority.
 - \`language\` — optional hint; helps you pick appropriate comment/doc syntax to ignore.
+- \`ref\` — optional git ref (branch, tag, commit SHA). When set, read the authority *at that ref* instead of the working tree. See **Ref pinning** below.
 
 **Tools.** \`Read\`, \`Grep\`, \`Glob\`. Not \`WebFetch\`. Code authorities are local filesystem; fetching is free and instant.
+
+**Ref pinning.** When an authority has a \`ref\` field set, the user has frozen this authority to a specific point in history — typically because the source repo is actively evolving and they want grounding to be deterministic. In that case:
+
+- Read individual files via \`git -C <path> show <ref>:<file>\` instead of \`Read\`. The output goes to stdout; pipe through your normal scope filter (ignore comments/docstrings/JSDoc/etc).
+- Enumerate files via \`git -C <path> ls-tree -r --name-only <ref>\` instead of \`Glob\`.
+- For text search, use \`git -C <path> grep <pattern> <ref>\` instead of \`Grep\`.
+- The user's working-tree state is irrelevant under ref pinning — they may have switched branches, stashed work, or have uncommitted changes; none of it contaminates grounding.
+- \`git show <ref>:<file>\` returning \`fatal: path '...' exists on disk, but not in '<ref>'\` means the cited file existed in the working tree (so Layer 1 \`tng-wiki ground\` passed) but does not exist at the pinned ref. Treat the cite as \`missing_code_file\` for the purposes of this Layer 3B run, surface to the user, and recommend either updating \`ref\` or removing the cite.
+- Layer 1 (\`tng-wiki ground\`) does not honor \`ref\` — it always checks the working tree. This is deliberate: structural lint should be cheap and the working tree is the right snapshot for "does this path exist anywhere I can read it." Ref-vs-working-tree mismatches are surfaced during Layer 3B verification, not Layer 1.
+
+When \`ref\` is unset (the default), read the working tree directly with \`Read\` / \`Grep\` / \`Glob\` as normal.
 
 **Scope filter — implementation only.** The user has chosen a code authority because documentation is fallible. Return the favor: when treating a code file as authoritative, disregard its comments, docstrings, JSDoc, type-annotation descriptions, and any markdown/text files even if \`exclude\` did not catch them. Concretely, ignore:
 

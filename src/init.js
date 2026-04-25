@@ -44,7 +44,7 @@ export function writeSchemaAlias(root, aliasName, canonical = CANONICAL_SCHEMA_F
   }
 }
 
-export function scaffoldWiki(root, { domain, agent, wikiName }) {
+export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = [] }) {
   const template = getTemplate(domain);
 
   for (const dir of [...BASE_DIRS, ...template.extraDirs]) {
@@ -88,16 +88,19 @@ export function scaffoldWiki(root, { domain, agent, wikiName }) {
       // Local code trees treated as authoritative ground truth for Layer 3B.
       // Useful when the wiki is reverse-engineering a codebase: raw/ holds the
       // fallible AI-generated docs, code_authorities names the implementation
-      // you're treating as truth. Each entry: { name, path, description?, exclude?, language? }.
+      // you're treating as truth. Each entry: { name, path, description?, exclude?, language?, ref? }.
+      // `ref` (optional) pins reads to a git ref (branch / tag / commit SHA)
+      // so the working-tree state of the source repo doesn't contaminate grounding.
       // Example:
       //   [{
       //     "name": "legacy-app",
       //     "path": "../customer-portal-v1",
       //     "description": "Source implementation being ported.",
       //     "exclude": ["**/*.md", "docs/**", "**/*.test.*", "**/node_modules/**"],
-      //     "language": "typescript"
+      //     "language": "typescript",
+      //     "ref": "v2.1.0"
       //   }]
-      code_authorities: [],
+      code_authorities: codeAuthorities,
     }, null, 2) + '\n',
     'utf8',
   );
@@ -167,13 +170,18 @@ export async function runInit(args) {
   const useGit = extras.includes('git');
   const useQmd = extras.includes('qmd');
 
-  // --- Execute ---
+  // --- Code authorities (Layer 3B): only offered on engineering-shaped domains ---
   const root = resolve(targetDir || defaultPath);
+  const codeAuthorities = supportsCodeAuthorities(domain)
+    ? await promptCodeAuthorities(root)
+    : [];
+
+  // --- Execute ---
   const s = p.spinner();
 
   s.start('Scaffolding wiki...');
 
-  const { template, canonical, aliases } = scaffoldWiki(root, { domain, agent, wikiName });
+  const { template, canonical, aliases } = scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities });
 
   s.message('Setting up integrations...');
 
@@ -221,6 +229,12 @@ export async function runInit(args) {
 
   if (template.seedSource) {
     results.push(`${pc.green('✓')} Seed source added to raw/ ${pc.dim('— your first ingest')}`);
+  }
+
+  if (codeAuthorities.length > 0) {
+    const names = codeAuthorities.map((a) => a.name).join(', ');
+    const noun = codeAuthorities.length === 1 ? 'code authority' : 'code authorities';
+    results.push(`${pc.green('✓')} ${codeAuthorities.length} ${noun} configured ${pc.dim(`(${names})`)}`);
   }
 
   if (useGit) {
@@ -305,6 +319,116 @@ function slugify(str) {
 
 function trimError(err) {
   return err.toString().trim().split('\n').filter(Boolean)[0];
+}
+
+// --- Code authorities (Layer 3B) ---
+
+// Domains where Layer 3B (codebase as advisory ground truth) is a meaningful pattern.
+// AI-research / publication / business-ops / etc. distill from documents, not code.
+function supportsCodeAuthorities(domain) {
+  return domain === 'software-engineering' || domain === 'blank';
+}
+
+const LANGUAGE_OPTIONS = [
+  { value: 'typescript', label: 'TypeScript / JavaScript' },
+  { value: 'python',     label: 'Python' },
+  { value: 'go',         label: 'Go' },
+  { value: 'rust',       label: 'Rust' },
+  { value: 'other',      label: 'Other / mixed (skip language hint)' },
+];
+
+// Per-language exclude defaults — keep tight, targeting build artifacts, deps,
+// and tests. Markdown/RST are always excluded since they're documentation, not
+// implementation truth.
+const EXCLUDE_DEFAULTS = {
+  typescript: ['**/*.md', '**/*.test.*', '**/*.spec.*', '**/node_modules/**', '**/dist/**', '**/build/**'],
+  python:     ['**/*.md', '**/*.rst', '**/test_*.py', '**/*_test.py', '**/__pycache__/**', '**/.venv/**', '**/venv/**', '**/dist/**'],
+  go:         ['**/*.md', '**/*_test.go', '**/vendor/**'],
+  rust:       ['**/*.md', '**/target/**'],
+  other:      ['**/*.md', '**/*.rst', '**/node_modules/**', '**/dist/**'],
+};
+
+export async function promptCodeAuthorities(wikiRoot) {
+  const wants = await p.confirm({
+    message: 'Have a reference codebase to ground against? (e.g. porting, reverse-engineering, M&A integration)',
+    initialValue: false,
+  });
+  if (p.isCancel(wants)) throw new Error('CANCELLED');
+  if (!wants) return [];
+
+  const authorities = [];
+  let addAnother = true;
+
+  while (addAnother) {
+    const path = await p.text({
+      message: `Path to the codebase (relative to wiki, or absolute):`,
+      placeholder: '../legacy-app',
+      validate: (val) => {
+        if (!val || !val.trim()) return 'Path is required.';
+      },
+    });
+    if (p.isCancel(path)) throw new Error('CANCELLED');
+
+    // Resolve to absolute for an existence check, but keep the user-entered string
+    // so the persisted config preserves the relative path intent.
+    const resolved = resolve(wikiRoot, path);
+    const pathExists = existsSync(resolved);
+    if (!pathExists) {
+      p.log.warn(`Path not found yet: ${pc.dim(resolved)} — saving anyway (you may be scaffolding before cloning the source).`);
+    }
+
+    const defaultName = path.split(/[\\/]/).filter(Boolean).pop() || 'code';
+    const name = await p.text({
+      message: 'Short name (used in citations like [^code:<name>/...]):',
+      placeholder: defaultName,
+      defaultValue: defaultName,
+      validate: (val) => {
+        if (!/^[a-z0-9][a-z0-9_-]*$/i.test(val || '')) {
+          return 'Use letters, numbers, dashes, underscores only.';
+        }
+      },
+    });
+    if (p.isCancel(name)) throw new Error('CANCELLED');
+
+    const description = await p.text({
+      message: 'Description (optional, shown in .tng-wiki.json for future-you):',
+      placeholder: 'Source implementation being ported',
+      defaultValue: '',
+    });
+    if (p.isCancel(description)) throw new Error('CANCELLED');
+
+    const language = await p.select({
+      message: 'Primary language? (drives default exclude globs)',
+      options: LANGUAGE_OPTIONS,
+    });
+    if (p.isCancel(language)) throw new Error('CANCELLED');
+
+    const ref = await p.text({
+      message: 'Pin to a git ref? (branch / tag / commit, blank for HEAD)',
+      placeholder: 'v2.1.0',
+      defaultValue: '',
+    });
+    if (p.isCancel(ref)) throw new Error('CANCELLED');
+
+    const entry = {
+      name: name.trim(),
+      path,
+    };
+    if (description && description.trim()) entry.description = description.trim();
+    entry.exclude = EXCLUDE_DEFAULTS[language] ?? EXCLUDE_DEFAULTS.other;
+    if (language && language !== 'other') entry.language = language;
+    if (ref && ref.trim()) entry.ref = ref.trim();
+
+    authorities.push(entry);
+
+    addAnother = await p.confirm({
+      message: 'Add another code authority?',
+      initialValue: false,
+    });
+    if (p.isCancel(addAnother)) throw new Error('CANCELLED');
+  }
+
+  return authorities;
 }
 
 const GITIGNORE = `# OS

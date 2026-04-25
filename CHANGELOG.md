@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+### Added
+- **Interactive `init` prompt for `code_authorities`** on the Software Engineering and Blank domains. After the existing prompts, `tng-wiki init` asks whether you have a reference codebase to ground against. If yes, it loops collecting `{ name, path, description?, language?, exclude?, ref? }` per authority — name defaults to the path basename, exclude globs default per language hint (TypeScript/JavaScript, Python, Go, Rust, or generic), and the loop offers "add another?" so multi-authority wikis are first-class. Closes the dogfood gap where users had to hand-edit `.tng-wiki.json` after every `init`.
+- **`code_authorities[].ref` — optional git-ref pinning.** Each authority entry now accepts a `ref` field (branch, tag, or commit SHA). When set, the maintaining agent reads via `git -C <path> show <ref>:<file>` (and `ls-tree`/`grep` against `<ref>`) instead of the working tree, so the user's checkout state — stashed changes, branch switches, uncommitted work — does not contaminate grounding. Layer 1 (`tng-wiki ground`) still always checks the working tree by design; ref-vs-working-tree mismatches surface during Layer 3B verification with file-not-found at the pinned ref handled gracefully. AGENTS.md Layer 3B documents the full procedure.
+
 ## [0.2.0] - 2026-04-23
 
 ### Added

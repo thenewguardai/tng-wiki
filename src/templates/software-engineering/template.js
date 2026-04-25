@@ -122,11 +122,14 @@ Register the source codebase as a \`code_authority\` in \`.tng-wiki.json\`, and 
       "path": "../customer-portal-v1",
       "description": "Source implementation being ported. Code is authoritative over any raw/ document.",
       "exclude": ["**/*.md", "**/*.rst", "docs/**", "**/*.test.*", "**/node_modules/**", "**/dist/**"],
-      "language": "typescript"
+      "language": "typescript",
+      "ref": "v2.1.0"
     }
   ]
 }
 \`\`\`
+
+The optional \`ref\` field pins reads to a specific git ref (branch, tag, or commit SHA). Set it when the source repo is actively evolving and you want grounding to be deterministic — the agent reads via \`git show <ref>:<file>\` rather than the working tree, so a teammate's stashed work or branch switch can't contaminate the wiki. Leave it unset (or remove the field) to read the working tree directly.
 
 Every factual claim that can be verified against the implementation gets a \`[^code:...]\` citation alongside its \`[^raw/...]\` citation. Example:
 
@@ -147,6 +150,7 @@ Cite specific line ranges (\`#L42-L58\`), not whole files. GitHub-style \`#L\` a
 - Citing code takes slightly longer than citing a doc. Discovery agents must \`Grep\` or \`Read\` the authority to produce a precise \`#L\` range.
 - Path drift: if the authority repo refactors, \`tng-wiki ground\` flags \`missing_code_file\`. Fix the cite or mark the page \`⚠️ STALE?\` pending re-verification. Budget the toil.
 - Code authorities are *advisory*, not absolute. Disagreements still need human reconcile. This is deliberate — auto-applying code-derived corrections risks propagating equally-wrong inferences about the code's behavior.
+- If the source repo evolves while you're distilling against it, citations drift even without your touching them. Mitigation: set the optional \`ref\` field on the authority to pin reads to a known commit/tag, then bump it deliberately when you're ready to re-ground.
 
 ## Alternatives considered
 

@@ -33,6 +33,30 @@ test('scaffoldWiki creates the full base layout and writes AGENTS.md as canonica
     assert.equal(meta.domain, 'blank');
     // trusted_authorities ships empty — users opt in per wiki for Layer 3 external validation
     assert.deepEqual(meta.trusted_authorities, []);
+    // code_authorities defaults to empty when caller doesn't supply any
+    assert.deepEqual(meta.code_authorities, []);
+  });
+});
+
+test('scaffoldWiki writes provided codeAuthorities (with optional ref) into .tng-wiki.json', () => {
+  inTmp((root) => {
+    const codeAuthorities = [
+      {
+        name: 'legacy-app',
+        path: '../customer-portal-v1',
+        description: 'Source impl being ported.',
+        exclude: ['**/*.md', '**/*.test.*'],
+        language: 'typescript',
+        ref: 'v2.1.0',
+      },
+      {
+        name: 'mobile-app',
+        path: '../customer-portal-mobile',
+      },
+    ];
+    scaffoldWiki(root, { domain: 'software-engineering', agent: 'claude-code', wikiName: 'Port', codeAuthorities });
+    const meta = JSON.parse(readFileSync(join(root, '.tng-wiki.json'), 'utf8'));
+    assert.deepEqual(meta.code_authorities, codeAuthorities);
   });
 });
 

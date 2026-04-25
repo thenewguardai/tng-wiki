@@ -62,9 +62,9 @@ Split to `docs/` once README crosses ~250 lines.
 ## Improvement Ideas
 
 - **Code-authority follow-ups (deferred from Phase 4).**
-  - Interactive `init` prompt for `code_authorities` on the Software Engineering and Blank domains — today users edit `.tng-wiki.json` post-scaffold.
+  - ~~Interactive `init` prompt for `code_authorities` on the Software Engineering and Blank domains.~~ **Shipped 2026-04-25.**
+  - ~~Git-ref pinning: `{ name, path, ref: "v2.1.0" }` so authorities can be frozen at a specific commit/tag.~~ **Shipped 2026-04-25.**
   - `tng-wiki ground --against-code <name>` guided entry point for Layer 3B verification runs. Layer 3B is agent-driven today; a CLI shortcut would let the agent (or a human) kick off a scoped pass without prose.
-  - Git-ref pinning: `{ name, path, ref: "v2.1.0" }` so authorities can be frozen at a specific commit/tag — useful for ports where the source is actively evolving.
   - Per-language comment-handling rules in config, for codebases where the default "ignore comments/docstrings/JSDoc" filter needs tighter language-specific treatment.
   - Line-range validation in `tng-wiki ground` — today `missing_code_file` checks path existence but not that the cited `#L<start>-L<end>` range is within the file's line count.
   - `exclude`-glob validation: flag inline citations that point at files the agent would skip per the authority's `exclude` list.

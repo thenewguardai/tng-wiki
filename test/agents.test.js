@@ -73,6 +73,15 @@ test('generateAgentsMd Layer 3B documents code authorities for reverse-engineeri
   assert.match(out, /Never auto-apply/);
 });
 
+test('generateAgentsMd Layer 3B documents the optional `ref` field for git-pinned reads', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /Ref pinning/);
+  assert.match(out, /git -C <path> show <ref>:<file>/);
+  assert.match(out, /git -C <path> ls-tree/);
+  // explicit note that Layer 1 ground does not honor ref
+  assert.match(out, /Layer 1.*does not honor `ref`/s);
+});
+
 test('generateAgentsMd teaches both raw and code inline citation forms', () => {
   const out = generateAgentsMd(ctx);
   assert.match(out, /\[\^raw\/announcements\/2026-anthropic-series-f\.md\]/);

@@ -39,12 +39,14 @@ This is that thing.
 npx @thenewguard/tng-wiki init
 ```
 
-The interactive flow asks four questions:
+The interactive flow walks you through:
 
-1. **Domain** — AI Research, Competitive Intel, Publication, Business Ops, Learning, or Blank
+1. **Domain** — AI Research, Competitive Intel, Publication, Business Ops, Learning, Software Engineering & Architecture, or Blank
 2. **Agent** — Claude Code, OpenAI Codex, Cursor, or all three
 3. **Location** — where to create the wiki (suggests a default path from common Obsidian locations)
-4. **Integrations** — Git and/or QMD hybrid search
+4. **Wiki name**
+5. **Integrations** — Git and/or QMD hybrid search
+6. **Code authorities** *(Software Engineering and Blank domains only)* — register one or more reference codebases as advisory ground truth for [Layer 3B grounding](#3b--code-authorities-local-filesystem). Optional; skip on first scaffold and add later by editing `.tng-wiki.json`.
 
 Then it scaffolds everything:
 
@@ -328,7 +330,7 @@ Empty `trusted_authorities` (the default on `init`) means Layer 3A can only reac
 
 Built for reverse-engineering, porting, and M&A / IP-acquisition workflows where `raw/` holds AI-generated PRDs and overview docs (fallible — they hallucinate APIs, invert precedence, miss edge cases) and the actual implementation is the ground truth. Cheaper and often higher-trust than web authorities — local filesystem, no network, no SEO drift.
 
-Configure in `.tng-wiki.json`:
+Configure during `init` — when you pick the **Software Engineering** or **Blank** domain, `tng-wiki init` asks whether you have a reference codebase and walks you through registering each authority (path, name, language, optional git ref). You can also edit `.tng-wiki.json` directly:
 
 ```json
 {
@@ -338,11 +340,14 @@ Configure in `.tng-wiki.json`:
       "path": "../customer-portal-v1",
       "description": "Source implementation being ported.",
       "exclude": ["**/*.md", "docs/**", "**/*.test.*", "**/node_modules/**", "**/dist/**"],
-      "language": "typescript"
+      "language": "typescript",
+      "ref": "v2.1.0"
     }
   ]
 }
 ```
+
+The optional `ref` field pins reads to a specific git ref (branch, tag, or commit SHA) — useful when the source repo is actively evolving and you want grounding to be deterministic. The agent reads via `git show <ref>:<file>` rather than the working tree, so a stashed change or branch switch on the source repo can't contaminate the wiki. Leave `ref` unset (or remove the field) to read the working tree directly.
 
 Inline citation form, GitHub-style `#L` anchor (clickable in VS Code, jumps to the line):
 

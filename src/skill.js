@@ -69,9 +69,11 @@ Raw hits are tagged \`[raw]\` in plain output and \`source:"raw"\` in JSON. Alwa
 
 Wikis compound over time, which means claims drift — sources update, context changes, confidence inflates. tng-wiki ships a grounding pipeline:
 
-- **Layer 1 (structural, cheap):** \`tng-wiki ground\` finds attribution problems without reading semantically. Trust it as a pre-flight before bigger operations.
+- **Layer 1 (structural, cheap):** \`tng-wiki ground\` finds attribution problems without reading semantically. Trust it as a pre-flight before bigger operations. Catches both raw-source issues and code-authority issues (\`unknown_code_authority\`, \`missing_code_file\`).
 - **Layer 2 (semantic):** You (the agent) re-read each raw source a page cites and compare against the wiki's claims. Where they diverge, write \`⚠️ DRIFT?\` markers with evidence: \`⚠️ DRIFT? [source: <path> says "<quote>"; wiki says "<claim>"; suggested: "<fix>"]\`. Never auto-apply the suggested fix — the marker is the surface for human review.
-- **Layer 3 (external):** Only when the user asks you to verify against live authority. Use only URLs cited within the raw source, or a per-wiki allow-list the user configures. **Never use free-range web search** — that's where confident-wrong comes from.
+- **Layer 3 (authority validation):** Two flavors, both opt-in:
+  - **3A — web:** When the user asks you to verify against live web authority. Use only URLs cited within the raw source, or a per-wiki \`trusted_authorities\` allow-list. **Never use free-range web search** — that's where confident-wrong comes from.
+  - **3B — code (filesystem):** For wikis built around a real codebase (reverse-engineering, porting, M&A integration). The wiki's \`.tng-wiki.json\` lists \`code_authorities\`; treat each as advisory ground truth. Use \`Read\` / \`Grep\` / \`Glob\` (or \`git show <ref>:<file>\` when the authority has a \`ref\` field set). Disregard comments / docstrings / JSDoc / markdown inside the tree — implementation only is authoritative. Cite with \`[^code:<authority>/<path>#L<start>-L<end>]\`. Disagreement always surfaces as \`⚠️ DRIFT?\` for human reconcile, never auto-applied.
 
 ### When to reach for grounding
 
