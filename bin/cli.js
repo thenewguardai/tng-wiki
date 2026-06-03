@@ -113,7 +113,7 @@ async function main() {
 ${pc.bold('Usage:')} tng-wiki <command>
 
 ${pc.bold('Scaffolding:')}
-  ${pc.cyan('init')}         Scaffold a new LLM wiki (interactive)
+  ${pc.cyan('init')}         Scaffold a new LLM wiki (interactive; --yes for headless, init --help for flags)
 
 ${pc.bold('Registry:')}
   ${pc.cyan('register')}     Register an existing wiki in the user registry

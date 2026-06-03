@@ -6,6 +6,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-06-03
+
+### Added
+- **Non-interactive `init`** — `tng-wiki init --yes --dir <path>` (with optional `--domain`, `--agent`, `--name`, `--git`/`--qmd`/`--no-integrations`) scaffolds a wiki without prompts, so an agent can run it headless. `init --help` now prints usage, unknown flags error instead of being swallowed into the wizard, and a non-TTY `init` without `--yes` fails fast rather than hanging on the prompt. (#3, #4)
+- **`--into-existing` (alias `--adopt`)** — adopt tng-wiki into a non-empty directory: existing files are preserved (and reported as skipped), and an existing `.gitignore` is merged rather than overwritten. (#4)
+
+### Fixed
+- **`orphans` honors the same exemptions as `ground`** (`_`-prefixed templates, `wiki/meta/*`) — a fresh scaffold reports zero orphans instead of flagging its own seed files. (#5)
+- **Generated `.gitignore` now covers `node_modules/` and secrets** (`.env`/`*.env`, `.secrets/`, `*.pem`, `*.key`). (#6)
+- **`init` trims the target-directory answer** — a pasted leading space no longer scaffolds into a space-named directory inside the current repo. (#7)
+- **Registry overwrite guard** — when a slug already points at a different path, the wizard prompts before replacing, non-interactive `--yes` requires `--force`, and either path prints an explicit "Replacing registry entry ..." line instead of silently flipping it. (#8)
+
 ## [0.3.1] - 2026-06-03
 
 ### Fixed

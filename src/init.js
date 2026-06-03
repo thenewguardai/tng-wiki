@@ -1,13 +1,13 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { resolve, join } from 'path';
-import { mkdirSync, existsSync, writeFileSync, readdirSync, symlinkSync } from 'fs';
+import { mkdirSync, existsSync, writeFileSync, readFileSync, readdirSync, symlinkSync } from 'fs';
 import { generateAgentsMd, schemaLayout, CANONICAL_SCHEMA_FILE } from './agents/index.js';
 import { getTemplate } from './templates/index.js';
 import { setupGit } from './integrations/git.js';
 import { setupQmd } from './integrations/qmd.js';
 import { detectObsidian } from './integrations/obsidian.js';
-import { loadRegistry, saveRegistry, registerWiki } from './registry.js';
+import { loadRegistry, saveRegistry, registerWiki, registryConflict, slugifyName } from './registry.js';
 
 const DOMAINS = [
   { value: 'ai-research',           label: 'AI / Tech Research',            hint: 'tracking the landscape, models, protocols, infrastructure' },
@@ -44,8 +44,20 @@ export function writeSchemaAlias(root, aliasName, canonical = CANONICAL_SCHEMA_F
   }
 }
 
-export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = [] }) {
+export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = [], intoExisting = false }) {
   const template = getTemplate(domain);
+  const skipped = [];
+
+  // In --into-existing (adopt) mode we never clobber a file the user already has;
+  // we record what we left alone so the caller can report it. Default mode writes
+  // unconditionally, exactly as before.
+  const putFile = (rel, content) => {
+    const full = join(root, rel);
+    if (intoExisting && existsSync(full)) { skipped.push(rel); return false; }
+    mkdirSync(join(full, '..'), { recursive: true });
+    writeFileSync(full, content, 'utf8');
+    return true;
+  };
 
   for (const dir of [...BASE_DIRS, ...template.extraDirs]) {
     mkdirSync(join(root, dir), { recursive: true });
@@ -54,28 +66,24 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
   const schemaContent = generateAgentsMd({ domain, wikiName, template });
   const { canonical, aliases } = schemaLayout(agent);
 
-  writeFileSync(join(root, canonical), schemaContent, 'utf8');
+  putFile(canonical, schemaContent);
   const aliasResults = aliases.map(a => writeSchemaAlias(root, a, canonical, schemaContent));
 
-  writeFileSync(join(root, 'wiki', 'index.md'), template.indexMd(wikiName), 'utf8');
-  writeFileSync(join(root, 'wiki', 'log.md'), template.logMd(wikiName, domain), 'utf8');
+  putFile(join('wiki', 'index.md'), template.indexMd(wikiName));
+  putFile(join('wiki', 'log.md'), template.logMd(wikiName, domain));
 
   for (const [relPath, content] of Object.entries(template.extraFiles)) {
-    const fullPath = join(root, relPath);
-    mkdirSync(join(fullPath, '..'), { recursive: true });
-    writeFileSync(fullPath, content, 'utf8');
+    putFile(relPath, content);
   }
 
   if (template.seedSource) {
-    const seedPath = join(root, 'raw', template.seedSource.path);
-    mkdirSync(join(seedPath, '..'), { recursive: true });
-    writeFileSync(seedPath, template.seedSource.content, 'utf8');
+    putFile(join('raw', template.seedSource.path), template.seedSource.content);
   }
 
-  writeFileSync(join(root, '.gitignore'), GITIGNORE, 'utf8');
+  writeGitignoreFile(root, intoExisting, skipped);
 
-  writeFileSync(
-    join(root, '.tng-wiki.json'),
+  putFile(
+    '.tng-wiki.json',
     JSON.stringify({
       version: 1,
       name: wikiName,
@@ -102,13 +110,146 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
       //   }]
       code_authorities: codeAuthorities,
     }, null, 2) + '\n',
-    'utf8',
   );
 
-  return { template, canonical, aliases: aliasResults };
+  return { template, canonical, aliases: aliasResults, skipped };
+}
+
+// Write the generated .gitignore, or — in adopt mode against an existing one —
+// append only the lines it's missing rather than clobbering the user's file.
+function writeGitignoreFile(root, intoExisting, skipped) {
+  const full = join(root, '.gitignore');
+  if (intoExisting && existsSync(full)) {
+    const existing = readFileSync(full, 'utf8');
+    const have = new Set(existing.split('\n').map((l) => l.trim()).filter(Boolean));
+    const additions = GITIGNORE.split('\n').filter((l) => l.trim() && !have.has(l.trim()));
+    if (additions.length === 0) { skipped.push('.gitignore'); return; }
+    const base = existing.endsWith('\n') ? existing : existing + '\n';
+    writeFileSync(full, base + '\n# Added by tng-wiki\n' + additions.join('\n') + '\n', 'utf8');
+    return;
+  }
+  writeFileSync(full, GITIGNORE, 'utf8');
 }
 
 export async function runInit(args) {
+  const opts = parseInitArgs(args);
+  if (opts.help) { printInitHelp(); return; }
+  if (opts.unknown.length) {
+    console.error(pc.red('Error:'), `unknown init flag(s): ${opts.unknown.join(', ')}`);
+    console.log(`Run ${pc.cyan('tng-wiki init --help')} for usage.`);
+    process.exit(1);
+  }
+  if (opts.yes) return runInitNonInteractive(opts);
+  if (!process.stdout.isTTY) {
+    console.error(pc.red('Error:'), 'init is interactive and needs a TTY.');
+    console.log(`For non-interactive / agent use, pass ${pc.cyan('--yes')} with flags, e.g.:`);
+    console.log(`  ${pc.cyan('tng-wiki init --yes --dir ./my-wiki --domain blank --agent claude-code')}`);
+    console.log(`Run ${pc.cyan('tng-wiki init --help')} for all options.`);
+    process.exit(1);
+  }
+  return runInitWizard(opts);
+}
+
+export function parseInitArgs(args) {
+  const opts = { help: false, yes: false, intoExisting: false, force: false, git: false, qmd: false, integrationsSet: false, unknown: [] };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    const value = () => (args[i + 1] !== undefined && !args[i + 1].startsWith('--') ? args[++i] : '');
+    switch (a) {
+      case '-h': case '--help': opts.help = true; break;
+      case '-y': case '--yes': opts.yes = true; break;
+      case '--into-existing': case '--adopt': opts.intoExisting = true; break;
+      case '--force': opts.force = true; break;
+      case '--git': opts.git = true; opts.integrationsSet = true; break;
+      case '--no-git': opts.git = false; opts.integrationsSet = true; break;
+      case '--qmd': opts.qmd = true; opts.integrationsSet = true; break;
+      case '--no-qmd': opts.qmd = false; opts.integrationsSet = true; break;
+      case '--no-integrations': opts.git = false; opts.qmd = false; opts.integrationsSet = true; break;
+      case '--domain': opts.domain = value().trim(); break;
+      case '--agent': opts.agent = value().trim(); break;
+      case '--dir': opts.dir = value().trim(); break;
+      case '--name': opts.name = value(); break;
+      default: opts.unknown.push(a);
+    }
+  }
+  return opts;
+}
+
+function printInitHelp() {
+  console.log(`
+${pc.bold('Usage:')} tng-wiki init [options]
+
+Interactive by default. Pass ${pc.cyan('--yes')} with flags to run non-interactively
+(the agent-friendly path).
+
+${pc.bold('Options:')}
+  ${pc.cyan('--yes, -y')}          run without prompts (requires ${pc.cyan('--dir')})
+  ${pc.cyan('--dir <path>')}       where to create the wiki
+  ${pc.cyan('--domain <d>')}       ${DOMAINS.map((d) => d.value).join(' | ')}  ${pc.dim('(default: blank)')}
+  ${pc.cyan('--agent <a>')}        claude-code | codex | cursor | all   ${pc.dim('(default: claude-code)')}
+  ${pc.cyan('--name <n>')}         wiki name ${pc.dim('(default: derived from domain)')}
+  ${pc.cyan('--git / --no-git')}   init a git repo ${pc.dim('(default: off in --yes mode)')}
+  ${pc.cyan('--qmd / --no-qmd')}   register a QMD collection ${pc.dim('(default: off)')}
+  ${pc.cyan('--no-integrations')}  shorthand for --no-git --no-qmd
+  ${pc.cyan('--into-existing')}    adopt a non-empty dir: never overwrite existing files, merge .gitignore
+  ${pc.cyan('--force')}            replace an existing registry entry of the same name
+  ${pc.cyan('--help, -h')}         show this help
+
+${pc.dim('Code authorities are configured by editing .tng-wiki.json after init')}
+${pc.dim('(or via the interactive flow on software-engineering / blank domains).')}
+
+${pc.bold('Examples:')}
+  ${pc.dim('$')} tng-wiki init
+  ${pc.dim('$')} tng-wiki init --yes --dir ./my-wiki --domain software-engineering --name "My Wiki"
+  ${pc.dim('$')} tng-wiki init --yes --dir . --into-existing --no-integrations
+`);
+}
+
+const VALID_DOMAINS = new Set(DOMAINS.map((d) => d.value));
+const VALID_AGENTS = new Set(AGENTS.map((a) => a.value));
+
+async function runInitNonInteractive(opts) {
+  const fail = (msg) => { console.error(pc.red('Error:'), msg); process.exit(1); };
+
+  if (!opts.dir) fail('--yes requires --dir <path> (where to create the wiki).');
+  const domain = opts.domain || 'blank';
+  const agent = opts.agent || 'claude-code';
+  if (!VALID_DOMAINS.has(domain)) fail(`unknown --domain "${domain}". One of: ${[...VALID_DOMAINS].join(', ')}`);
+  if (!VALID_AGENTS.has(agent)) fail(`unknown --agent "${agent}". One of: ${[...VALID_AGENTS].join(', ')}`);
+  const wikiName = (opts.name ?? '').trim() || domainToName(domain);
+
+  const root = resolve(opts.dir);
+  if (existsSync(root)) {
+    let nonEmpty = false;
+    try { nonEmpty = readdirSync(root).length > 0; } catch { /* unreadable — treat as empty */ }
+    if (nonEmpty && !opts.intoExisting) {
+      fail(`directory exists and is not empty: ${root}\n  Pass --into-existing to adopt tng-wiki into it (existing files are preserved).`);
+    }
+  }
+
+  // Registry collision guard (issue #8): refuse to silently flip an existing slug.
+  const reg = loadRegistry();
+  const conflictPath = registryConflict(reg, { name: wikiName, path: root });
+  if (conflictPath && !opts.force) {
+    fail(`registry slug "${slugifyName(wikiName)}" already points at ${conflictPath}.\n  Re-run with --force to replace it, or choose a different --name.`);
+  }
+
+  const { canonical, skipped } = scaffoldWiki(root, { domain, agent, wikiName, intoExisting: opts.intoExisting });
+
+  if (opts.git) await setupGit(root);
+  if (opts.qmd) await setupQmd(root, wikiName);
+
+  if (conflictPath) console.log(pc.yellow(`Replacing registry entry "${slugifyName(wikiName)}": ${conflictPath} → ${root}`));
+  let registered = false;
+  try { saveRegistry(registerWiki(reg, { name: wikiName, path: root, domain })); registered = true; }
+  catch (err) { console.log(pc.yellow(`○ Could not register: ${trimError(err.message)}`)); }
+
+  console.log(`${pc.green('✓')} Scaffolded ${pc.cyan(domainLabel(domain))} wiki at ${pc.cyan(root)} ${pc.dim(`(${canonical})`)}`);
+  if (skipped.length) console.log(`  ${pc.dim(`left ${skipped.length} existing file(s) untouched: ${skipped.join(', ')}`)}`);
+  if (registered) console.log(`${pc.green('✓')} Registered as ${pc.bold(slugifyName(wikiName))}`);
+}
+
+async function runInitWizard(opts) {
   p.intro(pc.bgCyan(pc.black(' tng-wiki init ')));
 
   // --- Domain selection ---
@@ -136,11 +277,12 @@ export async function runInit(args) {
     placeholder: defaultPath,
     defaultValue: defaultPath,
     validate: (val) => {
-      const resolved = resolve(val || defaultPath);
+      const cleaned = (val ?? '').trim() || defaultPath;
+      const resolved = resolve(cleaned);
       if (existsSync(resolved)) {
         try {
           if (readdirSync(resolved).length > 0) {
-            return 'Directory exists and is not empty. Choose a different path.';
+            return 'Directory exists and is not empty. Choose a different path (or re-run with --into-existing to adopt).';
           }
         } catch { /* ok */ }
       }
@@ -171,10 +313,23 @@ export async function runInit(args) {
   const useQmd = extras.includes('qmd');
 
   // --- Code authorities (Layer 3B): only offered on engineering-shaped domains ---
-  const root = resolve(targetDir || defaultPath);
+  const root = resolve((targetDir ?? '').trim() || defaultPath);
   const codeAuthorities = supportsCodeAuthorities(domain)
     ? await promptCodeAuthorities(root)
     : [];
+
+  // --- Registry collision guard (issue #8): decide before scaffolding ---
+  const existingRegistry = loadRegistry();
+  const conflictPath = registryConflict(existingRegistry, { name: wikiName, path: root });
+  let replaceRegistry = true;
+  if (conflictPath) {
+    const ok = await p.confirm({
+      message: `Registry slug "${slugifyName(wikiName)}" already points at ${conflictPath}. Replace it with this wiki?`,
+      initialValue: false,
+    });
+    if (p.isCancel(ok)) throw new Error('CANCELLED');
+    replaceRegistry = ok;
+  }
 
   // --- Execute ---
   const s = p.spinner();
@@ -199,12 +354,16 @@ export async function runInit(args) {
 
   // Registry
   let registryStatus = null;
-  try {
-    const reg = registerWiki(loadRegistry(), { name: wikiName, path: root, domain });
-    saveRegistry(reg);
-    registryStatus = { success: true, isDefault: reg.default && reg.wikis[reg.default].path === root };
-  } catch (err) {
-    registryStatus = { success: false, error: err.message };
+  if (replaceRegistry) {
+    try {
+      const reg = registerWiki(existingRegistry, { name: wikiName, path: root, domain });
+      saveRegistry(reg);
+      registryStatus = { success: true, isDefault: reg.default && reg.wikis[reg.default].path === root };
+    } catch (err) {
+      registryStatus = { success: false, error: err.message };
+    }
+  } else {
+    registryStatus = { success: false, error: `kept existing entry "${slugifyName(wikiName)}" (${conflictPath})` };
   }
 
   s.stop(pc.green('✓ Wiki scaffolded'));
@@ -433,7 +592,18 @@ export async function promptCodeAuthorities(wikiRoot) {
   return authorities;
 }
 
-const GITIGNORE = `# OS
+const GITIGNORE = `# Dependencies
+node_modules/
+
+# Secrets — wikis accumulate raw scripts/captures where credentials hide
+.env
+*.env
+.env.*
+.secrets/
+*.pem
+*.key
+
+# OS
 .DS_Store
 Thumbs.db
 
