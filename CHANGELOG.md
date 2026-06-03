@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-03
+
+### Fixed
+- **Raw-source staleness (`source_updated_after_page`) now uses the cited raw file's git commit-date** instead of filesystem mtime, compared at date granularity. `git clone` / `checkout` resets mtimes, which previously made every raw-cited page look stale after syncing a wiki to another machine; commit-dates are stable across clones. The date-granularity comparison also stops a same-day source edit from flagging a freshly-distilled page. Falls back to mtime when the wiki is not a git repo or the file is untracked.
+
 ## [0.3.0] - 2026-06-03
 
 ### Added

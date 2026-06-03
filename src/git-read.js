@@ -61,3 +61,11 @@ export function fileCommitDateAtRef(repoDir, ref, file) {
     return null;
   }
 }
+
+// Commit date of the most recent commit touching `file` at HEAD, as a Date, or
+// null if `repoDir` is not a git repo or the file is untracked / has no history.
+// Unlike filesystem mtime, this survives `git clone` (which resets mtimes), so it
+// is the reliable staleness signal for a git-synced wiki.
+export function fileCommitDate(repoDir, file) {
+  return fileCommitDateAtRef(repoDir, 'HEAD', file);
+}

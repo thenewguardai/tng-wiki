@@ -223,7 +223,7 @@ Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catch
 - Inline \`[^raw/...]\` citations pointing at raw files that don't exist (→ fix the path, or remove the claim)
 - Inline citations not registered in frontmatter \`sources:\` (undeclared cites — applies to both raw and \`code:<name>\` entries)
 - Frontmatter \`sources:\` entries not cited inline (orphan declarations — the page added a source it never used)
-- Pages whose \`updated\` is older than the mtime of a cited raw source (source changed after distillation — candidate for Layer 2)
+- Pages whose \`updated\` (by date) is older than a cited raw source's last git commit-date — or mtime when the wiki isn't a git repo (source changed after distillation — candidate for Layer 2)
 - Inline \`[^code:<name>/...]\` citations where \`<name>\` is not a registered code authority in \`.tng-wiki.json\` (\`unknown_code_authority\`) or where the file path resolves to nothing on disk (\`missing_code_file\`)
 - Inline \`[^code:<name>/file]\` citations targeting a file the authority's \`exclude\` globs skip (\`excluded_code_file\`), or whose \`#L<start>-L<end>\` anchor exceeds the cited file (\`code_line_out_of_range\`)
 - With \`--at-ref\`: code citations are resolved at each authority's pinned \`ref\` instead of the working tree — adds \`missing_code_file\` at the ref, \`code_updated_after_page\` (the page's \`updated\` predates the file's last commit at the ref), and \`code_ref_unresolvable\` (the ref or repo can't be resolved)

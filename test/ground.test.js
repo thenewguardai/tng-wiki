@@ -565,3 +565,56 @@ test('--at-ref: ref-d and working-tree authorities coexist in one run', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- raw-source staleness: git commit-date + date granularity ---
+
+test('raw staleness uses git commit-date, not mtime (survives clone mtime reset)', () => {
+  const dir = makeWiki();
+  try {
+    git(dir, ['init', '-b', 'main']); // make the WIKI itself a git repo
+    writeFile(dir, 'raw/papers/src.md', 'body');
+    commitAll(dir, 'add source', '2020-01-01 12:00:00 +0000'); // commit-date 2020
+    // simulate a post-clone mtime reset: bump the file's mtime far into the future
+    const future = new Date('2099-01-01T00:00:00Z');
+    utimesSync(join(dir, 'raw/papers/src.md'), future, future);
+    writeFile(dir, 'wiki/entities/p.md',
+      '---\nupdated: 2026-01-01\nsources:\n  - raw/papers/src.md\n---\nClaim.[^raw/papers/src.md]');
+    // commit-date 2020 < page updated 2026 -> NOT stale, despite mtime = 2099
+    assert.ok(!checkGrounding(dir, { page: 'entities/p.md' }).issues
+      .some((i) => i.issue === 'source_updated_after_page'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('raw staleness flags when a source commit-date is newer than the page updated', () => {
+  const dir = makeWiki();
+  try {
+    git(dir, ['init', '-b', 'main']);
+    writeFile(dir, 'raw/papers/src.md', 'body');
+    commitAll(dir, 'future source', '2099-01-01 12:00:00 +0000');
+    writeFile(dir, 'wiki/entities/p.md',
+      '---\nupdated: 2020-01-01\nsources:\n  - raw/papers/src.md\n---\nClaim.[^raw/papers/src.md]');
+    const hit = checkGrounding(dir, { page: 'entities/p.md' }).issues
+      .find((i) => i.issue === 'source_updated_after_page');
+    assert.ok(hit);
+    assert.ok(hit.source_mtime > '2020-01-01');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('raw staleness does not fire when source and page share the same date (date granularity)', () => {
+  const dir = makeWiki();
+  try {
+    git(dir, ['init', '-b', 'main']);
+    writeFile(dir, 'raw/papers/src.md', 'body');
+    commitAll(dir, 'same day', '2026-06-03 12:00:00 +0000');
+    writeFile(dir, 'wiki/entities/p.md',
+      '---\nupdated: 2026-06-03\nsources:\n  - raw/papers/src.md\n---\nClaim.[^raw/papers/src.md]');
+    assert.ok(!checkGrounding(dir, { page: 'entities/p.md' }).issues
+      .some((i) => i.issue === 'source_updated_after_page'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

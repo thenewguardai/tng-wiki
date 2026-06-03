@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative, resolve } from 'path';
 import { matchesAnyGlob } from './glob.js';
-import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef } from './git-read.js';
+import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate } from './git-read.js';
 
 // Lines in a blob, ignoring a single trailing newline so a file with N lines
 // (with or without a final \n) counts as N — keeps the last-line range check honest.
@@ -297,21 +297,27 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
       }
     }
 
-    // raw sources: page updated before raw source mtime
+    // raw sources: page `updated` older than a cited raw source's last change.
+    // Prefer the git commit-date (stable across clones — `git checkout` resets
+    // filesystem mtimes, which would make every page look stale after a sync) and
+    // fall back to mtime when the wiki is not a git repo or the file is untracked.
+    // Compare at DATE granularity: `updated` is a date, so a same-day source edit
+    // is not "stale".
     if (declared && updated) {
+      const updatedDate = updated.toISOString().slice(0, 10);
       for (const d of declaredRaw) {
         const abs = join(wikiPath, d);
-        if (existsSync(abs)) {
-          const mtime = statSync(abs).mtime;
-          if (mtime.getTime() > updated.getTime()) {
-            issues.push({
-              page: rel,
-              issue: 'source_updated_after_page',
-              raw: d,
-              page_updated: updated.toISOString().slice(0, 10),
-              source_mtime: mtime.toISOString().slice(0, 10),
-            });
-          }
+        if (!existsSync(abs)) continue;
+        const sourceTime = fileCommitDate(wikiPath, d) ?? statSync(abs).mtime;
+        const sourceDate = sourceTime.toISOString().slice(0, 10);
+        if (sourceDate > updatedDate) {
+          issues.push({
+            page: rel,
+            issue: 'source_updated_after_page',
+            raw: d,
+            page_updated: updatedDate,
+            source_mtime: sourceDate,
+          });
         }
       }
     }
