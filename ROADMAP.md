@@ -66,8 +66,9 @@ Split to `docs/` once README crosses ~250 lines.
   - ~~Git-ref pinning: `{ name, path, ref: "v2.1.0" }` so authorities can be frozen at a specific commit/tag.~~ **Shipped 2026-04-25.**
   - `tng-wiki ground --against-code <name>` guided entry point for Layer 3B verification runs. Layer 3B is agent-driven today; a CLI shortcut would let the agent (or a human) kick off a scoped pass without prose.
   - Per-language comment-handling rules in config, for codebases where the default "ignore comments/docstrings/JSDoc" filter needs tighter language-specific treatment.
-  - Line-range validation in `tng-wiki ground` — today `missing_code_file` checks path existence but not that the cited `#L<start>-L<end>` range is within the file's line count.
-  - `exclude`-glob validation: flag inline citations that point at files the agent would skip per the authority's `exclude` list.
+  - ~~Line-range validation in `tng-wiki ground` — today `missing_code_file` checks path existence but not that the cited `#L<start>-L<end>` range is within the file's line count.~~ **Shipped 2026-06-03 (`code_line_out_of_range`).**
+  - ~~`exclude`-glob validation: flag inline citations that point at files the agent would skip per the authority's `exclude` list.~~ **Shipped 2026-06-03 (`excluded_code_file`).**
+  - ~~Opt-in ref-pinned `tng-wiki ground --at-ref` — Layer-1 structural checks resolved at each authority's `ref` (adds `missing_code_file` at-ref, `code_updated_after_page`, `code_ref_unresolvable`).~~ **Shipped 2026-06-03.**
 - Add a non-interactive `init` mode so the scaffold can be created from scripts and CI, not only through prompts.
 - Expand `status` into a real wiki health check that can detect broken wikilinks, missing frontmatter, orphan pages, pages missing from the index, and uncompiled raw sources across more than markdown files.
 - Expand the lint surface (`stale` / `orphans` are milestone 3; add `contradictions`, `coverage-gaps`, `thin-pages` as follow-ups so the full lint vocabulary in `AGENTS.md` has a CLI counterpart).

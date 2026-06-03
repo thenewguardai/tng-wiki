@@ -1,0 +1,63 @@
+// Read-only git helpers for `tng-wiki ground --at-ref`: resolve cited code files
+// at an authority's pinned ref instead of the working tree.
+//
+// Every function is pure and NEVER throws — failures (not a repo, bad ref, file
+// absent at ref) return false / null so the caller can map them to a structural
+// grounding issue rather than crash the lint run.
+//
+// We use `execFileSync` with an argument array (not the `execSync` shell pattern
+// the rest of the repo uses for fixed commands) on purpose: `ref` and `file` come
+// from `.tng-wiki.json` and from inline citations, so they may contain spaces or
+// shell metacharacters. An argument array passes them verbatim with no quoting.
+
+import { execFileSync } from 'child_process';
+
+function git(repoDir, args, { capture = false } = {}) {
+  return execFileSync('git', ['-C', repoDir, ...args], {
+    stdio: capture ? ['ignore', 'pipe', 'ignore'] : ['ignore', 'ignore', 'ignore'],
+    encoding: 'utf8',
+  });
+}
+
+// Does `ref` resolve to a commit in the repo at `repoDir`? False when the path is
+// not a git repo or the ref is unknown — the caller treats that as code_ref_unresolvable.
+export function refResolves(repoDir, ref) {
+  try {
+    git(repoDir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { capture: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Does `file` exist in the tree at `ref`?
+export function fileExistsAtRef(repoDir, ref, file) {
+  try {
+    git(repoDir, ['cat-file', '-e', `${ref}:${file}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Contents of `file` at `ref`, or null if it cannot be read.
+export function readFileAtRef(repoDir, ref, file) {
+  try {
+    return git(repoDir, ['show', `${ref}:${file}`], { capture: true });
+  } catch {
+    return null;
+  }
+}
+
+// Commit date of the most recent commit touching `file` up to `ref`, as a Date,
+// or null if the file has no history at that ref (treat as not-stale).
+export function fileCommitDateAtRef(repoDir, ref, file) {
+  try {
+    const out = git(repoDir, ['log', '-1', '--format=%cI', ref, '--', file], { capture: true }).trim();
+    if (!out) return null;
+    const d = new Date(out);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}

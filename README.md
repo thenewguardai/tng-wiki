@@ -122,7 +122,7 @@ tng-wiki search     <query> [--wiki <slug>] [--regex] [--include-raw] [--json]
 tng-wiki sources    [--wiki <slug>] [--uncompiled] [--json]
 
 # Grounding + lint (keeping the wiki honest)
-tng-wiki ground     [--wiki <slug>] [--page <path>] [--json]   # structural ground-check
+tng-wiki ground     [--wiki <slug>] [--page <path>] [--at-ref] [--json]   # structural ground-check
 tng-wiki drift      [--wiki <slug>] [--json]                   # ⚠️ DRIFT?      markers
 tng-wiki unsourced  [--wiki <slug>] [--json]                   # ⚠️ UNSOURCED?  markers
 tng-wiki unverified [--wiki <slug>] [--json]                   # ⚠️ UNVERIFIED? markers
@@ -273,10 +273,11 @@ wiki/entities/anthropic.md
 3 issue(s) across 2 page(s), 47 scanned
 
 $ tng-wiki ground --page entities/openai.md          # scope to one page
+$ tng-wiki ground --at-ref                           # resolve code cites at each authority's pinned ref
 $ tng-wiki ground --json | jq '.issues | group_by(.issue)'    # structured for agents + scripts
 ```
 
-Detects five classes of structural issue: empty/missing `sources:`, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (frontmatter-only, never cited), and raw sources whose mtime is newer than the page's `updated` date. Skips `wiki/index.md`, `wiki/log.md`, `_`-prefixed template files, and `wiki/meta/*`.
+Detects structural issues: empty/missing `sources:`, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (frontmatter-only, never cited), raw sources whose mtime is newer than the page's `updated` date, and code-authority problems (`unknown_code_authority`, `missing_code_file`, `excluded_code_file`, `code_line_out_of_range`). Add `--at-ref` to resolve code citations at each authority's pinned git `ref` instead of the working tree — this adds at-ref `missing_code_file`, `code_updated_after_page` (page `updated` predates the file's last commit at the ref), and `code_ref_unresolvable`; default `ground` stays working-tree-based. Skips `wiki/index.md`, `wiki/log.md`, `_`-prefixed template files, and `wiki/meta/*`.
 
 ### Layer 2 — semantic re-verification (agent-driven)
 
@@ -374,7 +375,7 @@ Extended `⚠️ DRIFT?` marker format when a code authority is involved:
            suggested: "OAuth2 implicit flow — legacy-app does not implement PKCE"]
 ```
 
-Code authorities are **advisory**, not absolute — disagreement always surfaces as `⚠️ DRIFT?` for human reconcile, never auto-applied. Structural checks (`tng-wiki ground`) catch two code-authority failure classes: `unknown_code_authority` (cited authority not registered) and `missing_code_file` (cited file path doesn't exist).
+Code authorities are **advisory**, not absolute — disagreement always surfaces as `⚠️ DRIFT?` for human reconcile, never auto-applied. Structural checks (`tng-wiki ground`) catch code-authority failure classes: `unknown_code_authority` (cited authority not registered), `missing_code_file` (cited file path doesn't exist), `excluded_code_file` (cite targets a path the authority's `exclude` globs skip), and `code_line_out_of_range` (the `#L` anchor exceeds the file). With `tng-wiki ground --at-ref`, citations resolve at each authority's pinned `ref` instead of the working tree, adding `code_updated_after_page` and `code_ref_unresolvable`.
 
 Full workflow lives in `AGENTS.md → ### Grounding → Layer 3`. The Software Engineering & Architecture template ships a scaffolded example ADR (`wiki/decisions/_adr-code-authority-example.md`) showing the full pattern end-to-end.
 
