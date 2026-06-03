@@ -344,11 +344,12 @@ function scanMarker(wikiPath, pattern) {
   const wikiDir = join(wikiPath, 'wiki');
   const results = [];
   for (const file of walkMd(wikiDir)) {
-    const content = readFileSync(file, 'utf8');
-    const matches = content.match(pattern);
-    if (matches) {
-      results.push({ path: relative(wikiPath, file), count: matches.length });
-    }
+    const rel = relative(wikiPath, file);
+    // Skip non-groundable files (index/log, _-prefixed templates, wiki/meta/*) so
+    // a fresh scaffold's own example markers don't show up as real lint findings.
+    if (!isGroundable(rel)) continue;
+    const matches = readFileSync(file, 'utf8').match(pattern);
+    if (matches) results.push({ path: rel, count: matches.length });
   }
   return results;
 }

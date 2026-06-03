@@ -172,6 +172,18 @@ function OPERATIONS(domain) {
 
   let ops = `## Operations
 
+### Rounds
+
+"Rounds" is the named maintenance bundle. When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping", run it end to end and report a short summary:
+
+1. **Ingest** anything pending in \`raw/\` (uncompiled sources — \`tng-wiki sources --uncompiled\`).
+2. **Lint + ground**: run \`tng-wiki ground\`, \`orphans\`, \`unsourced\`, \`unverified\`, \`stale\`, \`drift\` (or \`tng-wiki rounds\` for every count at a glance).
+3. **Reconcile** what's safely reconcilable; leave the \`⚠️\` markers that need human judgment and surface them.
+4. **Update** \`wiki/index.md\` and append a \`wiki/log.md\` entry summarizing what changed.
+5. **Report** a short human-readable summary of what you did and what still needs the human.
+
+Run rounds when asked, or on a maintenance cadence (the user may wire it to cron or the \`schedule\` skill).
+
 ### Ingest
 
 When the human drops a new source into \`raw/\` and asks you to process it:

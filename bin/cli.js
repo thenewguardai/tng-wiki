@@ -80,6 +80,16 @@ async function main() {
       await runOrphans(args);
       break;
     }
+    case 'rounds': {
+      const { runRounds } = await import('../src/verbs-cli.js');
+      await runRounds(args);
+      break;
+    }
+    case 'connect': {
+      const { runConnect } = await import('../src/connect.js');
+      await runConnect(args);
+      break;
+    }
     case 'install-skill': {
       const { runInstallSkill } = await import('../src/skill-cli.js');
       await runInstallSkill(args);
@@ -134,9 +144,11 @@ ${pc.bold('Grounding & lint (the wiki health surface):')}
   ${pc.cyan('unverified')}   List pages with ⚠️ UNVERIFIED? markers
   ${pc.cyan('stale')}        List pages with ⚠️ STALE? markers
   ${pc.cyan('orphans')}      List wiki pages with no inbound wikilinks
+  ${pc.cyan('rounds')}       Maintenance dashboard — the lint counts behind "do your rounds"
 
 ${pc.bold('Agent integration:')}
   ${pc.cyan('install-skill')}  Install the Claude Code skill at ~/.claude/skills/tng-wiki
+  ${pc.cyan('connect')}        Point agent sessions in another repo at a wiki (writes CLAUDE.local.md)
 
 ${pc.bold('Diagnostics:')}
   ${pc.cyan('status')}       Basic wiki health snapshot

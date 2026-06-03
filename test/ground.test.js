@@ -618,3 +618,16 @@ test('raw staleness does not fire when source and page share the same date (date
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('marker lint verbs skip _-prefixed templates and wiki/meta/*', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/_template.md', 'example ⚠️ DRIFT? and ⚠️ STALE?');
+    writeFile(dir, 'wiki/meta/notes.md', 'health ⚠️ UNSOURCED?');
+    writeFile(dir, 'wiki/entities/real.md', 'claim ⚠️ DRIFT?');
+    assert.deepEqual(listDriftPages(dir).map((p) => p.path), ['wiki/entities/real.md']);
+    assert.equal(listUnsourcedPages(dir).length, 0); // only the exempt meta file had it
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

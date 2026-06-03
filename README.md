@@ -398,6 +398,20 @@ $ tng-wiki drift        # ⚠️ DRIFT?       (Layer 2/3)
 
 All accept `--wiki <slug>` and `--json`. Output shape is `path (N markers)` for parity with the existing `stale`/`orphans` verbs.
 
+### Ongoing care — rounds
+
+The wiki is *agent-maintained*, so the unit of interaction is one phrase — **"do your rounds"** — not six verbs you have to remember. Rounds bundles the maintenance loop:
+
+> **Rounds** = ingest anything pending in `raw/` → run `ground` / `orphans` / `unsourced` / `unverified` / `stale` / `drift` → reconcile what's safe and surface the `⚠️` markers that need you → update `index.md` + append a `log.md` entry → report a short summary.
+
+Give your agent the one-liner:
+
+```bash
+claude "Read AGENTS.md, then do your wiki rounds"
+```
+
+`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard — one count per category, zero-LLM — the anchor cron jobs and agents key off. The bundle is defined precisely in every generated `AGENTS.md` (`### Rounds`) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
+
 ## Ambient Cross-Project Access
 
 Once your wiki is registered, it's reachable from any project you're working in. How to plumb it into your agent depends on whether the agent has shell access.
@@ -425,6 +439,17 @@ Your long-term memory is a tng-wiki. Start any research task with
 `tng-wiki read <path>` to navigate. Pass `--wiki <slug>` to target
 a specific registered wiki (list them with `tng-wiki list`).
 ```
+
+### Connect another repo to a wiki (automated)
+
+Writing that one-liner by hand into every repo is exactly what `tng-wiki connect` automates:
+
+```bash
+tng-wiki connect ~/code/some-app --wiki infra
+# ✓ wrote CLAUDE.local.md (added to .git/info/exclude)
+```
+
+It writes a managed nudge block into a local agent file (`CLAUDE.local.md` for Claude Code) telling sessions in that repo to **search the wiki before re-deriving** domain knowledge and to **hand keepable output back** to it. The file is added to the repo's `.git/info/exclude` — **not** the tracked `.gitignore` — so it stays per-machine and never enters shared git history (it matters when the repo belongs to a client or team). Re-running updates the block in place; `--remove` deletes it. Set a `description` in the wiki's `.tng-wiki.json` and the nudge will say what the wiki actually covers.
 
 ### Shell-less / chat-app agents (Claude Desktop, ChatGPT Desktop, web UIs)
 
