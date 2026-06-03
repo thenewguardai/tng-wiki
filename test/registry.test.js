@@ -6,13 +6,20 @@ import { join } from 'path';
 import {
   emptyRegistry, loadRegistry, saveRegistry, registryPath,
   registerWiki, unregisterWiki, setDefault, listWikis, getWiki, getDefault,
-  slugifyName,
+  slugifyName, registryConflict,
 } from '../src/registry.js';
 
 function inHome(fn) {
   const home = mkdtempSync(join(tmpdir(), 'tng-wiki-registry-'));
   try { return fn(home); } finally { rmSync(home, { recursive: true, force: true }); }
 }
+
+test('registryConflict flags same-slug different-path, ignores same path and unknown slug', () => {
+  const reg = registerWiki(emptyRegistry(), { name: 'Demo', path: '/tmp/demo', domain: 'blank' });
+  assert.equal(registryConflict(reg, { name: 'Demo', path: '/tmp/other' }), '/tmp/demo');
+  assert.equal(registryConflict(reg, { name: 'Demo', path: '/tmp/demo' }), null);
+  assert.equal(registryConflict(reg, { name: 'Nobody', path: '/tmp/x' }), null);
+});
 
 test('loadRegistry returns an empty registry when no file exists', () => {
   inHome((home) => {

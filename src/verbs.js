@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
+import { isGroundable } from './ground.js';
 
 export function resolveWiki(slug, home) {
   const registry = loadRegistry(home);
@@ -147,10 +148,11 @@ export function listOrphanPages(wikiPath) {
     }
   }
 
-  // Orphans: pages with zero inbound links, excluding structural pages
-  const STRUCTURAL = new Set(['wiki/index.md', 'wiki/log.md']);
+  // Orphans: groundable pages with zero inbound links. Reuse ground's
+  // exemptions (index.md, log.md, _-prefixed templates, wiki/meta/*) so a fresh
+  // scaffold's own seed/template files aren't reported as orphans.
   return files
     .map(f => relative(wikiPath, f))
-    .filter(rel => !STRUCTURAL.has(rel) && !inbound.has(rel))
+    .filter(rel => isGroundable(rel) && !inbound.has(rel))
     .map(path => ({ path }));
 }

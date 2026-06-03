@@ -48,6 +48,14 @@ The interactive flow walks you through:
 5. **Integrations** — Git and/or QMD hybrid search
 6. **Code authorities** *(Software Engineering and Blank domains only)* — register one or more reference codebases as advisory ground truth for [Layer 3B grounding](#3b--code-authorities-local-filesystem). Optional; skip on first scaffold and add later by editing `.tng-wiki.json`.
 
+**Non-interactive / agent setup.** Pass `--yes` with flags to scaffold headless (no prompts):
+
+```bash
+tng-wiki init --yes --dir ./my-wiki --domain software-engineering --agent claude-code --name "My Wiki" --no-integrations
+```
+
+Add `--into-existing` to adopt tng-wiki into a non-empty directory (existing files are preserved, `.gitignore` is merged). `tng-wiki init --help` lists every flag. Code authorities are configured by editing `.tng-wiki.json` afterward.
+
 Then it scaffolds everything:
 
 ```
@@ -107,7 +115,7 @@ One schema, every agent. Edit `AGENTS.md`; every alias sees the change.
 
 ```bash
 # Scaffolding
-tng-wiki init                       # Scaffold a new wiki (interactive)
+tng-wiki init                       # Scaffold a new wiki (interactive; --yes for headless)
 
 # Registry
 tng-wiki register [path]            # Register an existing wiki

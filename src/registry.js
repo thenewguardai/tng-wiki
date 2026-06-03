@@ -66,6 +66,16 @@ export function registerWiki(registry, { name, path, domain, slug }) {
   return next;
 }
 
+// Detect the silent-overwrite case: `slug` (from explicit slug or slugified name)
+// already exists but points at a DIFFERENT resolved path. Returns the existing
+// path so callers can warn / require --force; null when there's no conflict.
+export function registryConflict(registry, { name, path, slug }) {
+  const finalSlug = slug || slugifyName(name);
+  const existing = registry.wikis[finalSlug];
+  if (!existing) return null;
+  return resolve(existing.path) === resolve(path) ? null : existing.path;
+}
+
 export function unregisterWiki(registry, slug) {
   if (!registry.wikis[slug]) {
     throw new Error(`No wiki registered under slug "${slug}"`);

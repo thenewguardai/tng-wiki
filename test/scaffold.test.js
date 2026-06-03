@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, statSync, lstatSync, readlinkSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, statSync, lstatSync, readlinkSync, mkdirSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { scaffoldWiki } from '../src/init.js';
@@ -155,5 +155,36 @@ test('scaffoldWiki writes every template extraFile with non-empty content', () =
     for (const path of extras) {
       assert.ok(readFileSync(path, 'utf8').length > 0, `${path} is empty`);
     }
+  });
+});
+
+test('scaffoldWiki .gitignore covers node_modules/ and secrets patterns', () => {
+  inTmp((root) => {
+    scaffoldWiki(root, { domain: 'blank', agent: 'claude-code', wikiName: 'Demo' });
+    const gi = readFileSync(join(root, '.gitignore'), 'utf8');
+    assert.match(gi, /^node_modules\/$/m);
+    assert.match(gi, /\*\.env/);
+    assert.match(gi, /\.secrets\//);
+  });
+});
+
+test('scaffoldWiki --into-existing preserves existing files and merges .gitignore', () => {
+  inTmp((root) => {
+    mkdirSync(join(root, 'wiki'), { recursive: true });
+    writeFileSync(join(root, 'wiki/index.md'), '# My existing index\n', 'utf8');
+    writeFileSync(join(root, '.gitignore'), 'custom-line\n', 'utf8');
+
+    const { skipped } = scaffoldWiki(root, { domain: 'blank', agent: 'claude-code', wikiName: 'Demo', intoExisting: true });
+
+    // existing files left untouched and reported as skipped
+    assert.equal(readFileSync(join(root, 'wiki/index.md'), 'utf8'), '# My existing index\n');
+    assert.ok(skipped.includes('wiki/index.md'), `skipped: ${skipped.join(', ')}`);
+    // .gitignore merged: keeps the user's line, adds ours
+    const gi = readFileSync(join(root, '.gitignore'), 'utf8');
+    assert.match(gi, /custom-line/);
+    assert.match(gi, /node_modules\//);
+    // brand-new files are still scaffolded
+    assert.ok(existsSync(join(root, 'AGENTS.md')));
+    assert.ok(existsSync(join(root, '.tng-wiki.json')));
   });
 });

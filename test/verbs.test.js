@@ -211,3 +211,15 @@ test('listOrphanPages treats [[link|alias]] and [[link#anchor]] as valid inbound
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('listOrphanPages applies ground exemptions — fresh SE scaffold templates/meta are not orphans', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-verbs-'));
+  try {
+    scaffoldWiki(dir, { domain: 'software-engineering', agent: 'claude-code', wikiName: 'Eng' });
+    const orphans = listOrphanPages(dir).map(o => o.path);
+    assert.ok(!orphans.some(p => p.split('/').pop().startsWith('_')), `_-prefixed flagged: ${orphans.join(', ')}`);
+    assert.ok(!orphans.some(p => p.startsWith('wiki/meta/')), `wiki/meta flagged: ${orphans.join(', ')}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
