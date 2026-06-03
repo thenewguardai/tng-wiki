@@ -14,7 +14,7 @@ export function skillFile(claudeHome) {
 
 export const SKILL_CONTENT = `---
 name: tng-wiki
-description: Query the user's tng-wiki knowledge base. Use when the user asks about topics from their personal wiki, references prior research, says "check my wiki" or "what do I know about X", mentions tng-wiki by name, or is starting research on a topic that might already have notes. Also use proactively before ingesting new sources to avoid duplication.
+description: Query the user's tng-wiki knowledge base. Use when the user asks about topics from their personal wiki, references prior research, says "check my wiki" or "what do I know about X", mentions tng-wiki by name, or is starting research on a topic that might already have notes. Also use proactively before ingesting new sources to avoid duplication, and for wiki maintenance — trigger on "do your rounds", "wiki rounds", "wiki maintenance", or "housekeeping".
 ---
 
 # tng-wiki
@@ -44,6 +44,7 @@ The user may have several wikis (research, competitive intel, learning, etc.). S
 - **\`tng-wiki drift [--wiki <slug>]\`** — pages carrying \`⚠️ DRIFT?\` markers (semantic or external grounding output).
 - **\`tng-wiki unsourced [--wiki <slug>]\`** — pages carrying \`⚠️ UNSOURCED?\` markers.
 - **\`tng-wiki unverified [--wiki <slug>]\`** — pages carrying \`⚠️ UNVERIFIED?\` markers.
+- **\`tng-wiki rounds [--wiki <slug>]\`** — maintenance dashboard: counts of uncompiled sources plus ground / orphans / unsourced / unverified / stale / drift. The anchor for "do your rounds".
 
 ## Typical flow
 
@@ -80,7 +81,7 @@ Wikis compound over time, which means claims drift — sources update, context c
 - User says "reconcile", "ground-check", "verify the wiki", "is this still accurate", "re-check the sources"
 - User asks whether a wiki claim is trustworthy, current, or properly sourced
 - Before a publication or briefing pulls from wiki content — ground first, then author
-- Periodically on maintenance cadence (the user may ask you to run this via cron or \`schedule\` skill)
+- As part of **rounds** (see below) — the user may wire rounds to cron or the \`schedule\` skill
 
 ### Reconcile workflow (when handling \`⚠️ DRIFT?\` markers)
 
@@ -94,6 +95,18 @@ Wikis compound over time, which means claims drift — sources update, context c
 5. Apply the chosen action, remove the marker, bump \`updated\`, log to \`log.md\`
 
 Never auto-resolve a drift marker without human approval. The marker exists precisely because the wiki and the source disagree.
+
+## Rounds (wiki maintenance)
+
+When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping", run the full maintenance bundle and report a short summary:
+
+1. Ingest anything pending in \`raw/\` (\`tng-wiki sources --uncompiled\`).
+2. Run \`tng-wiki rounds\` for the lint counts at a glance, then \`ground\` / \`orphans\` / \`unsourced\` / \`unverified\` / \`stale\` / \`drift\` for detail.
+3. Reconcile what's safely reconcilable; surface the \`⚠️\` markers that need the user.
+4. Update \`wiki/index.md\` and append a \`wiki/log.md\` entry.
+5. Report what changed and what still needs human judgment.
+
+Each wiki's \`AGENTS.md\` defines rounds precisely — \`cd\` into the wiki dir (from \`tng-wiki list\`) and follow it for the maintenance steps.
 
 ## What not to do
 

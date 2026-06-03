@@ -6,7 +6,7 @@ import { join } from 'path';
 import { scaffoldWiki } from '../src/init.js';
 import {
   resolveWiki, queryIndex, readPage, searchWiki,
-  listSources, listStalePages, listOrphanPages,
+  listSources, listStalePages, listOrphanPages, roundsReport,
 } from '../src/verbs.js';
 import { saveRegistry, emptyRegistry, registerWiki } from '../src/registry.js';
 
@@ -219,6 +219,23 @@ test('listOrphanPages applies ground exemptions — fresh SE scaffold templates/
     const orphans = listOrphanPages(dir).map(o => o.path);
     assert.ok(!orphans.some(p => p.split('/').pop().startsWith('_')), `_-prefixed flagged: ${orphans.join(', ')}`);
     assert.ok(!orphans.some(p => p.startsWith('wiki/meta/')), `wiki/meta flagged: ${orphans.join(', ')}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('roundsReport returns counts and skips template/meta example markers', () => {
+  const dir = makeWiki({ domain: 'software-engineering', wikiName: 'Eng' });
+  try {
+    const r = roundsReport(dir);
+    assert.equal(typeof r.scanned, 'number');
+    // fresh scaffold: its own SE template example markers must not count
+    assert.equal(r.stale, 0);
+    assert.equal(r.drift, 0);
+    assert.equal(r.orphans, 0);
+    // a real groundable page with a marker IS counted
+    writePage(dir, 'wiki/entities/old.md', 'x ⚠️ STALE?');
+    assert.equal(roundsReport(dir).stale, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

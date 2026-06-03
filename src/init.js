@@ -88,6 +88,9 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
       version: 1,
       name: wikiName,
       domain,
+      // One-line summary of what this wiki covers. Surfaced by `tng-wiki connect`
+      // into other repos' agent files. Empty by default — fill it in.
+      description: '',
       created: new Date().toISOString(),
       // Web domains whose trust chain is authorized for Layer 3A authority validation.
       // Empty by default — agents can only fetch URLs already cited in raw sources
@@ -446,6 +449,8 @@ async function runInitWizard(opts) {
   } else {
     console.log(`  ${pc.dim('3.')} Point your agent at this directory and tell it to read AGENTS.md`);
   }
+  console.log(`  ${pc.dim('4.')} Make other repos aware: ${pc.cyan(`tng-wiki connect <repo> --wiki ${slugify(wikiName)}`)}`);
+  console.log(`  ${pc.dim('5.')} Teach every agent session the verbs: ${pc.cyan('tng-wiki install-skill')}`);
 
   console.log('');
   console.log(`  ${pc.bold('Guide:')} ${pc.underline('https://thenewguard.ai/features/llm-wiki-guide')}`);

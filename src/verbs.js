@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
-import { isGroundable } from './ground.js';
+import { isGroundable, checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
 
 export function resolveWiki(slug, home) {
   const registry = loadRegistry(home);
@@ -111,14 +111,10 @@ export function listStalePages(wikiPath) {
   const wikiDir = join(wikiPath, 'wiki');
   const results = [];
   for (const file of walkMd(wikiDir)) {
-    const content = readFileSync(file, 'utf8');
-    const matches = content.match(/⚠️ STALE\?/g);
-    if (matches) {
-      results.push({
-        path: relative(wikiPath, file),
-        count: matches.length,
-      });
-    }
+    const rel = relative(wikiPath, file);
+    if (!isGroundable(rel)) continue; // skip templates/meta example markers (cf. scanMarker)
+    const matches = readFileSync(file, 'utf8').match(/⚠️ STALE\?/g);
+    if (matches) results.push({ path: rel, count: matches.length });
   }
   return results;
 }
@@ -155,4 +151,21 @@ export function listOrphanPages(wikiPath) {
     .map(f => relative(wikiPath, f))
     .filter(rel => isGroundable(rel) && !inbound.has(rel))
     .map(path => ({ path }));
+}
+
+// "Rounds" maintenance dashboard — zero-LLM counts the named bundle anchors on:
+// pending ingest + structural lint surfaces. Gives `tng-wiki rounds` (and cron/
+// scripts) a single number per category and the agent something to drive.
+export function roundsReport(wikiPath) {
+  const ground = checkGrounding(wikiPath);
+  return {
+    scanned: ground.scanned,
+    uncompiled: listSources(wikiPath, { uncompiledOnly: true }).length,
+    ground: ground.issues.length,
+    orphans: listOrphanPages(wikiPath).length,
+    unsourced: listUnsourcedPages(wikiPath).length,
+    unverified: listUnverifiedPages(wikiPath).length,
+    stale: listStalePages(wikiPath).length,
+    drift: listDriftPages(wikiPath).length,
+  };
 }

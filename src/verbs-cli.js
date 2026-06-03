@@ -1,7 +1,7 @@
 import pc from 'picocolors';
 import {
   resolveWiki, queryIndex, readPage, searchWiki,
-  listSources, listStalePages, listOrphanPages,
+  listSources, listStalePages, listOrphanPages, roundsReport,
 } from './verbs.js';
 import {
   checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages,
@@ -155,6 +155,30 @@ export async function runGround(args) {
       }
     }
     process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);
+  });
+}
+
+export async function runRounds(args) {
+  const wiki = wikiFromArgs(args);
+  const r = roundsReport(wiki.path);
+  maybeJson(args, { wiki: wiki.slug, ...r }, () => {
+    process.stdout.write(`${pc.bold('Wiki rounds')} ${pc.dim(`— ${wiki.slug} · ${r.scanned} pages`)}\n\n`);
+    const row = (label, n, hint) => {
+      const count = n > 0 ? pc.yellow(String(n).padStart(3)) : pc.green('  0');
+      process.stdout.write(`  ${count}  ${label}${n > 0 ? pc.dim(`  ${hint}`) : ''}\n`);
+    };
+    row('uncompiled sources (ingest)', r.uncompiled, 'tng-wiki sources --uncompiled');
+    row('ground issues', r.ground, 'tng-wiki ground');
+    row('orphan pages', r.orphans, 'tng-wiki orphans');
+    row('⚠️ UNSOURCED?', r.unsourced, 'tng-wiki unsourced');
+    row('⚠️ UNVERIFIED?', r.unverified, 'tng-wiki unverified');
+    row('⚠️ STALE?', r.stale, 'tng-wiki stale');
+    row('⚠️ DRIFT?', r.drift, 'tng-wiki drift');
+    const total = r.uncompiled + r.ground + r.orphans + r.unsourced + r.unverified + r.stale + r.drift;
+    process.stdout.write('\n');
+    process.stdout.write(total === 0
+      ? `${pc.green('✓ Clean')} ${pc.dim('— nothing to do this round.')}\n`
+      : `${pc.dim('Rounds = ingest pending → ground / orphans / unsourced / stale / drift → reconcile → update index.md + log.md → summarize.')}\n`);
   });
 }
 

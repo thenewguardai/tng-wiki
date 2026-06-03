@@ -6,6 +6,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-03
+
+### Added
+- **`tng-wiki connect <repo>`** — make agent sessions in *other* repos aware of a registered wiki. Writes a managed nudge block into a local agent file (`CLAUDE.local.md` for Claude Code, `AGENTS.local.md` for Codex) telling sessions to search the wiki before re-deriving knowledge and to hand keepable output back to it. The file is added to the repo's `.git/info/exclude` (not the tracked `.gitignore`), so it stays per-machine and out of shared history. Idempotent (re-running updates the block in place), `--remove` deletes it, `--wiki`/`--agent` select the wiki and file flavor. (#10)
+- **`tng-wiki rounds`** — a zero-LLM maintenance dashboard: counts of uncompiled sources plus `ground` / `orphans` / `unsourced` / `unverified` / `stale` / `drift`. The CLI anchor for the named "rounds" ritual. (#11)
+- **"Rounds" as a first-class operation** in the generated `AGENTS.md` (`### Rounds`), the Claude Code skill (`SKILL.md` trigger phrases + a Rounds section), and the README — defining the maintenance bundle so an agent runs it from one phrase ("do your rounds"). (#11)
+- **`.tng-wiki.json` gains an optional `description`** field, surfaced by `connect` into other repos' agent files. The `init` epilogue now points at `connect` and `install-skill`. (#10)
+
+### Fixed
+- **Marker lint verbs (`stale` / `drift` / `unsourced` / `unverified`) now honor the `ground` exemptions** (`_`-prefixed templates, `wiki/meta/*`), so a fresh scaffold's own example markers no longer surface as findings — and `rounds` reads clean on a new wiki. (extends #5)
+
 ## [0.3.2] - 2026-06-03
 
 ### Added
