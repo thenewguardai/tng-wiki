@@ -153,14 +153,15 @@ server.registerTool(
   'ground',
   {
     title: 'Structural ground-check (Layer 1)',
-    description: 'Pure-structural grounding check: finds pages with empty frontmatter sources, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (in frontmatter but not cited), and raw sources whose mtime is newer than the page `updated` date. Returns a structured punch list the agent consumes to drive Layer 2 semantic re-verification. Skips structural pages (index.md, log.md), _-prefixed template files, and wiki/meta/*. Scope with `page` to target a single page.',
+    description: 'Pure-structural grounding check: finds pages with empty frontmatter sources, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (in frontmatter but not cited), raw sources whose mtime is newer than the page `updated` date, and code-authority problems (unknown_code_authority, missing_code_file, excluded_code_file, code_line_out_of_range). Returns a structured punch list the agent consumes to drive Layer 2 semantic re-verification. Skips structural pages (index.md, log.md), _-prefixed template files, and wiki/meta/*. Scope with `page` to target a single page. Set `at_ref` to resolve code citations at each authority\'s pinned git `ref` instead of the working tree (adds missing_code_file-at-ref, code_updated_after_page, code_ref_unresolvable).',
     inputSchema: {
       wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki.'),
       page: z.string().optional().describe('Single page to scope the check to (relative to wiki/, e.g. "entities/openai.md").'),
+      at_ref: z.boolean().optional().describe('Resolve code-authority citations at each authority\'s configured git `ref` (branch/tag/SHA) instead of the working tree. Off by default — Layer 1 stays working-tree-based.'),
     },
   },
-  async ({ wiki, page }) => withWiki(wiki, (w) => ok({
-    wiki: w.slug, ...checkGrounding(w.path, page ? { page } : {}),
+  async ({ wiki, page, at_ref }) => withWiki(wiki, (w) => ok({
+    wiki: w.slug, ...checkGrounding(w.path, { ...(page ? { page } : {}), atRef: Boolean(at_ref) }),
   })),
 );
 

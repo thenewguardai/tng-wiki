@@ -217,7 +217,7 @@ Ground-truth the wiki against its source material. Three layers, escalating in c
 
 #### Layer 1 — Structural (cheap, always safe)
 
-Run \`tng-wiki ground [--page <path>]\`. Pure-CLI, zero-LLM. It catches:
+Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catches:
 
 - Pages with empty or missing \`sources:\` frontmatter (→ apply \`⚠️ UNSOURCED?\`)
 - Inline \`[^raw/...]\` citations pointing at raw files that don't exist (→ fix the path, or remove the claim)
@@ -225,6 +225,8 @@ Run \`tng-wiki ground [--page <path>]\`. Pure-CLI, zero-LLM. It catches:
 - Frontmatter \`sources:\` entries not cited inline (orphan declarations — the page added a source it never used)
 - Pages whose \`updated\` is older than the mtime of a cited raw source (source changed after distillation — candidate for Layer 2)
 - Inline \`[^code:<name>/...]\` citations where \`<name>\` is not a registered code authority in \`.tng-wiki.json\` (\`unknown_code_authority\`) or where the file path resolves to nothing on disk (\`missing_code_file\`)
+- Inline \`[^code:<name>/file]\` citations targeting a file the authority's \`exclude\` globs skip (\`excluded_code_file\`), or whose \`#L<start>-L<end>\` anchor exceeds the cited file (\`code_line_out_of_range\`)
+- With \`--at-ref\`: code citations are resolved at each authority's pinned \`ref\` instead of the working tree — adds \`missing_code_file\` at the ref, \`code_updated_after_page\` (the page's \`updated\` predates the file's last commit at the ref), and \`code_ref_unresolvable\` (the ref or repo can't be resolved)
 - Confidence tag inflation: \`[confirmed]\` claims with only Tier 3/4 citations (→ apply \`⚠️ UNVERIFIED?\`)
 
 Apply the appropriate markers inline. Log the pass with issue counts.
@@ -333,7 +335,7 @@ Use when the wiki is built around a real codebase — typical in reverse-enginee
 - For text search, use \`git -C <path> grep <pattern> <ref>\` instead of \`Grep\`.
 - The user's working-tree state is irrelevant under ref pinning — they may have switched branches, stashed work, or have uncommitted changes; none of it contaminates grounding.
 - \`git show <ref>:<file>\` returning \`fatal: path '...' exists on disk, but not in '<ref>'\` means the cited file existed in the working tree (so Layer 1 \`tng-wiki ground\` passed) but does not exist at the pinned ref. Treat the cite as \`missing_code_file\` for the purposes of this Layer 3B run, surface to the user, and recommend either updating \`ref\` or removing the cite.
-- Layer 1 (\`tng-wiki ground\`) does not honor \`ref\` — it always checks the working tree. This is deliberate: structural lint should be cheap and the working tree is the right snapshot for "does this path exist anywhere I can read it." Ref-vs-working-tree mismatches are surfaced during Layer 3B verification, not Layer 1.
+- Layer 1 (\`tng-wiki ground\`) does not honor \`ref\` **by default** — it checks the working tree, the cheap snapshot that answers "does this path exist anywhere I can read it." Run \`tng-wiki ground --at-ref\` to opt into ref-pinned structural checks: it resolves cited files at each authority's \`ref\` and reports \`missing_code_file\` (absent at the ref), \`code_updated_after_page\`, and \`code_ref_unresolvable\`. That mechanically catches the existence half of the procedure below; the semantic Layer 3B work still applies on top.
 
 When \`ref\` is unset (the default), read the working tree directly with \`Read\` / \`Grep\` / \`Glob\` as normal.
 

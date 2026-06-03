@@ -1,5 +1,23 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative, resolve } from 'path';
+import { matchesAnyGlob } from './glob.js';
+import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef } from './git-read.js';
+
+// Lines in a blob, ignoring a single trailing newline so a file with N lines
+// (with or without a final \n) counts as N — keeps the last-line range check honest.
+function countLines(content) {
+  if (content === '') return 0;
+  const n = content.split('\n').length;
+  return content.endsWith('\n') ? n - 1 : n;
+}
+
+function readFileSafe(absPath) {
+  try {
+    return readFileSync(absPath, 'utf8');
+  } catch {
+    return null;
+  }
+}
 
 function loadCodeAuthorities(wikiPath) {
   const metaPath = join(wikiPath, '.tng-wiki.json');
@@ -114,7 +132,7 @@ export function isGroundable(relPath) {
   return true;
 }
 
-export function checkGrounding(wikiPath, { page } = {}) {
+export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
   const wikiDir = join(wikiPath, 'wiki');
   const allFiles = walkMd(wikiDir);
   const targets = page
@@ -123,6 +141,18 @@ export function checkGrounding(wikiPath, { page } = {}) {
 
   const codeAuthorities = loadCodeAuthorities(wikiPath);
   const authorityByName = new Map(codeAuthorities.map((a) => [a.name, a]));
+
+  // Under --at-ref, resolve each ref'd authority's ref ONCE (the repo+ref pair is
+  // page-independent). true -> read at ref; false -> code_ref_unresolvable.
+  // Authorities without a ref, or any authority when !atRef, are absent here and
+  // fall through to the working tree — the default Layer-1 behavior is untouched.
+  const refResolvable = new Map();
+  if (atRef) {
+    for (const a of codeAuthorities) {
+      if (!a.ref) continue;
+      refResolvable.set(a.name, refResolves(resolve(wikiPath, a.path), a.ref));
+    }
+  }
 
   const issues = [];
 
@@ -195,25 +225,79 @@ export function checkGrounding(wikiPath, { page } = {}) {
       }
     }
 
-    // missing code file (inline `[^code:<name>/<path>...]` resolves to nothing on disk)
+    // page `updated` date — shared by the code and raw staleness checks below
+    const updated = extractUpdated(frontmatter);
+
+    // code authorities: per-cite exclude / existence / line-range / staleness.
+    // Precedence matters: an excluded or missing cite short-circuits the rest so we
+    // never count lines or commit dates for a file we shouldn't have cited or can't read.
+    const refFlaggedThisPage = new Set();
     for (const c of citedCode) {
       if (!c.file) continue;  // whole-authority reference — no file to check
       const authority = authorityByName.get(c.authority);
       if (!authority) continue;  // unknown authority already flagged above
-      const abs = resolve(wikiPath, authority.path, c.file);
-      if (!existsSync(abs)) {
-        issues.push({
-          page: rel,
-          issue: 'missing_code_file',
-          authority: c.authority,
-          file: c.file,
-          line: c.line,
-        });
+
+      // 1. exclude — a cite to an excluded path is wrong even if the file exists.
+      if (matchesAnyGlob(c.file, authority.exclude)) {
+        issues.push({ page: rel, issue: 'excluded_code_file', authority: c.authority, file: c.file, line: c.line });
+        continue;
+      }
+
+      const repoAbs = resolve(wikiPath, authority.path);
+      const useRef = atRef && Boolean(authority.ref);
+
+      // 2. unresolvable ref — flag once per authority per page, then skip its cites.
+      if (useRef && refResolvable.get(authority.name) === false) {
+        if (!refFlaggedThisPage.has(authority.name)) {
+          refFlaggedThisPage.add(authority.name);
+          issues.push({ page: rel, issue: 'code_ref_unresolvable', authority: c.authority, ref: authority.ref });
+        }
+        continue;
+      }
+
+      // 3. existence (at the pinned ref under --at-ref, else the working tree).
+      const exists = useRef
+        ? fileExistsAtRef(repoAbs, authority.ref, c.file)
+        : existsSync(resolve(repoAbs, c.file));
+      if (!exists) {
+        const issue = { page: rel, issue: 'missing_code_file', authority: c.authority, file: c.file, line: c.line };
+        if (useRef) issue.ref = authority.ref;
+        issues.push(issue);
+        continue;
+      }
+
+      // 4. cited line range within the file's bounds.
+      if (c.range) {
+        const content = useRef
+          ? readFileAtRef(repoAbs, authority.ref, c.file)
+          : readFileSafe(resolve(repoAbs, c.file));
+        const lineCount = content == null ? null : countLines(content);
+        if (lineCount != null && (c.range.start > c.range.end || c.range.end > lineCount)) {
+          const issue = {
+            page: rel, issue: 'code_line_out_of_range',
+            authority: c.authority, file: c.file, line: c.line,
+            range: `L${c.range.start}-L${c.range.end}`, line_count: lineCount,
+          };
+          if (useRef) issue.ref = authority.ref;
+          issues.push(issue);
+        }
+      }
+
+      // 5. staleness (ref-only): page `updated` predates the file's last commit at ref.
+      if (useRef && updated) {
+        const commitDate = fileCommitDateAtRef(repoAbs, authority.ref, c.file);
+        if (commitDate && commitDate.getTime() > updated.getTime()) {
+          issues.push({
+            page: rel, issue: 'code_updated_after_page',
+            authority: c.authority, file: c.file, ref: authority.ref,
+            page_updated: updated.toISOString().slice(0, 10),
+            source_commit: commitDate.toISOString().slice(0, 10),
+          });
+        }
       }
     }
 
-    // page updated before raw source mtime
-    const updated = extractUpdated(frontmatter);
+    // raw sources: page updated before raw source mtime
     if (declared && updated) {
       for (const d of declaredRaw) {
         const abs = join(wikiPath, d);

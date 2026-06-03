@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync } from 'fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { scaffoldWiki } from '../src/init.js';
@@ -321,6 +322,245 @@ test('listDriftPages / listUnsourcedPages / listUnverifiedPages each match only 
     const unv = listUnverifiedPages(dir);
     assert.equal(unv.length, 1);
     assert.equal(unv[0].path, 'wiki/entities/unverified.md');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- code authorities: exclude globs + line ranges (always-on) ---
+
+test('checkGrounding flags excluded_code_file when a cite targets an excluded path', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'authority-src/README.md', '# docs\n');
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', exclude: ['**/*.md'] }]);
+    writeFile(dir, 'wiki/entities/x.md',
+      '---\nsources:\n  - code:app\n---\nClaim.[^code:app/README.md]');
+    const { issues } = checkGrounding(dir, { page: 'entities/x.md' });
+    const excl = issues.filter((i) => i.issue === 'excluded_code_file');
+    assert.equal(excl.length, 1);
+    assert.equal(excl[0].file, 'README.md');
+    assert.ok(!issues.some((i) => i.issue === 'missing_code_file')); // file exists, not missing
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('excluded_code_file takes precedence — an excluded path that is also absent flags only excluded', () => {
+  const dir = makeWiki();
+  try {
+    mkdirSync(join(dir, 'authority-src'), { recursive: true }); // empty authority tree
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', exclude: ['**/*.md'] }]);
+    writeFile(dir, 'wiki/entities/x.md',
+      '---\nsources:\n  - code:app\n---\nClaim.[^code:app/docs/gone.md]');
+    const { issues } = checkGrounding(dir, { page: 'entities/x.md' });
+    assert.ok(issues.some((i) => i.issue === 'excluded_code_file' && i.file === 'docs/gone.md'));
+    assert.ok(!issues.some((i) => i.issue === 'missing_code_file'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkGrounding flags code_line_out_of_range when the cited range exceeds the file', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'authority-src/src/a.ts', Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n'));
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src' }]);
+    writeFile(dir, 'wiki/entities/over.md',
+      '---\ntitle: O\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts#L5-L20]');
+    const over = checkGrounding(dir, { page: 'entities/over.md' }).issues;
+    assert.ok(over.some((i) => i.issue === 'code_line_out_of_range' && i.file === 'src/a.ts'));
+
+    writeFile(dir, 'wiki/entities/inbounds.md',
+      '---\ntitle: K\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts#L1-L10]');
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/inbounds.md' }).issues, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('code_line_out_of_range is skipped on a missing file (only missing_code_file)', () => {
+  const dir = makeWiki();
+  try {
+    mkdirSync(join(dir, 'authority-src'), { recursive: true });
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src' }]);
+    writeFile(dir, 'wiki/entities/m.md',
+      '---\nsources:\n  - code:app\n---\nClaim.[^code:app/src/gone.ts#L1-L9999]');
+    const { issues } = checkGrounding(dir, { page: 'entities/m.md' });
+    assert.ok(issues.some((i) => i.issue === 'missing_code_file'));
+    assert.ok(!issues.some((i) => i.issue === 'code_line_out_of_range'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- code authorities at a git ref (--at-ref) ---
+
+const GIT_ENV = {
+  ...process.env,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+  GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.com',
+  GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.com',
+};
+
+function git(repo, gitArgs, extraEnv = {}) {
+  execFileSync('git', ['-C', repo, ...gitArgs], { stdio: 'pipe', env: { ...GIT_ENV, ...extraEnv } });
+}
+
+function initRepo(repo) {
+  mkdirSync(repo, { recursive: true });
+  git(repo, ['init', '-b', 'main']);
+}
+
+function commitAll(repo, msg, date = '2025-06-01T12:00:00') {
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '-m', msg], { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date });
+}
+
+test('--at-ref: clean when the cited file exists at the pinned ref', () => {
+  const dir = makeWiki();
+  try {
+    const repo = join(dir, 'authority-src');
+    initRepo(repo);
+    writeFile(dir, 'authority-src/src/a.ts', Array.from({ length: 60 }, (_, i) => `l${i + 1}`).join('\n'));
+    commitAll(repo, 'v1');
+    git(repo, ['tag', 'v1.0.0']);
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'v1.0.0' }]);
+    writeFile(dir, 'wiki/entities/auth.md',
+      '---\ntitle: A\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts#L42-L58]');
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/auth.md', atRef: true }).issues, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--at-ref: file present in working tree but absent at ref -> missing_code_file with ref; default ignores ref', () => {
+  const dir = makeWiki();
+  try {
+    const repo = join(dir, 'authority-src');
+    initRepo(repo);
+    writeFile(dir, 'authority-src/src/keep.ts', 'export const keep = 1;\n');
+    commitAll(repo, 'base');
+    git(repo, ['tag', 'v0']);
+    // add a file to the working tree only (never committed at v0)
+    writeFileSync(join(repo, 'src/new.ts'), 'export const n = 1;\n');
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'v0' }]);
+    writeFile(dir, 'wiki/entities/n.md',
+      '---\ntitle: N\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/new.ts]');
+
+    const miss = checkGrounding(dir, { page: 'entities/n.md', atRef: true }).issues
+      .find((i) => i.issue === 'missing_code_file');
+    assert.ok(miss);
+    assert.equal(miss.ref, 'v0');
+    assert.equal(miss.file, 'src/new.ts');
+
+    // default mode: ref ignored, working tree has the file -> clean (backwards-compat)
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/n.md' }).issues, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--at-ref: line range is checked against file content at the ref', () => {
+  const dir = makeWiki();
+  try {
+    const repo = join(dir, 'authority-src');
+    initRepo(repo);
+    writeFile(dir, 'authority-src/src/a.ts', Array.from({ length: 5 }, (_, i) => `l${i + 1}`).join('\n'));
+    commitAll(repo, 'short');
+    git(repo, ['tag', 'v1']);
+    // grow the working-tree copy to 50 lines (uncommitted)
+    writeFileSync(join(repo, 'src/a.ts'), Array.from({ length: 50 }, (_, i) => `l${i + 1}`).join('\n'));
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'v1' }]);
+    writeFile(dir, 'wiki/entities/r.md',
+      '---\ntitle: R\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts#L1-L40]');
+
+    assert.ok(checkGrounding(dir, { page: 'entities/r.md', atRef: true }).issues
+      .some((i) => i.issue === 'code_line_out_of_range')); // 40 > 5 at ref
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/r.md' }).issues, []); // 40 <= 50 in tree
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--at-ref: code_updated_after_page fires when the page predates the ref commit, clean otherwise', () => {
+  const dir = makeWiki();
+  try {
+    const repo = join(dir, 'authority-src');
+    initRepo(repo);
+    writeFile(dir, 'authority-src/src/a.ts', 'export const a = 1;\n');
+    commitAll(repo, 'c', '2025-06-01T12:00:00');
+    git(repo, ['tag', 'v1']);
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'v1' }]);
+
+    writeFile(dir, 'wiki/entities/stale.md',
+      '---\ntitle: S\nupdated: 2020-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts]');
+    const hit = checkGrounding(dir, { page: 'entities/stale.md', atRef: true }).issues
+      .find((i) => i.issue === 'code_updated_after_page');
+    assert.ok(hit);
+    assert.match(hit.source_commit, /^\d{4}-\d{2}-\d{2}$/);
+
+    writeFile(dir, 'wiki/entities/fresh.md',
+      '---\ntitle: F\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts]');
+    assert.ok(!checkGrounding(dir, { page: 'entities/fresh.md', atRef: true }).issues
+      .some((i) => i.issue === 'code_updated_after_page'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--at-ref: code_ref_unresolvable is flagged once per authority for a bad ref, and file checks are skipped', () => {
+  const dir = makeWiki();
+  try {
+    const repo = join(dir, 'authority-src');
+    initRepo(repo);
+    writeFile(dir, 'authority-src/src/a.ts', 'x\n');
+    commitAll(repo, 'c');
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'nope' }]);
+    writeFile(dir, 'wiki/entities/b.md',
+      '---\nsources:\n  - code:app\n---\nTwo cites.[^code:app/src/a.ts][^code:app/src/a.ts#L1]');
+    const issues = checkGrounding(dir, { page: 'entities/b.md', atRef: true }).issues;
+    const unres = issues.filter((i) => i.issue === 'code_ref_unresolvable');
+    assert.equal(unres.length, 1); // once, despite two cites
+    assert.equal(unres[0].ref, 'nope');
+    assert.ok(!issues.some((i) => i.issue === 'missing_code_file')); // can't read at a bad ref
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--at-ref: a non-git authority path with a ref flags code_ref_unresolvable without crashing', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'authority-src/src/a.ts', 'x\n'); // plain dir, never `git init`-ed
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'v1' }]);
+    writeFile(dir, 'wiki/entities/c.md',
+      '---\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts]');
+    assert.ok(checkGrounding(dir, { page: 'entities/c.md', atRef: true }).issues
+      .some((i) => i.issue === 'code_ref_unresolvable' && i.ref === 'v1'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--at-ref: ref-d and working-tree authorities coexist in one run', () => {
+  const dir = makeWiki();
+  try {
+    const repo = join(dir, 'reffed');
+    initRepo(repo);
+    writeFile(dir, 'reffed/src/a.ts', Array.from({ length: 80 }, (_, i) => `l${i + 1}`).join('\n'));
+    commitAll(repo, 'c');
+    git(repo, ['tag', 'v1']);
+    writeFile(dir, 'plain/src/b.ts', Array.from({ length: 30 }, (_, i) => `l${i + 1}`).join('\n'));
+    setCodeAuthorities(dir, [
+      { name: 'reffed', path: 'reffed', ref: 'v1' },
+      { name: 'plain', path: 'plain' },
+    ]);
+    writeFile(dir, 'wiki/entities/mix.md',
+      '---\ntitle: M\nupdated: 2099-01-01\nsources:\n  - code:reffed\n  - code:plain\n---\n' +
+      'A.[^code:reffed/src/a.ts#L10-L20]\nB.[^code:plain/src/b.ts#L1-L5]');
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/mix.md', atRef: true }).issues, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

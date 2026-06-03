@@ -114,12 +114,17 @@ const ISSUE_LABEL = {
   page_not_found: 'page does not exist',
   unknown_code_authority: '`code:<name>` authority not registered in `.tng-wiki.json`',
   missing_code_file: 'cited code file does not exist in the authority tree',
+  excluded_code_file: 'cited code file is excluded by the authority `exclude` globs',
+  code_line_out_of_range: 'cited line range exceeds the file',
+  code_updated_after_page: 'code authority modified after page `updated`',
+  code_ref_unresolvable: 'authority `ref` is not a resolvable git ref',
 };
 
 export async function runGround(args) {
   const wiki = wikiFromArgs(args);
   const page = argValue(args, '--page');
-  const result = checkGrounding(wiki.path, page ? { page } : {});
+  const atRef = args.includes('--at-ref');
+  const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef });
   maybeJson(args, { wiki: wiki.slug, ...result }, () => {
     if (result.issues.length === 0) {
       process.stdout.write(`${pc.green('✓')} ${pc.dim(`${result.scanned} pages clean`)}\n`);
@@ -134,14 +139,19 @@ export async function runGround(args) {
       process.stdout.write(`${pc.bold(p)}\n`);
       for (const i of issues) {
         const label = ISSUE_LABEL[i.issue] ?? i.issue;
+        const filePart = i.file ? (i.ref ? `${i.file}@${i.ref}` : i.file) : null;
         const target = i.raw
-          ?? (i.authority && i.file ? `${i.authority}/${i.file}` : null)
+          ?? (i.authority && filePart ? `${i.authority}/${filePart}` : null)
+          ?? (i.authority && i.ref ? `${i.authority}@${i.ref}` : null)
           ?? i.authority
           ?? null;
         const detail = target ? ` ${pc.dim('→')} ${target}` : '';
         const loc = i.line ? pc.dim(` (line ${i.line})`) : '';
-        const ts = i.source_mtime ? pc.dim(` (page ${i.page_updated}, source ${i.source_mtime})`) : '';
-        process.stdout.write(`  ${pc.yellow(i.issue)}: ${label}${detail}${loc}${ts}\n`);
+        const range = i.issue === 'code_line_out_of_range' && i.line_count != null
+          ? pc.dim(` [${i.range} vs ${i.line_count} lines]`) : '';
+        const stamp = i.source_mtime ?? i.source_commit;
+        const ts = stamp ? pc.dim(` (page ${i.page_updated}, source ${stamp})`) : '';
+        process.stdout.write(`  ${pc.yellow(i.issue)}: ${label}${detail}${loc}${range}${ts}\n`);
       }
     }
     process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);
