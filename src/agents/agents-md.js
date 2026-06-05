@@ -172,6 +172,8 @@ function OPERATIONS(domain) {
 
   let ops = `## Operations
 
+_The full CLI surface is one call away: \`tng-wiki help --json\` (every command, flag, example) and \`tng-wiki doctor\` (this directory's state + recommended next step). Reach for those instead of probing each verb with \`--help\`._
+
 ### Rounds
 
 "Rounds" is the named maintenance bundle. When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping", run it end to end and report a short summary:

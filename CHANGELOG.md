@@ -6,6 +6,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-05
+
+### Added
+- **`tng-wiki help --json` — a machine-readable command manifest.** Every command with its group, summary, usage, args, flags, and examples, plus `conventions`, `globalFlags`, and an `onboarding` block of copy-pasteable create / adopt / register / connect recipes. One call gives an agent the whole surface instead of probing each verb with `--help`.
+- **Consistent `--help` on every command** (human) and `--help --json` (structured); `tng-wiki help <command>` also works. Help, per-command help, and the manifest are all driven from one spec (`src/help.js`) so they can't drift — guarded by a parity test against the CLI dispatch table.
+- **`tng-wiki doctor` now orients you.** It reports registry state and whether the Claude Code skill is installed, and prints the **recommended next command** for the current directory (create / adopt / register / query). Add `--json` for the structured form.
+- **Skill + generated `AGENTS.md` gained a setup section** — how to create, adopt, register, and connect a wiki (not just query/maintain one), so an agent onboarding a fresh machine doesn't have to probe.
+
+### Changed
+- Top-level `tng-wiki help` is generated from the command spec (always in sync) and includes an "Agent quick start" pointer to `help --json` and `doctor`. The hand-maintained help block and `init`'s separate help text are gone.
+
 ## [0.4.0] - 2026-06-03
 
 ### Added

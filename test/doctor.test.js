@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runChecks } from '../src/doctor.js';
+import { runChecks, recommendNextStep } from '../src/doctor.js';
 
 function fakeDeps(overrides = {}) {
   return {
@@ -81,4 +81,29 @@ test('runChecks on a wiki directory missing every schema file flags the schema c
   } finally {
     rmSync(wiki, { recursive: true, force: true });
   }
+});
+
+// --- recommendNextStep (the orientation an onboarding agent reads) ---
+
+test('recommendNextStep: no wikis, not a wiki dir -> create or adopt', () => {
+  const r = recommendNextStep({ root: '/tmp/x', isWiki: false, wikis: [] });
+  assert.match(r, /No wikis registered/);
+  assert.match(r, /init --yes/);
+});
+
+test('recommendNextStep: wikis exist, not a wiki dir -> query one', () => {
+  const r = recommendNextStep({ root: '/tmp/x', isWiki: false, wikis: [{ slug: 'research', path: '/w/research' }] });
+  assert.match(r, /1 wiki\(s\) registered \(research\)/);
+  assert.match(r, /tng-wiki query/);
+});
+
+test('recommendNextStep: inside a registered wiki -> query it by slug', () => {
+  const r = recommendNextStep({ root: '/w/research', isWiki: true, wikis: [{ slug: 'research', path: '/w/research' }] });
+  assert.match(r, /registered as "research"/);
+});
+
+test('recommendNextStep: inside an unregistered wiki dir -> register it', () => {
+  const r = recommendNextStep({ root: '/w/new', isWiki: true, wikis: [] });
+  assert.match(r, /not registered/);
+  assert.match(r, /tng-wiki register \./);
 });

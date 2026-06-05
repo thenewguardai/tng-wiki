@@ -147,6 +147,16 @@ tng-wiki doctor                     # Environment check: agent CLIs, QMD, git
 tng-wiki help
 ```
 
+## Agent onboarding
+
+tng-wiki is built to be driven *by* an agent, so the command surface is self-describing — a session shouldn't have to probe verb-by-verb to work out how to set up or use a wiki:
+
+- **`tng-wiki help --json`** emits the full machine-readable manifest: every command with its flags, args, and examples, plus a copy-pasteable `onboarding` block (create / adopt / register / connect recipes). One call, the whole surface.
+- **Every command supports `--help`** (human) and `--help --json` (structured); `tng-wiki help <command>` works too. It's all generated from one spec, so help and the manifest can't drift from what actually runs.
+- **`tng-wiki doctor`** reports the environment, the registry, whether the skill is installed, and — most useful for an agent — the **recommended next command** for the current directory (create a wiki, adopt this dir, register, or query an existing one). `--json` for the structured form.
+- **`tng-wiki init --yes --dir <path> --domain <d>`** scaffolds without a TTY; **`--into-existing`** adopts a non-empty repo.
+- **`tng-wiki install-skill`** teaches every Claude Code session the verbs *and* the setup recipes, so a fresh session never has to probe.
+
 ## The Registry — one user, many wikis
 
 `tng-wiki` keeps a user-level registry at `~/.tng-wiki/registry.json` listing every wiki you've scaffolded or registered. `init` adds new wikis automatically; the first becomes the default. Every registered wiki is reachable from any working directory by its slug.
