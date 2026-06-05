@@ -136,7 +136,11 @@ function writeGitignoreFile(root, intoExisting, skipped) {
 
 export async function runInit(args) {
   const opts = parseInitArgs(args);
-  if (opts.help) { printInitHelp(); return; }
+  if (opts.help) {
+    const { renderCommandHelp } = await import('./help.js');
+    renderCommandHelp('init');
+    return;
+  }
   if (opts.unknown.length) {
     console.error(pc.red('Error:'), `unknown init flag(s): ${opts.unknown.join(', ')}`);
     console.log(`Run ${pc.cyan('tng-wiki init --help')} for usage.`);
@@ -178,35 +182,6 @@ export function parseInitArgs(args) {
   return opts;
 }
 
-function printInitHelp() {
-  console.log(`
-${pc.bold('Usage:')} tng-wiki init [options]
-
-Interactive by default. Pass ${pc.cyan('--yes')} with flags to run non-interactively
-(the agent-friendly path).
-
-${pc.bold('Options:')}
-  ${pc.cyan('--yes, -y')}          run without prompts (requires ${pc.cyan('--dir')})
-  ${pc.cyan('--dir <path>')}       where to create the wiki
-  ${pc.cyan('--domain <d>')}       ${DOMAINS.map((d) => d.value).join(' | ')}  ${pc.dim('(default: blank)')}
-  ${pc.cyan('--agent <a>')}        claude-code | codex | cursor | all   ${pc.dim('(default: claude-code)')}
-  ${pc.cyan('--name <n>')}         wiki name ${pc.dim('(default: derived from domain)')}
-  ${pc.cyan('--git / --no-git')}   init a git repo ${pc.dim('(default: off in --yes mode)')}
-  ${pc.cyan('--qmd / --no-qmd')}   register a QMD collection ${pc.dim('(default: off)')}
-  ${pc.cyan('--no-integrations')}  shorthand for --no-git --no-qmd
-  ${pc.cyan('--into-existing')}    adopt a non-empty dir: never overwrite existing files, merge .gitignore
-  ${pc.cyan('--force')}            replace an existing registry entry of the same name
-  ${pc.cyan('--help, -h')}         show this help
-
-${pc.dim('Code authorities are configured by editing .tng-wiki.json after init')}
-${pc.dim('(or via the interactive flow on software-engineering / blank domains).')}
-
-${pc.bold('Examples:')}
-  ${pc.dim('$')} tng-wiki init
-  ${pc.dim('$')} tng-wiki init --yes --dir ./my-wiki --domain software-engineering --name "My Wiki"
-  ${pc.dim('$')} tng-wiki init --yes --dir . --into-existing --no-integrations
-`);
-}
 
 const VALID_DOMAINS = new Set(DOMAINS.map((d) => d.value));
 const VALID_AGENTS = new Set(AGENTS.map((a) => a.value));

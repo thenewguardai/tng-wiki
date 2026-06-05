@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { intro, outro, log } from '@clack/prompts';
+import { log } from '@clack/prompts';
 import pc from 'picocolors';
 
 const [,, command = 'init', ...args] = process.argv;
@@ -10,7 +10,43 @@ ${pc.bold(pc.white('◆'))} ${pc.bold('The New Guard')} ${pc.dim('— LLM Wiki S
 ${pc.dim('  Intelligence that compounds. https://thenewguard.ai')}
 `;
 
+async function getVersion() {
+  const { readFileSync } = await import('fs');
+  const { fileURLToPath } = await import('url');
+  const { dirname, join } = await import('path');
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  return JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')).version;
+}
+
 async function main() {
+  const { hasCommand, renderTopHelp, renderCommandHelp, manifest, commandJson } = await import('../src/help.js');
+  const wantsJson = args.includes('--json');
+  const wantsHelp = args.includes('--help') || args.includes('-h');
+
+  if (command === '--version' || command === '-v') {
+    console.log(await getVersion());
+    return;
+  }
+
+  // `help` / `--help` / `-h`  (optionally a command name and/or --json)
+  if (command === 'help' || command === '--help' || command === '-h') {
+    const sub = args.find((a) => !a.startsWith('-'));
+    if (wantsJson) {
+      process.stdout.write(JSON.stringify(sub && hasCommand(sub) ? commandJson(sub) : manifest(await getVersion()), null, 2) + '\n');
+    } else {
+      console.log(BANNER);
+      if (sub && hasCommand(sub)) renderCommandHelp(sub); else renderTopHelp();
+    }
+    return;
+  }
+
+  // per-command help: `tng-wiki <cmd> --help [--json]`
+  if (hasCommand(command) && wantsHelp) {
+    if (wantsJson) process.stdout.write(JSON.stringify(commandJson(command), null, 2) + '\n');
+    else { console.log(BANNER); renderCommandHelp(command); }
+    return;
+  }
+
   switch (command) {
     case 'init': {
       console.log(BANNER);
@@ -25,7 +61,6 @@ async function main() {
       break;
     }
     case 'doctor': {
-      console.log(BANNER);
       const { runDoctor } = await import('../src/doctor.js');
       await runDoctor(args);
       break;
@@ -115,72 +150,10 @@ async function main() {
       await runUnverified(args);
       break;
     }
-    case 'help':
-    case '--help':
-    case '-h': {
-      console.log(BANNER);
-      console.log(`
-${pc.bold('Usage:')} tng-wiki <command>
-
-${pc.bold('Scaffolding:')}
-  ${pc.cyan('init')}         Scaffold a new LLM wiki (interactive; --yes for headless, init --help for flags)
-
-${pc.bold('Registry:')}
-  ${pc.cyan('register')}     Register an existing wiki in the user registry
-  ${pc.cyan('unregister')}   Remove a wiki from the registry (files untouched)
-  ${pc.cyan('list')}         List registered wikis
-  ${pc.cyan('set-default')}  Set the default wiki
-
-${pc.bold('Wiki access (CLI verbs — stable, low-token, agent-friendly):')}
-  ${pc.cyan('query')}        Print wiki/index.md for the default (or --wiki <slug>) wiki
-  ${pc.cyan('read')}         Print a wiki page by path (relative to wiki/)
-  ${pc.cyan('search')}       Case-insensitive search across wiki pages (--include-raw for deep search)
-  ${pc.cyan('sources')}      List raw sources (--uncompiled for uncompiled only)
-
-${pc.bold('Grounding & lint (the wiki health surface):')}
-  ${pc.cyan('ground')}       Structural ground-check: attribution, dead cites, updated vs source mtime
-  ${pc.cyan('drift')}        List pages with ⚠️ DRIFT? markers (semantic/external grounding output)
-  ${pc.cyan('unsourced')}    List pages with ⚠️ UNSOURCED? markers
-  ${pc.cyan('unverified')}   List pages with ⚠️ UNVERIFIED? markers
-  ${pc.cyan('stale')}        List pages with ⚠️ STALE? markers
-  ${pc.cyan('orphans')}      List wiki pages with no inbound wikilinks
-  ${pc.cyan('rounds')}       Maintenance dashboard — the lint counts behind "do your rounds"
-
-${pc.bold('Agent integration:')}
-  ${pc.cyan('install-skill')}  Install the Claude Code skill at ~/.claude/skills/tng-wiki
-  ${pc.cyan('connect')}        Point agent sessions in another repo at a wiki (writes CLAUDE.local.md)
-
-${pc.bold('Diagnostics:')}
-  ${pc.cyan('status')}       Basic wiki health snapshot
-  ${pc.cyan('doctor')}       Check local environment — agent, QMD, Obsidian, git
-  ${pc.cyan('help')}         Show this help message
-
-${pc.dim('Most verbs accept --wiki <slug> to target a specific registered wiki')}
-${pc.dim('and --json to emit structured output (for MCP wrappers and scripts).')}
-
-${pc.bold('Quick start:')}
-  ${pc.dim('$')} npx @thenewguard/tng-wiki init
-  ${pc.dim('$')} cd my-wiki
-  ${pc.dim('$')} claude "Read CLAUDE.md, then ingest the sources in raw/"
-
-${pc.bold('Guide:')} ${pc.underline('https://thenewguard.ai/features/llm-wiki-guide')}
-`);
-      break;
-    }
-    case '--version':
-    case '-v': {
-      const { readFileSync } = await import('fs');
-      const { fileURLToPath } = await import('url');
-      const { dirname, join } = await import('path');
-      const __dirname = dirname(fileURLToPath(import.meta.url));
-      const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'));
-      console.log(pkg.version);
-      break;
-    }
     default: {
       console.log(BANNER);
       log.error(`Unknown command: ${command}`);
-      console.log(`Run ${pc.cyan('tng-wiki help')} for available commands.`);
+      console.log(`Run ${pc.cyan('tng-wiki help')} for available commands, or ${pc.cyan('tng-wiki help --json')} for the machine-readable manifest.`);
       process.exit(1);
     }
   }

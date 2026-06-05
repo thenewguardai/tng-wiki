@@ -4,6 +4,8 @@ import { execSync } from 'child_process';
 import { existsSync } from 'fs';
 import { resolve, join } from 'path';
 import { detectObsidian as realDetectObsidian } from './integrations/obsidian.js';
+import { loadRegistry, listWikis } from './registry.js';
+import { skillFile } from './skill.js';
 
 function realCommandExists(cmd) {
   try {
@@ -94,13 +96,45 @@ export function runChecks(root, deps = {}) {
   return checks;
 }
 
+// The single most useful thing for an onboarding agent: given the current
+// directory + registry state, what command should it run next? Pure (no fs) so
+// it's unit-testable.
+export function recommendNextStep({ root, isWiki, wikis }) {
+  const registered = isWiki ? wikis.find((w) => resolve(w.path) === resolve(root)) : null;
+  if (isWiki && registered) {
+    return `This wiki is registered as "${registered.slug}". Query it: tng-wiki query --wiki ${registered.slug}`;
+  }
+  if (isWiki) {
+    return 'This is a tng-wiki directory but not registered. Register it: tng-wiki register .';
+  }
+  if (wikis.length > 0) {
+    const slugs = wikis.map((w) => w.slug).join(', ');
+    return `${wikis.length} wiki(s) registered (${slugs}). Query one with tng-wiki query --wiki <slug>, or create a new wiki: tng-wiki init --yes --dir <path> --domain <d>`;
+  }
+  return 'No wikis registered yet. Create one: tng-wiki init --yes --dir <path> --domain <d> --agent claude-code  (or adopt this directory: tng-wiki init --yes --dir . --into-existing)';
+}
+
 export async function runDoctor(args) {
-  const root = resolve(args[0] || '.');
+  const root = resolve(args.find((a) => !a.startsWith('-')) || '.');
+  const checks = runChecks(root);
+  const isWiki = existsSync(join(root, 'wiki')) && existsSync(join(root, 'raw'));
+  const wikis = listWikis(loadRegistry());
+  const skillInstalled = existsSync(skillFile());
+  const recommendation = recommendNextStep({ root, isWiki, wikis });
+
+  if (args.includes('--json')) {
+    process.stdout.write(JSON.stringify({
+      root,
+      checks: checks.map((c) => ({ name: c.name, ok: c.ok, detail: c.detail, optional: !!c.optional })),
+      registry: { count: wikis.length, wikis: wikis.map((w) => ({ slug: w.slug, path: w.path, domain: w.domain, default: w.isDefault })) },
+      skillInstalled,
+      recommendation,
+    }, null, 2) + '\n');
+    return;
+  }
 
   p.intro(pc.bgCyan(pc.black(' tng-wiki doctor ')));
   console.log('');
-
-  const checks = runChecks(root);
 
   for (const check of checks) {
     const icon = check.ok ? pc.green('✓') : check.optional ? pc.yellow('○') : pc.red('✗');
@@ -108,7 +142,14 @@ export async function runDoctor(args) {
     console.log(`  ${icon} ${pc.bold(check.name)}  ${pc.dim('—')}  ${detail}`);
   }
 
-  const failures = checks.filter(c => !c.ok && !c.optional);
+  // Orientation: registry + skill + the recommended next command
+  console.log('');
+  console.log(`  ${pc.green('●')} ${pc.bold('Registry')}  ${pc.dim('—')}  ${wikis.length ? wikis.map((w) => w.slug).join(', ') : pc.dim('no wikis registered')}`);
+  console.log(`  ${skillInstalled ? pc.green('✓') : pc.yellow('○')} ${pc.bold('Claude Code skill')}  ${pc.dim('—')}  ${skillInstalled ? 'installed' : pc.dim('not installed — run tng-wiki install-skill')}`);
+  console.log('');
+  console.log(`  ${pc.bold(pc.cyan('→ Next:'))} ${recommendation}`);
+
+  const failures = checks.filter((c) => !c.ok && !c.optional);
   console.log('');
   if (failures.length === 0) {
     p.outro(pc.green('Environment looks good.'));

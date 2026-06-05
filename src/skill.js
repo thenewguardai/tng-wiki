@@ -32,6 +32,16 @@ The user maintains one or more Karpathy-style LLM-maintained markdown knowledge 
 
 The user may have several wikis (research, competitive intel, learning, etc.). Start with \`tng-wiki list\` to see what's registered. Every verb accepts \`--wiki <slug>\` to target a specific wiki; omit it to use the registered default. Every verb also accepts \`--json\` for structured output when you need to parse results.
 
+## Setting up a wiki (when there isn't one yet)
+
+If the user wants a *new* wiki, or to adopt the current project into one, scaffold it yourself — \`init\` has a non-interactive mode, so you don't need a TTY:
+
+- **See the whole surface in one call:** \`tng-wiki help --json\` lists every command, flag, and example. \`tng-wiki doctor\` reports this directory's state and the recommended next command. Reach for these instead of probing each verb with \`--help\`.
+- **Create a new wiki:** \`tng-wiki init --yes --dir <path> --domain <d> --agent claude-code --name "<name>"\` (domains: ai-research, competitive-intel, publication, business-ops, learning, software-engineering, blank).
+- **Adopt an existing repo/dir:** \`tng-wiki init --yes --dir . --into-existing --no-integrations\` — never overwrites existing files; merges \`.gitignore\`.
+- **Register a wiki already on disk:** \`tng-wiki register <path>\`.
+- **Make other repos aware of a wiki:** \`tng-wiki connect <repo> --wiki <slug>\` writes a git-excluded \`CLAUDE.local.md\` nudge.
+
 ## Verbs (invoke via Bash)
 
 - **\`tng-wiki query [--wiki <slug>]\`** — prints \`wiki/index.md\`. Always start here to see what pages exist before searching or reading.
