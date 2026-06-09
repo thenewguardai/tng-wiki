@@ -23,6 +23,12 @@ test('commandJson returns one command spec with structured flags', () => {
   assert.equal(commandJson('nope'), null);
 });
 
+test('ground documents the citation-lockfile flags', () => {
+  const names = commandJson('ground').flags.map((f) => f.name);
+  assert.ok(names.includes('--update-lock'));
+  assert.ok(names.includes('--fix-moved'));
+});
+
 test('COMMANDS names are unique', () => {
   const names = COMMANDS.map((c) => c.name);
   assert.equal(new Set(names).size, names.length);

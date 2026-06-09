@@ -118,43 +118,78 @@ const ISSUE_LABEL = {
   code_line_out_of_range: 'cited line range exceeds the file',
   code_updated_after_page: 'code authority modified after page `updated`',
   code_ref_unresolvable: 'authority `ref` is not a resolvable git ref',
+  cite_content_changed: 'cited content changed since last verified',
+  cite_moved: 'cited content moved — anchor shifted (run `ground --fix-moved`)',
+  cite_moved_ambiguous: 'locked content found at multiple locations — fix the anchor manually',
+  cite_unlocked: 'citation not in the lockfile (lock with `ground --update-lock` after verifying)',
 };
 
 export async function runGround(args) {
   const wiki = wikiFromArgs(args);
   const page = argValue(args, '--page');
   const atRef = args.includes('--at-ref');
-  const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef });
+  const updateLock = args.includes('--update-lock');
+  const fixMoved = args.includes('--fix-moved');
+  const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef, updateLock, fixMoved });
   maybeJson(args, { wiki: wiki.slug, ...result }, () => {
     if (result.issues.length === 0) {
       process.stdout.write(`${pc.green('✓')} ${pc.dim(`${result.scanned} pages clean`)}\n`);
-      return;
+    } else {
+      const byPage = new Map();
+      for (const i of result.issues) {
+        if (!byPage.has(i.page)) byPage.set(i.page, []);
+        byPage.get(i.page).push(i);
+      }
+      for (const [p, issues] of byPage) {
+        process.stdout.write(`${pc.bold(p)}\n`);
+        for (const i of issues) {
+          const label = ISSUE_LABEL[i.issue] ?? i.issue;
+          const filePart = i.file ? (i.ref ? `${i.file}@${i.ref}` : i.file) : null;
+          const target = i.cite
+            ?? i.raw
+            ?? (i.authority && filePart ? `${i.authority}/${filePart}` : null)
+            ?? (i.authority && i.ref ? `${i.authority}@${i.ref}` : null)
+            ?? i.authority
+            ?? null;
+          const detail = target ? ` ${pc.dim('→')} ${target}` : '';
+          const loc = i.line ? pc.dim(` (line ${i.line})`) : '';
+          const range = i.issue === 'code_line_out_of_range' && i.line_count != null
+            ? pc.dim(` [${i.range} vs ${i.line_count} lines]`) : '';
+          const moved = i.issue === 'cite_moved'
+            ? pc.dim(` [${i.old_range} → ${i.new_range}]`)
+            : i.issue === 'cite_moved_ambiguous'
+              ? pc.dim(` [at ${i.candidate_ranges.join(', ')}]`)
+              : '';
+          const stamp = i.source_mtime ?? i.source_commit;
+          const ts = stamp ? pc.dim(` (page ${i.page_updated}, source ${stamp})`) : '';
+          process.stdout.write(`  ${pc.yellow(i.issue)}: ${label}${detail}${loc}${range}${moved}${ts}\n`);
+        }
+      }
+      process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);
     }
-    const byPage = new Map();
-    for (const i of result.issues) {
-      if (!byPage.has(i.page)) byPage.set(i.page, []);
-      byPage.get(i.page).push(i);
-    }
-    for (const [p, issues] of byPage) {
-      process.stdout.write(`${pc.bold(p)}\n`);
-      for (const i of issues) {
-        const label = ISSUE_LABEL[i.issue] ?? i.issue;
-        const filePart = i.file ? (i.ref ? `${i.file}@${i.ref}` : i.file) : null;
-        const target = i.raw
-          ?? (i.authority && filePart ? `${i.authority}/${filePart}` : null)
-          ?? (i.authority && i.ref ? `${i.authority}@${i.ref}` : null)
-          ?? i.authority
-          ?? null;
-        const detail = target ? ` ${pc.dim('→')} ${target}` : '';
-        const loc = i.line ? pc.dim(` (line ${i.line})`) : '';
-        const range = i.issue === 'code_line_out_of_range' && i.line_count != null
-          ? pc.dim(` [${i.range} vs ${i.line_count} lines]`) : '';
-        const stamp = i.source_mtime ?? i.source_commit;
-        const ts = stamp ? pc.dim(` (page ${i.page_updated}, source ${stamp})`) : '';
-        process.stdout.write(`  ${pc.yellow(i.issue)}: ${label}${detail}${loc}${range}${ts}\n`);
+    if (result.fixed?.length) {
+      process.stdout.write(`${pc.green('✓')} fixed ${result.fixed.length} moved cite anchor(s)\n`);
+      for (const f of result.fixed) {
+        process.stdout.write(`  ${pc.dim(`${f.page}: ${f.cite} [${f.old_range} → ${f.new_range}]`)}\n`);
       }
     }
-    process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);
+    if (result.lock) {
+      if (!result.lock.exists) {
+        process.stdout.write(pc.dim('hint: run `tng-wiki ground --update-lock` to enable per-citation churn detection\n'));
+      } else {
+        for (const [name, a] of Object.entries(result.lock.authorities ?? {})) {
+          if (!a.resolved_sha) continue;
+          const refPart = a.ref ? `${a.ref}@` : '';
+          const dirty = a.dirty ? pc.yellow(' (dirty)') : '';
+          process.stdout.write(pc.dim(`verified against ${name} ${refPart}${a.resolved_sha.slice(0, 7)}`) + dirty + '\n');
+        }
+        if (updateLock && result.lock.written) {
+          process.stdout.write(`${pc.green('✓')} lockfile updated ${pc.dim(`(${result.lock.citations_locked} citation(s) locked)`)}\n`);
+        } else if (updateLock && !result.lock.written) {
+          process.stdout.write(`${pc.yellow('!')} could not write wiki/.tng-wiki.lock.json\n`);
+        }
+      }
+    }
   });
 }
 

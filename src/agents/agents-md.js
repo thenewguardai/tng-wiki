@@ -241,9 +241,12 @@ Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catch
 - Inline \`[^code:<name>/...]\` citations where \`<name>\` is not a registered code authority in \`.tng-wiki.json\` (\`unknown_code_authority\`) or where the file path resolves to nothing on disk (\`missing_code_file\`)
 - Inline \`[^code:<name>/file]\` citations targeting a file the authority's \`exclude\` globs skip (\`excluded_code_file\`), or whose \`#L<start>-L<end>\` anchor exceeds the cited file (\`code_line_out_of_range\`)
 - With \`--at-ref\`: code citations are resolved at each authority's pinned \`ref\` instead of the working tree — adds \`missing_code_file\` at the ref, \`code_updated_after_page\` (the page's \`updated\` predates the file's last commit at the ref), and \`code_ref_unresolvable\` (the ref or repo can't be resolved)
+- With a citation lockfile (\`wiki/.tng-wiki.lock.json\`, committed — see below): per-citation churn instead of per-file churn — \`cite_content_changed\` (the cited lines changed since last verified; the surgical re-verification queue), \`cite_moved\` (content identical, \`#L\` anchor shifted — repair with \`ground --fix-moved\`, the only safe auto-fix), \`cite_moved_ambiguous\` (locked content now appears in several places — fix the anchor by hand), and \`cite_unlocked\` (cite never locked)
 - Confidence tag inflation: \`[confirmed]\` claims with only Tier 3/4 citations (→ apply \`⚠️ UNVERIFIED?\`)
 
 Apply the appropriate markers inline. Log the pass with issue counts.
+
+**The citation lockfile.** \`tng-wiki ground --update-lock\` writes \`wiki/.tng-wiki.lock.json\`: per citation, a normalized content hash of the cited range (whitespace-only changes are invisible), and per code authority, the SHA its ref resolved to. Commit it — it is verification state that travels with the wiki. With the lock in place, Layer 1 answers "**which citations** changed since they were last verified" rather than "which files were touched", so re-verification against an active branch stays affordable. \`--update-lock\` records *human-verified* state and never runs implicitly: run it at the end of an ingest or after a reconcile, never on content you haven't checked. \`cite_content_changed\` findings are never auto-fixed — they feed the Layer-2 \`⚠️ DRIFT?\` workflow below.
 
 #### Layer 2 — Semantic re-verification (agent-driven)
 
@@ -338,18 +341,23 @@ Use when the wiki is built around a real codebase — typical in reverse-enginee
 - \`path\` — tree root, resolved relative to the wiki root.
 - \`exclude\` — gitignore-style globs; skip these when traversing the authority.
 - \`language\` — optional hint; helps you pick appropriate comment/doc syntax to ignore.
-- \`ref\` — optional git ref (branch, tag, commit SHA). When set, read the authority *at that ref* instead of the working tree. See **Ref pinning** below.
+- \`ref\` — optional git ref (branch, tag, commit SHA). When set, read the authority *at that ref* instead of the working tree. Tags/SHAs are true pins; branch refs track and rely on the lockfile for determinism. See **Ref pinning** below.
 
 **Tools.** \`Read\`, \`Grep\`, \`Glob\`. Not \`WebFetch\`. Code authorities are local filesystem; fetching is free and instant.
 
-**Ref pinning.** When an authority has a \`ref\` field set, the user has frozen this authority to a specific point in history — typically because the source repo is actively evolving and they want grounding to be deterministic. In that case:
+**Ref pinning.** When an authority has a \`ref\` field set, the user wants grounding decoupled from their working tree — typically because the source repo is actively evolving. Two kinds of ref behave differently:
+
+- **Tag or commit-SHA refs** are true pins: frozen to a specific point in history, deterministic by construction.
+- **Branch refs** (\`main\`, \`origin/develop\`) are *tracks*, not pins — they move on every fetch. Determinism comes from the citation lockfile instead: each \`ground\` run records which SHA the branch resolved to in \`wiki/.tng-wiki.lock.json\`'s \`authorities\` block (\`resolved_sha\`, plus a \`dirty\` flag on working-tree runs), so the wiki can always say "verified against \`develop@5e36f17\`" without forcing the cite refs onto SHAs.
+
+In either case, when reading at a ref:
 
 - Read individual files via \`git -C <path> show <ref>:<file>\` instead of \`Read\`. The output goes to stdout; pipe through your normal scope filter (ignore comments/docstrings/JSDoc/etc).
 - Enumerate files via \`git -C <path> ls-tree -r --name-only <ref>\` instead of \`Glob\`.
 - For text search, use \`git -C <path> grep <pattern> <ref>\` instead of \`Grep\`.
 - The user's working-tree state is irrelevant under ref pinning — they may have switched branches, stashed work, or have uncommitted changes; none of it contaminates grounding.
 - \`git show <ref>:<file>\` returning \`fatal: path '...' exists on disk, but not in '<ref>'\` means the cited file existed in the working tree (so Layer 1 \`tng-wiki ground\` passed) but does not exist at the pinned ref. Treat the cite as \`missing_code_file\` for the purposes of this Layer 3B run, surface to the user, and recommend either updating \`ref\` or removing the cite.
-- Layer 1 (\`tng-wiki ground\`) does not honor \`ref\` **by default** — it checks the working tree, the cheap snapshot that answers "does this path exist anywhere I can read it." Run \`tng-wiki ground --at-ref\` to opt into ref-pinned structural checks: it resolves cited files at each authority's \`ref\` and reports \`missing_code_file\` (absent at the ref), \`code_updated_after_page\`, and \`code_ref_unresolvable\`. That mechanically catches the existence half of the procedure below; the semantic Layer 3B work still applies on top.
+- Layer 1 (\`tng-wiki ground\`) does not honor \`ref\` **by default** — it checks the working tree, the cheap snapshot that answers "does this path exist anywhere I can read it." Run \`tng-wiki ground --at-ref\` to opt into ref-pinned structural checks: it resolves cited files at each authority's \`ref\` and reports \`missing_code_file\` (absent at the ref), \`code_updated_after_page\`, and \`code_ref_unresolvable\`. With a citation lockfile, \`--at-ref\` also hashes each cited range at the ref (per-citation churn) and records the resolved ref SHA in the lock's \`authorities\` block. That mechanically catches the existence half of the procedure below; the semantic Layer 3B work still applies on top.
 
 When \`ref\` is unset (the default), read the working tree directly with \`Read\` / \`Grep\` / \`Glob\` as normal.
 

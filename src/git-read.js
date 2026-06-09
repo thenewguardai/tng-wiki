@@ -30,6 +30,29 @@ export function refResolves(repoDir, ref) {
   }
 }
 
+// SHA that `ref` resolves to in the repo at `repoDir` (pass 'HEAD' for the
+// working-tree tip), or null when the path is not a git repo / the ref is
+// unknown. Recorded in the lockfile `authorities` block so branch refs become
+// deterministic ("verified against develop@5e36f17").
+export function resolveRefSha(repoDir, ref) {
+  try {
+    const out = git(repoDir, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { capture: true }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+// Does the working tree at `repoDir` have uncommitted changes? Null when the
+// path is not a git repo (callers treat that as "unknown", not dirty).
+export function repoIsDirty(repoDir) {
+  try {
+    return git(repoDir, ['status', '--porcelain'], { capture: true }).trim().length > 0;
+  } catch {
+    return null;
+  }
+}
+
 // Does `file` exist in the tree at `ref`?
 export function fileExistsAtRef(repoDir, ref, file) {
   try {
