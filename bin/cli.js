@@ -135,6 +135,11 @@ async function main() {
       await runGround(args);
       break;
     }
+    case 'cite': {
+      const { runCite } = await import('../src/cite.js');
+      await runCite(args);
+      break;
+    }
     case 'drift': {
       const { runDrift } = await import('../src/verbs-cli.js');
       await runDrift(args);

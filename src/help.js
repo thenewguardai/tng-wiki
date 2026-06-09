@@ -96,6 +96,27 @@ export const COMMANDS = [
     ],
     examples: ['tng-wiki ground', 'tng-wiki ground --at-ref --json'],
   },
+  {
+    name: 'cite', group: 'Grounding & lint',
+    summary: 'Show each citation in a page next to the exact source lines it cites (claim-by-evidence review)',
+    usage: 'tng-wiki cite show <page> [--wiki <slug>] [--at-ref] [--cite <n|key>] [--context <lines>] [--json]',
+    args: [
+      { name: 'show', required: true, desc: 'subcommand (only `show` exists today)' },
+      { name: 'page', required: true, desc: 'page path under wiki/, e.g. entities/openai.md (a wiki/ prefix is also accepted)' },
+    ],
+    flags: [
+      WIKI,
+      { name: '--at-ref', desc: "read code-authority citations at each authority's pinned git ref instead of the working tree" },
+      { name: '--cite', value: '<n|key>', desc: 'limit to one citation, by index from the listing or by literal cite key' },
+      { name: '--context', value: '<lines>', desc: 'lines shown for raw and whole-file cites (default: 20); ranged cites always show the exact range' },
+      JSON_FLAG,
+    ],
+    examples: [
+      'tng-wiki cite show entities/auth.md',
+      'tng-wiki cite show entities/auth.md --cite 3',
+      'tng-wiki cite show entities/auth.md --at-ref --json',
+    ],
+  },
   { name: 'drift', group: 'Grounding & lint', summary: 'List pages carrying ⚠️ DRIFT? markers', usage: 'tng-wiki drift [--wiki <slug>] [--json]', args: [], flags: [WIKI, JSON_FLAG], examples: ['tng-wiki drift'] },
   { name: 'unsourced', group: 'Grounding & lint', summary: 'List pages carrying ⚠️ UNSOURCED? markers', usage: 'tng-wiki unsourced [--wiki <slug>] [--json]', args: [], flags: [WIKI, JSON_FLAG], examples: ['tng-wiki unsourced'] },
   { name: 'unverified', group: 'Grounding & lint', summary: 'List pages carrying ⚠️ UNVERIFIED? markers', usage: 'tng-wiki unverified [--wiki <slug>] [--json]', args: [], flags: [WIKI, JSON_FLAG], examples: ['tng-wiki unverified'] },

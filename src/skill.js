@@ -51,6 +51,7 @@ If the user wants a *new* wiki, or to adopt the current project into one, scaffo
 - **\`tng-wiki stale [--wiki <slug>]\`** — lint: pages with \`⚠️ STALE?\` markers.
 - **\`tng-wiki orphans [--wiki <slug>]\`** — lint: pages with no inbound \`[[wikilinks]]\`.
 - **\`tng-wiki ground [--wiki <slug>] [--page <path>]\`** — structural ground-check. Finds pages missing source attribution, inline citations pointing at non-existent raw files, declaration/citation mismatches, and raw sources modified after the page's \`updated\` date. Zero-LLM — a work queue for you to drive Layer 2 semantic re-verification.
+- **\`tng-wiki cite show <page> [--wiki <slug>] [--at-ref] [--cite <n|key>] [--context <lines>]\`** — claim-next-to-evidence review: prints every citation in a page with the claim sentence that carries it and the exact source lines it cites (raw and code-authority cites alike). Use it instead of hand-running \`sed -n 'X,Yp'\` against authority files.
 - **\`tng-wiki drift [--wiki <slug>]\`** — pages carrying \`⚠️ DRIFT?\` markers (semantic or external grounding output).
 - **\`tng-wiki unsourced [--wiki <slug>]\`** — pages carrying \`⚠️ UNSOURCED?\` markers.
 - **\`tng-wiki unverified [--wiki <slug>]\`** — pages carrying \`⚠️ UNVERIFIED?\` markers.
@@ -97,12 +98,13 @@ Wikis compound over time, which means claims drift — sources update, context c
 
 1. \`tng-wiki drift\` (or \`unsourced\` / \`unverified\`) to enumerate work
 2. For each page, \`tng-wiki read <path>\` to fetch content
-3. For each marker, present to the user:
-   - The source evidence (already embedded in the marker)
+3. \`tng-wiki cite show <path>\` to see each claim next to the exact lines it cites — add \`--cite <n>\` to focus one citation and \`--at-ref\` to pin code authorities to their refs. This replaces re-hunting every cite by hand.
+4. For each marker, present to the user:
+   - The source evidence (already embedded in the marker, verifiable via \`cite show\`)
    - The current wiki claim
    - Your suggested fix (already embedded)
-4. Ask the user: **accept / edit / reject / defer**
-5. Apply the chosen action, remove the marker, bump \`updated\`, log to \`log.md\`
+5. Ask the user: **accept / edit / reject / defer**
+6. Apply the chosen action, remove the marker, bump \`updated\`, log to \`log.md\`
 
 Never auto-resolve a drift marker without human approval. The marker exists precisely because the wiki and the source disagree.
 

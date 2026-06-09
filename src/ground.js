@@ -19,7 +19,7 @@ function readFileSafe(absPath) {
   }
 }
 
-function loadCodeAuthorities(wikiPath) {
+export function loadCodeAuthorities(wikiPath) {
   const metaPath = join(wikiPath, '.tng-wiki.json');
   if (!existsSync(metaPath)) return [];
   try {
