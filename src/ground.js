@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative, resolve } from 'path';
 import { matchesAnyGlob } from './glob.js';
+import { resolveConfigPath } from './paths.js';
 import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate } from './git-read.js';
 
 // Lines in a blob, ignoring a single trailing newline so a file with N lines
@@ -19,7 +20,7 @@ function readFileSafe(absPath) {
   }
 }
 
-function loadCodeAuthorities(wikiPath) {
+export function loadCodeAuthorities(wikiPath) {
   const metaPath = join(wikiPath, '.tng-wiki.json');
   if (!existsSync(metaPath)) return [];
   try {
@@ -150,7 +151,7 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
   if (atRef) {
     for (const a of codeAuthorities) {
       if (!a.ref) continue;
-      refResolvable.set(a.name, refResolves(resolve(wikiPath, a.path), a.ref));
+      refResolvable.set(a.name, refResolves(resolveConfigPath(wikiPath, a.path), a.ref));
     }
   }
 
@@ -243,7 +244,7 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
         continue;
       }
 
-      const repoAbs = resolve(wikiPath, authority.path);
+      const repoAbs = resolveConfigPath(wikiPath, authority.path);
       const useRef = atRef && Boolean(authority.ref);
 
       // 2. unresolvable ref — flag once per authority per page, then skip its cites.

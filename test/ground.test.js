@@ -285,6 +285,30 @@ test('checkGrounding is clean on a page cited purely against a registered code a
   }
 });
 
+test('checkGrounding expands ~/ in authority paths to the home directory (issue #16)', () => {
+  const dir = makeWiki();
+  const fakeHome = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  const oldHome = process.env.HOME;
+  const oldProfile = process.env.USERPROFILE;
+  try {
+    // os.homedir() reads $HOME (POSIX) / %USERPROFILE% (Windows) at call time
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    writeFile(fakeHome, 'legacy-app/src/a.ts', Array.from({ length: 50 }, (_, i) => `l${i + 1}`).join('\n'));
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '~/legacy-app' }]);
+    writeFile(dir, 'wiki/entities/h.md',
+      '---\ntitle: H\nupdated: 2099-01-01\nsources:\n  - code:legacy\n---\nClaim.[^code:legacy/src/a.ts#L1-L10]');
+    // without expansion, resolve(wikiRoot, '~/legacy-app') treats `~` as a
+    // literal directory and this would flag missing_code_file
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/h.md' }).issues, []);
+  } finally {
+    process.env.HOME = oldHome;
+    process.env.USERPROFILE = oldProfile;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
 test('checkGrounding flags undeclared_cite when an inline [^code:...] has no frontmatter entry', () => {
   const dir = makeWiki();
   try {

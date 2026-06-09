@@ -21,6 +21,7 @@ export const COMMANDS = [
       { name: '--domain', value: '<d>', desc: 'ai-research | competitive-intel | publication | business-ops | learning | software-engineering | blank (default: blank)' },
       { name: '--agent', value: '<a>', desc: 'claude-code | codex | cursor | all (default: claude-code)' },
       { name: '--name', value: '<n>', desc: 'wiki name (default: derived from domain)' },
+      { name: '--code-authority', value: '<path>', desc: 'repeatable: code tree to ground against (Layer 3B) — prefer wiki-relative paths; absolute paths warn' },
       { name: '--git', desc: 'initialize a git repo (default: off in --yes mode)' },
       { name: '--qmd', desc: 'register a QMD collection (default: off)' },
       { name: '--no-integrations', desc: 'shorthand for --no-git --no-qmd' },

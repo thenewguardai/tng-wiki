@@ -6,6 +6,8 @@ import { resolve, join } from 'path';
 import { detectObsidian as realDetectObsidian } from './integrations/obsidian.js';
 import { loadRegistry, listWikis } from './registry.js';
 import { skillFile } from './skill.js';
+import { loadCodeAuthorities } from './ground.js';
+import { resolveConfigPath, pathForm } from './paths.js';
 
 function realCommandExists(cmd) {
   try {
@@ -91,6 +93,22 @@ export function runChecks(root, deps = {}) {
       ok: hasSchema,
       detail: hasSchema ? 'found' : 'missing — run tng-wiki init',
     });
+
+    // One row per code authority (issue #16): how the path is written
+    // (relative / ~ / absolute) + whether it exists on THIS machine. Optional —
+    // a missing tree may simply not be cloned here yet (init saves it anyway).
+    const FORM_LABEL = { relative: 'relative', home: '~', absolute: 'absolute' };
+    for (const a of loadCodeAuthorities(root)) {
+      const form = pathForm(a.path);
+      const exists = existsSync(resolveConfigPath(root, a.path));
+      const travel = form === 'absolute' ? " ⚠ won't travel across machines" : '';
+      checks.push({
+        name: `Code authority "${a.name}"`,
+        ok: exists,
+        detail: `${a.path} — ${FORM_LABEL[form]} path, ${exists ? 'exists' : 'missing on this machine'}${travel}`,
+        optional: true,
+      });
+    }
   }
 
   return checks;

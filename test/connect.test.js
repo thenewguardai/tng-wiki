@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { buildConnectBlock, applyManagedBlock, removeManagedBlock } from '../src/connect.js';
+import { scaffoldWiki } from '../src/init.js';
 
 const wiki = { slug: 'infra', name: 'Infra', domain: 'software-engineering', description: 'local infra', path: '/home/x/wiki' };
 const blockCount = (s) => (s.match(/<!-- tng-wiki:connect -->/g) || []).length;
@@ -45,4 +51,42 @@ test('removeManagedBlock strips the block, preserving other content', () => {
   assert.match(stripped, /# Notes/);
   assert.match(stripped, /keep me/);
   assert.ok(!stripped.includes('tng-wiki:connect'));
+});
+
+// --- ~ expansion in registry wiki paths (issue #16) ---
+
+test('connect expands a ~ wiki path from the registry before reading the description', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-conn-home-'));
+  const repo = mkdtempSync(join(tmpdir(), 'tng-wiki-conn-repo-'));
+  try {
+    // wiki lives under the fake home; the registry refers to it via `~/...`
+    const wikiPath = join(home, 'wikis', 'demo');
+    mkdirSync(wikiPath, { recursive: true });
+    scaffoldWiki(wikiPath, { domain: 'blank', agent: 'claude-code', wikiName: 'Demo' });
+    const meta = JSON.parse(readFileSync(join(wikiPath, '.tng-wiki.json'), 'utf8'));
+    meta.description = 'tilde-resolved wiki';
+    writeFileSync(join(wikiPath, '.tng-wiki.json'), JSON.stringify(meta, null, 2));
+
+    mkdirSync(join(home, '.tng-wiki'), { recursive: true });
+    writeFileSync(join(home, '.tng-wiki', 'registry.json'), JSON.stringify({
+      version: 1,
+      default: 'demo',
+      wikis: { demo: { name: 'Demo', path: '~/wikis/demo', domain: 'blank', registered: new Date().toISOString() } },
+    }));
+
+    const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'cli.js');
+    const run = spawnSync('node', [CLI, 'connect', repo, '--wiki', 'demo'], {
+      env: { ...process.env, HOME: home, USERPROFILE: home },
+      encoding: 'utf8',
+    });
+    assert.equal(run.status, 0, run.stderr);
+
+    const block = readFileSync(join(repo, 'CLAUDE.local.md'), 'utf8');
+    assert.ok(block.includes(wikiPath), 'block should embed the expanded path');
+    assert.ok(!block.includes('`~/wikis/demo`'), 'block should not embed the raw ~ path');
+    assert.match(block, /tilde-resolved wiki/); // description was readable through the expanded path
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
