@@ -156,6 +156,13 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
 
   const issues = [];
 
+  // Foot-gun guard: on a plain (non --at-ref) run, a ref'd authority is still
+  // checked against its WORKING TREE — the pin only applies under --at-ref.
+  // Collect one warning per such authority, but only when a code: cite actually
+  // reached it this run (a ref'd authority that nothing cites stays silent).
+  const warnings = [];
+  const warnedRefAuthorities = new Set();
+
   for (const file of targets) {
     const rel = relative(wikiPath, file);
 
@@ -246,6 +253,13 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
       const repoAbs = resolve(wikiPath, authority.path);
       const useRef = atRef && Boolean(authority.ref);
 
+      // Working-tree consultation of a ref'd authority — warn once per authority
+      // per run. Not an issue: exit code and findings stay unchanged.
+      if (!atRef && authority.ref && !warnedRefAuthorities.has(authority.name)) {
+        warnedRefAuthorities.add(authority.name);
+        warnings.push({ code: 'working_tree_of_ref_authority', authority: authority.name, ref: authority.ref });
+      }
+
       // 2. unresolvable ref — flag once per authority per page, then skip its cites.
       if (useRef && refResolvable.get(authority.name) === false) {
         if (!refFlaggedThisPage.has(authority.name)) {
@@ -323,7 +337,7 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
     }
   }
 
-  return { scanned: targets.length, issues };
+  return { scanned: targets.length, issues, warnings };
 }
 
 // ---- Pattern-matching lint verbs (for Phase 1C) ----

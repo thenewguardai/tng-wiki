@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync } from 'fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { fileURLToPath } from 'node:url';
 import { scaffoldWiki } from '../src/init.js';
 import {
   splitFrontmatter, extractSources, extractCitations, checkGrounding,
@@ -563,6 +564,125 @@ test('--at-ref: ref-d and working-tree authorities coexist in one run', () => {
     assert.deepEqual(checkGrounding(dir, { page: 'entities/mix.md', atRef: true }).issues, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- ref'd authority on a plain run: working_tree_of_ref_authority warning ---
+
+test('plain run warns once per ref-d authority that code: cites consult, findings unchanged', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'authority-src/src/a.ts', Array.from({ length: 10 }, (_, i) => `l${i + 1}`).join('\n'));
+    writeFile(dir, 'authority-src/src/b.ts', 'export const b = 1;\n');
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'main' }]);
+    // two pages, three cites into the same ref'd authority -> still exactly one warning
+    writeFile(dir, 'wiki/entities/one.md',
+      '---\ntitle: A\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nA.[^code:app/src/a.ts#L1-L5]\nB.[^code:app/src/b.ts]');
+    writeFile(dir, 'wiki/entities/two.md',
+      '---\ntitle: B\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nC.[^code:app/src/a.ts]');
+    const result = checkGrounding(dir);
+    assert.deepEqual(result.warnings, [
+      { code: 'working_tree_of_ref_authority', authority: 'app', ref: 'main' },
+    ]);
+    // exit-code/finding behavior unchanged: the working tree satisfies all cites
+    assert.deepEqual(result.issues, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('--at-ref run emits no working_tree_of_ref_authority warning', () => {
+  const dir = makeWiki();
+  try {
+    const repo = join(dir, 'authority-src');
+    initRepo(repo);
+    writeFile(dir, 'authority-src/src/a.ts', 'x\n');
+    commitAll(repo, 'c');
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'main' }]);
+    writeFile(dir, 'wiki/entities/a.md',
+      '---\ntitle: A\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts]');
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/a.md', atRef: true }).warnings, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ref-d authority with zero cites consulted does not warn; unref-d authorities never warn', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'plain/src/b.ts', 'x\n');
+    writeFile(dir, 'reffed/src/a.ts', 'x\n');
+    setCodeAuthorities(dir, [
+      { name: 'plain', path: 'plain' },                 // cited, no ref
+      { name: 'reffed', path: 'reffed', ref: 'main' },  // ref'd, never cited
+    ]);
+    writeFile(dir, 'wiki/entities/p.md',
+      '---\ntitle: P\nupdated: 2099-01-01\nsources:\n  - code:plain\n---\nClaim.[^code:plain/src/b.ts]');
+    const result = checkGrounding(dir, { page: 'entities/p.md' });
+    assert.deepEqual(result.warnings, []);
+    assert.deepEqual(result.issues, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('plain run still warns when the cite into the ref-d authority is a finding (e.g. missing file)', () => {
+  const dir = makeWiki();
+  try {
+    mkdirSync(join(dir, 'authority-src'), { recursive: true });
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'origin/develop' }]);
+    writeFile(dir, 'wiki/entities/m.md',
+      '---\ntitle: M\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/gone.ts]');
+    const result = checkGrounding(dir, { page: 'entities/m.md' });
+    assert.deepEqual(result.warnings, [
+      { code: 'working_tree_of_ref_authority', authority: 'app', ref: 'origin/develop' },
+    ]);
+    assert.ok(result.issues.some((i) => i.issue === 'missing_code_file'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('CLI: plain ground warns on stderr, --json carries warnings, --at-ref stays silent', () => {
+  const dir = makeWiki();
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  try {
+    const repo = join(dir, 'authority-src');
+    initRepo(repo);
+    writeFile(dir, 'authority-src/src/a.ts', 'x\n');
+    commitAll(repo, 'c');
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'main' }]);
+    writeFile(dir, 'wiki/entities/a.md',
+      '---\ntitle: A\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nClaim.[^code:app/src/a.ts]');
+    mkdirSync(join(home, '.tng-wiki'), { recursive: true });
+    writeFileSync(join(home, '.tng-wiki', 'registry.json'), JSON.stringify({
+      version: 1,
+      default: 'demo',
+      wikis: { demo: { name: 'Demo', path: dir, domain: 'blank', registered: '2026-01-01T00:00:00.000Z' } },
+    }));
+    const cli = fileURLToPath(new URL('../bin/cli.js', import.meta.url));
+    const env = { ...process.env, HOME: home, USERPROFILE: home };
+
+    const plain = spawnSync('node', [cli, 'ground'], { env, encoding: 'utf8' });
+    assert.equal(plain.status, 0); // exit code unchanged by the warning
+    assert.match(plain.stderr, /authority "app" has ref "main"/);
+    assert.match(plain.stderr, /WORKING TREE/);
+    assert.match(plain.stderr, /--at-ref/);
+    assert.ok(!plain.stdout.includes('WORKING TREE')); // findings stream stays clean
+
+    const json = spawnSync('node', [cli, 'ground', '--json'], { env, encoding: 'utf8' });
+    assert.equal(json.status, 0);
+    const parsed = JSON.parse(json.stdout);
+    assert.deepEqual(parsed.warnings, [
+      { code: 'working_tree_of_ref_authority', authority: 'app', ref: 'main' },
+    ]);
+
+    const atRef = spawnSync('node', [cli, 'ground', '--at-ref'], { env, encoding: 'utf8' });
+    assert.equal(atRef.status, 0);
+    assert.ok(!atRef.stderr.includes('WORKING TREE'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });
 
