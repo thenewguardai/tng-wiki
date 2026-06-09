@@ -5,7 +5,10 @@ import { existsSync } from 'fs';
 import { resolve, join } from 'path';
 import { detectObsidian as realDetectObsidian } from './integrations/obsidian.js';
 import { loadRegistry, listWikis } from './registry.js';
-import { skillFile } from './skill.js';
+import { skillStatus } from './skill.js';
+import {
+  installedVersion, fetchLatestVersion, readPinnedVersion, buildVersionReport,
+} from './version.js';
 
 function realCommandExists(cmd) {
   try {
@@ -114,20 +117,34 @@ export function recommendNextStep({ root, isWiki, wikis }) {
   return 'No wikis registered yet. Create one: tng-wiki init --yes --dir <path> --domain <d> --agent claude-code  (or adopt this directory: tng-wiki init --yes --dir . --into-existing)';
 }
 
-export async function runDoctor(args) {
+// installed vs latest vs pinned for the directory under inspection. `latest`
+// hits the npm registry (2s cap, null offline) unless a fake is injected.
+export function versionCheck(root, deps = {}) {
+  const {
+    installed = installedVersion(),
+    fetchLatest = fetchLatestVersion,
+    pinned = readPinnedVersion(root),
+  } = deps;
+  return buildVersionReport({ installed, latest: fetchLatest(), pinned });
+}
+
+export async function runDoctor(args, deps = {}) {
   const root = resolve(args.find((a) => !a.startsWith('-')) || '.');
-  const checks = runChecks(root);
+  const checks = runChecks(root, deps);
   const isWiki = existsSync(join(root, 'wiki')) && existsSync(join(root, 'raw'));
   const wikis = listWikis(loadRegistry());
-  const skillInstalled = existsSync(skillFile());
+  const skill = skillStatus(deps.claudeHome);
+  const version = versionCheck(root, deps);
   const recommendation = recommendNextStep({ root, isWiki, wikis });
 
   if (args.includes('--json')) {
     process.stdout.write(JSON.stringify({
       root,
+      version,
       checks: checks.map((c) => ({ name: c.name, ok: c.ok, detail: c.detail, optional: !!c.optional })),
       registry: { count: wikis.length, wikis: wikis.map((w) => ({ slug: w.slug, path: w.path, domain: w.domain, default: w.isDefault })) },
-      skillInstalled,
+      skillInstalled: skill.installed,
+      skill,
       recommendation,
     }, null, 2) + '\n');
     return;
@@ -142,10 +159,26 @@ export async function runDoctor(args) {
     console.log(`  ${icon} ${pc.bold(check.name)}  ${pc.dim('—')}  ${detail}`);
   }
 
+  // Version: installed vs latest on npm vs the wiki's optional pin
+  console.log('');
+  const latestStr = version.latest === 'unreachable' ? pc.dim('unreachable') : version.latest;
+  const pinStr = version.pinned ? ` · pinned ${version.pinned}` : '';
+  console.log(`  ${pc.green('●')} ${pc.bold('Version')}  ${pc.dim('—')}  installed ${version.installed} · latest ${latestStr}${pinStr}`);
+  for (const a of version.annotations) {
+    const icon = a.level === 'ok' ? pc.green('✓') : a.level === 'warn' ? pc.yellow('⚠') : pc.cyan('ℹ');
+    console.log(`      ${icon} ${a.level === 'warn' ? pc.yellow(a.message) : a.message}`);
+  }
+
   // Orientation: registry + skill + the recommended next command
   console.log('');
   console.log(`  ${pc.green('●')} ${pc.bold('Registry')}  ${pc.dim('—')}  ${wikis.length ? wikis.map((w) => w.slug).join(', ') : pc.dim('no wikis registered')}`);
-  console.log(`  ${skillInstalled ? pc.green('✓') : pc.yellow('○')} ${pc.bold('Claude Code skill')}  ${pc.dim('—')}  ${skillInstalled ? 'installed' : pc.dim('not installed — run tng-wiki install-skill')}`);
+  const skillIcon = !skill.installed ? pc.yellow('○') : skill.fresh ? pc.green('✓') : pc.yellow('⚠');
+  const skillDetail = !skill.installed
+    ? pc.dim('not installed — run tng-wiki install-skill')
+    : skill.fresh
+      ? 'installed'
+      : pc.yellow('skill is stale — run tng-wiki install-skill');
+  console.log(`  ${skillIcon} ${pc.bold('Claude Code skill')}  ${pc.dim('—')}  ${skillDetail}`);
   console.log('');
   console.log(`  ${pc.bold(pc.cyan('→ Next:'))} ${recommendation}`);
 

@@ -8,6 +8,7 @@ import { setupGit } from './integrations/git.js';
 import { setupQmd } from './integrations/qmd.js';
 import { detectObsidian } from './integrations/obsidian.js';
 import { loadRegistry, saveRegistry, registerWiki, registryConflict, slugifyName } from './registry.js';
+import { installedVersion } from './version.js';
 
 const DOMAINS = [
   { value: 'ai-research',           label: 'AI / Tech Research',            hint: 'tracking the landscape, models, protocols, infrastructure' },
@@ -225,6 +226,9 @@ async function runInitNonInteractive(opts) {
   console.log(`${pc.green('✓')} Scaffolded ${pc.cyan(domainLabel(domain))} wiki at ${pc.cyan(root)} ${pc.dim(`(${canonical})`)}`);
   if (skipped.length) console.log(`  ${pc.dim(`left ${skipped.length} existing file(s) untouched: ${skipped.join(', ')}`)}`);
   if (registered) console.log(`${pc.green('✓')} Registered as ${pc.bold(slugifyName(wikiName))}`);
+  if (supportsCodeAuthorities(domain)) {
+    console.log(`${pc.dim('○')} Tip: pin the tool release — add ${pc.cyan(`"pinned_version": "${suggestedPin()}"`)} to ${pc.cyan('.tng-wiki.json')}; ${pc.cyan('tng-wiki doctor')} reports installed vs latest vs pin.`);
+  }
 }
 
 async function runInitWizard(opts) {
@@ -426,6 +430,10 @@ async function runInitWizard(opts) {
   }
   console.log(`  ${pc.dim('4.')} Make other repos aware: ${pc.cyan(`tng-wiki connect <repo> --wiki ${slugify(wikiName)}`)}`);
   console.log(`  ${pc.dim('5.')} Teach every agent session the verbs: ${pc.cyan('tng-wiki install-skill')}`);
+  if (supportsCodeAuthorities(domain)) {
+    console.log(`  ${pc.dim('6.')} Pin the tool release for this wiki: add ${pc.cyan(`"pinned_version": "${suggestedPin()}"`)} to ${pc.cyan('.tng-wiki.json')}`);
+    console.log(`     ${pc.dim(`tng-wiki doctor then reports installed vs latest vs pin — deliberate upgrades, no surprise tool drift.`)}`);
+  }
 
   console.log('');
   console.log(`  ${pc.bold('Guide:')} ${pc.underline('https://thenewguard.ai/features/llm-wiki-guide')}`);
@@ -458,6 +466,12 @@ function slugify(str) {
 
 function trimError(err) {
   return err.toString().trim().split('\n').filter(Boolean)[0];
+}
+
+// "0.5.x" for installed 0.5.0 — the pin we suggest in the init epilogue.
+export function suggestedPin(version = installedVersion()) {
+  const [major, minor] = version.split('.');
+  return `${major}.${minor}.x`;
 }
 
 // --- Code authorities (Layer 3B) ---

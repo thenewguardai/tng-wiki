@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runChecks, recommendNextStep } from '../src/doctor.js';
+import { runChecks, recommendNextStep, versionCheck, runDoctor } from '../src/doctor.js';
+import { installSkill } from '../src/skill.js';
+import { installedVersion } from '../src/version.js';
 
 function fakeDeps(overrides = {}) {
   return {
@@ -106,4 +108,102 @@ test('recommendNextStep: inside an unregistered wiki dir -> register it', () => 
   const r = recommendNextStep({ root: '/w/new', isWiki: true, wikis: [] });
   assert.match(r, /not registered/);
   assert.match(r, /tng-wiki register \./);
+});
+
+// --- versionCheck (installed vs latest vs pinned; latest is injected — no network) ---
+
+test('versionCheck reads pinned_version from the wiki .tng-wiki.json and flags a violation', () => {
+  const wiki = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  try {
+    writeFileSync(join(wiki, '.tng-wiki.json'), JSON.stringify({ version: 1, pinned_version: '0.4.x' }));
+    const v = versionCheck(wiki, { installed: '0.5.0', fetchLatest: () => null });
+    assert.equal(v.installed, '0.5.0');
+    assert.equal(v.latest, 'unreachable');
+    assert.equal(v.pinned, '0.4.x');
+    assert.equal(v.annotations.length, 1);
+    assert.equal(v.annotations[0].level, 'warn');
+    assert.match(v.annotations[0].message, /installed 0\.5\.0 violates pin 0\.4\.x/);
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+  }
+});
+
+test('versionCheck without a pin is informational only (no warnings)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  try {
+    const v = versionCheck(dir, { installed: '0.5.0', fetchLatest: () => '0.6.0' });
+    assert.equal(v.pinned, null);
+    assert.ok(v.annotations.every((a) => a.level !== 'warn'));
+    assert.match(v.annotations[0].message, /update available/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('versionCheck defaults installed to the package.json version', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  try {
+    const v = versionCheck(dir, { fetchLatest: () => null });
+    assert.equal(v.installed, installedVersion());
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- runDoctor --json (offline: fetchLatest -> null; never hangs, never throws) ---
+
+async function doctorJson(root, deps) {
+  const chunks = [];
+  const realWrite = process.stdout.write;
+  process.stdout.write = (s) => { chunks.push(s); return true; };
+  try {
+    await runDoctor([root, '--json'], deps);
+  } finally {
+    process.stdout.write = realWrite;
+  }
+  return JSON.parse(chunks.join(''));
+}
+
+test('runDoctor --json reports version + skill blocks; offline -> latest "unreachable"', async () => {
+  const wiki = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  const claudeHome = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  try {
+    writeFileSync(join(wiki, '.tng-wiki.json'), JSON.stringify({ version: 1, pinned_version: '0.4.x' }));
+    const out = await doctorJson(wiki, {
+      ...fakeDeps(),
+      installed: '0.4.2',
+      fetchLatest: () => null,
+      claudeHome,
+    });
+    assert.deepEqual(
+      { installed: out.version.installed, latest: out.version.latest, pinned: out.version.pinned },
+      { installed: '0.4.2', latest: 'unreachable', pinned: '0.4.x' },
+    );
+    assert.equal(out.version.annotations[0].level, 'ok'); // 0.4.2 matches 0.4.x
+    assert.deepEqual(out.skill, { installed: false, fresh: false });
+    assert.equal(out.skillInstalled, false);
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+    rmSync(claudeHome, { recursive: true, force: true });
+  }
+});
+
+test('runDoctor --json flags a stale installed skill', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  const claudeHome = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  try {
+    // Simulate a SKILL.md installed by an older version (different content).
+    installSkill(claudeHome);
+    writeFileSync(join(claudeHome, 'skills', 'tng-wiki', 'SKILL.md'), '# old generation\n');
+    const out = await doctorJson(dir, { ...fakeDeps(), fetchLatest: () => null, claudeHome });
+    assert.deepEqual(out.skill, { installed: true, fresh: false });
+
+    // Re-running install-skill restores freshness.
+    installSkill(claudeHome, { force: true });
+    const out2 = await doctorJson(dir, { ...fakeDeps(), fetchLatest: () => null, claudeHome });
+    assert.deepEqual(out2.skill, { installed: true, fresh: true });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(claudeHome, { recursive: true, force: true });
+  }
 });
