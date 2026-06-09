@@ -16,6 +16,7 @@ const DOMAINS = [
   { value: 'business-ops',          label: 'Business Operations',           hint: 'meetings, decisions, strategy, team knowledge' },
   { value: 'learning',              label: 'Learning / Deep Study',         hint: 'books, courses, papers, building expertise' },
   { value: 'software-engineering',  label: 'Software Engineering & Architecture', hint: 'ADRs, components, systems, patterns, incidents, runbooks, tech debt' },
+  { value: 'code-archaeology',      label: 'Code Archaeology / Reverse Engineering', hint: 'verification-first distillation of a codebase; wiki + frozen deliverables' },
   { value: 'blank',                 label: 'Blank',                         hint: 'just the structure, I\'ll customize' },
 ];
 
@@ -225,6 +226,9 @@ async function runInitNonInteractive(opts) {
   console.log(`${pc.green('✓')} Scaffolded ${pc.cyan(domainLabel(domain))} wiki at ${pc.cyan(root)} ${pc.dim(`(${canonical})`)}`);
   if (skipped.length) console.log(`  ${pc.dim(`left ${skipped.length} existing file(s) untouched: ${skipped.join(', ')}`)}`);
   if (registered) console.log(`${pc.green('✓')} Registered as ${pc.bold(slugifyName(wikiName))}`);
+  if (requiresCodeAuthorities(domain)) {
+    console.log(`${pc.yellow('!')} Next: configure ${pc.cyan('code_authorities')} in ${pc.cyan('.tng-wiki.json')} — they're the point of a ${domain} wiki; without them nothing can be verified.`);
+  }
 }
 
 async function runInitWizard(opts) {
@@ -293,7 +297,7 @@ async function runInitWizard(opts) {
   // --- Code authorities (Layer 3B): only offered on engineering-shaped domains ---
   const root = resolve((targetDir ?? '').trim() || defaultPath);
   const codeAuthorities = supportsCodeAuthorities(domain)
-    ? await promptCodeAuthorities(root)
+    ? await promptCodeAuthorities(root, { strong: requiresCodeAuthorities(domain) })
     : [];
 
   // --- Registry collision guard (issue #8): decide before scaffolding ---
@@ -443,6 +447,8 @@ function domainToName(domain) {
     'publication': 'Publication Research Wiki',
     'business-ops': 'Business Operations Wiki',
     'learning': 'Learning Wiki',
+    'software-engineering': 'Engineering Wiki',
+    'code-archaeology': 'Code Archaeology Wiki',
     'blank': 'My Wiki',
   };
   return names[domain] || 'My Wiki';
@@ -465,7 +471,13 @@ function trimError(err) {
 // Domains where Layer 3B (codebase as advisory ground truth) is a meaningful pattern.
 // AI-research / publication / business-ops / etc. distill from documents, not code.
 function supportsCodeAuthorities(domain) {
-  return domain === 'software-engineering' || domain === 'blank';
+  return domain === 'software-engineering' || domain === 'code-archaeology' || domain === 'blank';
+}
+
+// Domains where code authorities aren't optional flavor — they're the point.
+// init nudges hard: the confirm defaults to yes and the prompt says why.
+function requiresCodeAuthorities(domain) {
+  return domain === 'code-archaeology';
 }
 
 const LANGUAGE_OPTIONS = [
@@ -487,13 +499,20 @@ const EXCLUDE_DEFAULTS = {
   other:      ['**/*.md', '**/*.rst', '**/node_modules/**', '**/dist/**'],
 };
 
-export async function promptCodeAuthorities(wikiRoot) {
+export async function promptCodeAuthorities(wikiRoot, { strong = false } = {}) {
   const wants = await p.confirm({
-    message: 'Have a reference codebase to ground against? (e.g. porting, reverse-engineering, M&A integration)',
-    initialValue: false,
+    message: strong
+      ? 'Register the codebase(s) you\'re excavating as code authorities? They\'re the point of this domain — every carried claim is verified against them.'
+      : 'Have a reference codebase to ground against? (e.g. porting, reverse-engineering, M&A integration)',
+    initialValue: strong,
   });
   if (p.isCancel(wants)) throw new Error('CANCELLED');
-  if (!wants) return [];
+  if (!wants) {
+    if (strong) {
+      p.log.warn(`Skipping for now — a code-archaeology wiki without code authorities can't verify anything. Add them later under ${pc.cyan('code_authorities')} in ${pc.cyan('.tng-wiki.json')}.`);
+    }
+    return [];
+  }
 
   const authorities = [];
   let addAnother = true;
