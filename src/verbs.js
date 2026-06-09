@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
-import { isGroundable, checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
+import { isGroundable, checkGrounding, buildStemMap, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
 
 export function resolveWiki(slug, home) {
   const registry = loadRegistry(home);
@@ -123,13 +123,9 @@ export function listOrphanPages(wikiPath) {
   const wikiDir = join(wikiPath, 'wiki');
   const files = walkMd(wikiDir);
 
-  // Build a name-index of every page (stem of the filename)
-  const pageByStem = new Map();
-  for (const file of files) {
-    const rel = relative(wikiPath, file);
-    const stem = file.split('/').pop().replace(/\.md$/, '');
-    pageByStem.set(stem.toLowerCase(), rel);
-  }
+  // Name-index of every page (stem of the filename) — shared with ground's
+  // prose_internal_ref lint so both resolve the same stems.
+  const pageByStem = buildStemMap(files, wikiPath);
 
   // Count inbound [[wikilinks]] per page
   const inbound = new Map();
@@ -158,10 +154,15 @@ export function listOrphanPages(wikiPath) {
 // scripts) a single number per category and the agent something to drive.
 export function roundsReport(wikiPath) {
   const ground = checkGrounding(wikiPath);
+  // Warn-level ground findings (frontmatter_updated_stale, prose_internal_ref)
+  // are hygiene/convention signals, not attribution breaks — they get their own
+  // bucket so `ground` stays the hard-failure count.
+  const convention = ground.issues.filter((i) => WARN_ISSUES.has(i.issue)).length;
   return {
     scanned: ground.scanned,
     uncompiled: listSources(wikiPath, { uncompiledOnly: true }).length,
-    ground: ground.issues.length,
+    ground: ground.issues.length - convention,
+    convention,
     orphans: listOrphanPages(wikiPath).length,
     unsourced: listUnsourcedPages(wikiPath).length,
     unverified: listUnverifiedPages(wikiPath).length,

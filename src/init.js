@@ -69,7 +69,16 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
   putFile(canonical, schemaContent);
   const aliasResults = aliases.map(a => writeSchemaAlias(root, a, canonical, schemaContent));
 
-  putFile(join('wiki', 'index.md'), template.indexMd(wikiName));
+  // The index header's `Total pages:` is lint-checked (`index_header_drift`)
+  // against the count of all wiki/**/*.md except index.md, log.md, and
+  // _-prefixed files — wiki/meta/* counts. Some templates ship meta pages, so a
+  // fresh scaffold must state its real initial count or it lints dirty on day 0.
+  const initialPages = Object.keys(template.extraFiles).filter((rel) => {
+    if (!rel.startsWith('wiki/') || !rel.endsWith('.md')) return false;
+    const basename = rel.split('/').pop();
+    return !basename.startsWith('_') && basename !== 'index.md' && basename !== 'log.md';
+  }).length;
+  putFile(join('wiki', 'index.md'), template.indexMd(wikiName).replace(/Total pages: \d+/, `Total pages: ${initialPages}`));
   putFile(join('wiki', 'log.md'), template.logMd(wikiName, domain));
 
   for (const [relPath, content] of Object.entries(template.extraFiles)) {

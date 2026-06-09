@@ -121,7 +121,7 @@ Every path or authority cited inline must also appear in the frontmatter \`sourc
   - \`[inference]\` — logical deduction from cited evidence
   - \`[rumor]\` — Tier 4 only, treat with extreme caution
 - **Numbers always have sources.** Never state a figure without attribution.
-- Use Obsidian-style \`[[wikilinks]]\` for all internal cross-references.
+- Use Obsidian-style \`[[wikilinks]]\` for all internal cross-references. Lint-enforced: \`tng-wiki ground\` flags prose references to wiki pages — \`page.md\` inline-code tokens or markdown links — as \`prose_internal_ref\` with the wikilink to use instead.
 
 ### Source Quality Tiers
 
@@ -241,6 +241,8 @@ Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catch
 - Inline \`[^code:<name>/...]\` citations where \`<name>\` is not a registered code authority in \`.tng-wiki.json\` (\`unknown_code_authority\`) or where the file path resolves to nothing on disk (\`missing_code_file\`)
 - Inline \`[^code:<name>/file]\` citations targeting a file the authority's \`exclude\` globs skip (\`excluded_code_file\`), or whose \`#L<start>-L<end>\` anchor exceeds the cited file (\`code_line_out_of_range\`)
 - With \`--at-ref\`: code citations are resolved at each authority's pinned \`ref\` instead of the working tree — adds \`missing_code_file\` at the ref, \`code_updated_after_page\` (the page's \`updated\` predates the file's last commit at the ref), and \`code_ref_unresolvable\` (the ref or repo can't be resolved)
+- \`wiki/index.md\` scaffold header out of sync with the actual page set (\`index_header_drift\` — fix the header to the stated page-count formula and the newest page date)
+- Warn-level hygiene findings: pages whose file changed (git commit-date, mtime fallback) after their frontmatter \`updated\` (\`frontmatter_updated_stale\` — bump \`updated\`), and internal pages referenced in prose instead of \`[[wikilinks]]\` (\`prose_internal_ref\` — apply the suggested wikilink)
 - Confidence tag inflation: \`[confirmed]\` claims with only Tier 3/4 citations (→ apply \`⚠️ UNVERIFIED?\`)
 
 Apply the appropriate markers inline. Log the pass with issue counts.
@@ -460,6 +462,8 @@ const INDEXING = `## Indexing
 \`wiki/index.md\` is your primary navigation tool. It's a catalog of every page with a link, one-line summary, and metadata. Organized by category.
 
 **Always read \`index.md\` first** when answering queries. At moderate scale (~100s of pages), this is sufficient without embedding-based search.
+
+The scaffold header line (\`_Last updated: <date> | Total pages: <N> | Total sources: <M>_\`) is lint-checked: \`tng-wiki ground\` flags \`index_header_drift\` when the date or page count falls behind reality — page count = all \`wiki/**/*.md\` except \`index.md\`, \`log.md\`, and \`_\`-prefixed files (\`wiki/meta/*\` pages count).
 
 If QMD is available, use \`qmd query "..."\` via CLI or MCP for larger wikis.`;
 

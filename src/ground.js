@@ -1,7 +1,17 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
-import { join, relative, resolve } from 'path';
+import { join, relative, resolve, dirname } from 'path';
 import { matchesAnyGlob } from './glob.js';
 import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate } from './git-read.js';
+
+// Warn-level findings: hygiene/convention signals, not attribution breaks.
+// Renderers color them differently and `rounds` counts them under `convention`;
+// they never change exit codes.
+export const WARN_ISSUES = new Set(['frontmatter_updated_stale', 'prose_internal_ref']);
+
+// The page-count formula the index header is lint-checked against. Stated in the
+// `index_header_drift` finding so the maintaining agent fixes the header to the
+// same definition the lint uses.
+const PAGE_COUNT_FORMULA = 'all wiki/**/*.md except index.md, log.md, and _-prefixed files';
 
 // Lines in a blob, ignoring a single trailing newline so a file with N lines
 // (with or without a final \n) counts as N — keeps the last-line range check honest.
@@ -132,6 +142,116 @@ export function isGroundable(relPath) {
   return true;
 }
 
+// Stem (filename minus .md, lowercased) → wiki-relative path for every wiki page.
+// Single source of truth shared by `orphans` ([[wikilink]] resolution) and the
+// `prose_internal_ref` lint (inline-code stem matching) — keep them in lockstep.
+export function buildStemMap(files, wikiPath) {
+  const pageByStem = new Map();
+  for (const file of files) {
+    const rel = relative(wikiPath, file);
+    pageByStem.set(stemOf(rel).toLowerCase(), rel);
+  }
+  return pageByStem;
+}
+
+function stemOf(relPath) {
+  return relPath.split('/').pop().replace(/\.md$/, '');
+}
+
+// raw/ and deliverables/ hold *files*, not pages — path references to them are
+// correct as-is and never `prose_internal_ref` candidates.
+const FILE_ARTIFACT_SEGMENTS = new Set(['raw', 'deliverables']);
+
+function isFileArtifactPath(target) {
+  return target.split('/').some((seg) => FILE_ARTIFACT_SEGMENTS.has(seg));
+}
+
+// Lint the wikilink convention: internal pages referenced in prose — either as
+// inline-code tokens (`page.md`, Pattern A) or as markdown links to relative .md
+// paths resolving to wiki pages (Pattern B) — instead of [[wikilinks]]. Fenced
+// code blocks are skipped; citation markers ([^raw/...] / [^code:...]) match
+// neither pattern by construction.
+function findProseInternalRefs({ pageRel, pageAbs, body, bodyStartLine, stemByPage, wikiFiles, wikiPath }) {
+  const out = [];
+  const push = (line, matched, targetRel) => out.push({
+    page: pageRel, issue: 'prose_internal_ref', line, matched, suggest: `[[${stemOf(targetRel)}]]`,
+  });
+
+  const lines = body.split('\n');
+  let inFence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    if (/^\s{0,3}(```|~~~)/.test(text)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const lineNo = i + bodyStartLine;
+
+    // Pattern A: `<stem>.md` inline-code tokens matching a known page stem
+    for (const m of text.matchAll(/`([^`\n]+)`/g)) {
+      const token = m[1].trim();
+      if (!/^\S+\.md$/.test(token) || isFileArtifactPath(token)) continue;
+      const targetRel = stemByPage.get(stemOf(token).toLowerCase());
+      if (targetRel && targetRel !== pageRel) push(lineNo, m[0], targetRel);
+    }
+
+    // Pattern B: markdown links whose target is a relative .md path resolving to
+    // a wiki page (strip inline code first so `[x](y.md)` examples stay silent)
+    const noInlineCode = text.replace(/`[^`]*`/g, '');
+    for (const m of noInlineCode.matchAll(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
+      const target = m[2].split('#')[0];
+      if (!target.endsWith('.md')) continue;
+      if (/^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith('/')) continue; // URL or absolute path
+      if (isFileArtifactPath(target)) continue;
+      const resolved = [resolve(dirname(pageAbs), target), resolve(wikiPath, target)]
+        .find((abs) => wikiFiles.has(abs));
+      if (!resolved) continue;
+      const targetRel = relative(wikiPath, resolved);
+      if (targetRel !== pageRel) push(lineNo, m[0], targetRel);
+    }
+  }
+  return out;
+}
+
+// Parse the scaffold header line of wiki/index.md and compare its page count and
+// date against reality. Header absent or customized → null (don't impose the
+// scaffold header on customized indexes). The date only drifts when the header is
+// *behind* the newest page — an index legitimately bumped after the last page
+// edit is not rot.
+function checkIndexHeader(wikiPath, allFiles) {
+  const indexAbs = join(wikiPath, 'wiki', 'index.md');
+  const content = readFileSafe(indexAbs);
+  if (content == null) return null;
+  const header = content.match(/^_Last updated:\s*(\d{4}-\d{2}-\d{2})\s*\|\s*Total pages:\s*(\d+)/m);
+  if (!header) return null;
+
+  const [, headerDate, headerPagesRaw] = header;
+  const headerPages = Number(headerPagesRaw);
+
+  // Page count = isGroundable() pages PLUS wiki/meta/* content pages (real pages,
+  // just grounding-exempt) — i.e. PAGE_COUNT_FORMULA.
+  const countable = allFiles.filter((f) => {
+    const basename = relative(wikiPath, f).split('/').pop();
+    return !STRUCTURAL_BASENAMES.has(basename) && !basename.startsWith('_');
+  });
+
+  let newest = null;
+  for (const f of countable) {
+    const time = fileCommitDate(wikiPath, relative(wikiPath, f)) ?? statSync(f).mtime;
+    const date = time.toISOString().slice(0, 10);
+    if (newest === null || date > newest) newest = date;
+  }
+
+  if (headerPages === countable.length && (newest === null || headerDate >= newest)) return null;
+  return {
+    page: 'wiki/index.md',
+    issue: 'index_header_drift',
+    expected_pages: headerPages,
+    actual_pages: countable.length,
+    header_date: headerDate,
+    newest_page_date: newest,
+    formula: PAGE_COUNT_FORMULA,
+  };
+}
+
 export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
   const wikiDir = join(wikiPath, 'wiki');
   const allFiles = walkMd(wikiDir);
@@ -153,6 +273,11 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
       refResolvable.set(a.name, refResolves(resolve(wikiPath, a.path), a.ref));
     }
   }
+
+  // Shared by the prose_internal_ref lint: the orphans stem map plus a resolved
+  // file set for markdown-link targets.
+  const stemByPage = buildStemMap(allFiles, wikiPath);
+  const wikiFiles = new Set(allFiles.map((f) => resolve(f)));
 
   const issues = [];
 
@@ -321,6 +446,40 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
         }
       }
     }
+
+    // The remaining checks only apply to groundable pages — a --page run pointed
+    // at an exempt file (index.md, _template, wiki/meta/*) skips them.
+    if (!isGroundable(rel)) continue;
+
+    // frontmatter `updated` hygiene (warn-level): the page file itself changed —
+    // git last-commit date, mtime fallback (same pattern as raw staleness above) —
+    // after the date the page claims. +1-day grace absorbs same-day timezone
+    // noise. Matters because every staleness check above keys on `updated`.
+    if (updated) {
+      const pageTime = fileCommitDate(wikiPath, rel) ?? statSync(file).mtime;
+      const lastCommit = pageTime.toISOString().slice(0, 10);
+      const graceCutoff = new Date(updated.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (lastCommit > graceCutoff) {
+        issues.push({
+          page: rel,
+          issue: 'frontmatter_updated_stale',
+          updated: updated.toISOString().slice(0, 10),
+          last_commit: lastCommit,
+        });
+      }
+    }
+
+    // wikilink convention (warn-level): internal pages referenced in prose
+    issues.push(...findProseInternalRefs({
+      pageRel: rel, pageAbs: file, body, bodyStartLine, stemByPage, wikiFiles, wikiPath,
+    }));
+  }
+
+  // Wiki-level check: the index.md scaffold header vs reality. Skipped on --page
+  // runs — they're scoped to a single page's own invariants.
+  if (!page) {
+    const headerIssue = checkIndexHeader(wikiPath, allFiles);
+    if (headerIssue) issues.push(headerIssue);
   }
 
   return { scanned: targets.length, issues };

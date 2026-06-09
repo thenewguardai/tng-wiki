@@ -9,6 +9,7 @@ import {
   listSources, listStalePages, listOrphanPages, roundsReport,
 } from '../src/verbs.js';
 import { saveRegistry, emptyRegistry, registerWiki } from '../src/registry.js';
+import { checkGrounding } from '../src/ground.js';
 
 function makeWiki({ domain = 'blank', agent = 'claude-code', wikiName = 'Demo' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-verbs-'));
@@ -236,6 +237,27 @@ test('roundsReport returns counts and skips template/meta example markers', () =
     // a real groundable page with a marker IS counted
     writePage(dir, 'wiki/entities/old.md', 'x ⚠️ STALE?');
     assert.equal(roundsReport(dir).stale, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('roundsReport splits warn-level ground findings into the convention bucket', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'wiki/entities/target.md',
+      '---\ntitle: T\nupdated: 2099-01-01\nsources: [raw/s.md]\n---\nCited.[^raw/s.md]\nBack-ref [[noisy]].');
+    writePage(dir, 'raw/s.md', 'body');
+    // one error-level finding (empty_sources) + two warn-level findings
+    // (frontmatter_updated_stale via 2020 date, prose_internal_ref)
+    writePage(dir, 'wiki/entities/noisy.md',
+      '---\ntitle: N\nupdated: 2020-01-01\n---\nSee `target.md` and [[target]].');
+    const r = roundsReport(dir);
+    assert.equal(r.convention, 2);
+    const ground = checkGrounding(dir);
+    assert.equal(r.ground + r.convention, ground.issues.length);
+    assert.ok(ground.issues.some((i) => i.issue === 'frontmatter_updated_stale'));
+    assert.ok(ground.issues.some((i) => i.issue === 'prose_internal_ref'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
