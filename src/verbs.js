@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
 import { isGroundable, checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
@@ -21,15 +21,64 @@ export function queryIndex(wikiPath) {
   return readFileSync(indexPath, 'utf8');
 }
 
-export function readPage(wikiPath, relPath) {
-  const wikiDir = join(wikiPath, 'wiki');
-  const target = resolve(wikiDir, relPath);
-  // prevent ../ escape
-  if (!target.startsWith(resolve(wikiDir) + sep) && target !== resolve(wikiDir)) {
-    throw new Error(`Page path "${relPath}" escapes the wiki directory`);
+// Normalize a page reference to a path relative to wiki/. Accepts, in order:
+//   1. the exact path relative to wiki/ (fast path);
+//   2. the same with `.md` appended;
+//   3. the input minus a leading `wiki/` prefix (then forms 1–2);
+//   4. a unique page-stem match (the lowercase stem map listOrphanPages uses),
+//      with `[[…]]` wikilink wrapping stripped.
+// Zero matches → error listing the forms tried; multiple stem matches → error
+// listing the candidates. The `../` escape guard applies after normalization.
+export function resolvePagePath(wikiPath, input) {
+  const wikiDir = resolve(join(wikiPath, 'wiki'));
+  let cleaned = String(input).trim();
+  const wikilink = cleaned.match(/^\[\[([^\]]+)\]\]$/);
+  if (wikilink) cleaned = wikilink[1].split(/[|#]/)[0].trim();
+
+  const forms = [];
+  const addForm = (f) => {
+    if (!f) return;
+    if (!forms.includes(f)) forms.push(f);
+    if (!f.endsWith('.md') && !forms.includes(f + '.md')) forms.push(f + '.md');
+  };
+  addForm(cleaned);
+  if (cleaned.startsWith('wiki/')) addForm(cleaned.slice('wiki/'.length));
+
+  // prevent ../ escape — applied to every normalized form
+  const guard = (form) => {
+    const target = resolve(wikiDir, form);
+    if (!target.startsWith(wikiDir + sep) && target !== wikiDir) {
+      throw new Error(`Page path "${input}" escapes the wiki directory`);
+    }
+    return target;
+  };
+
+  for (const form of forms) {
+    const target = guard(form);
+    if (existsSync(target) && statSync(target).isFile()) return form;
   }
-  if (!existsSync(target)) throw new Error(`Page not found: ${relPath}`);
-  return readFileSync(target, 'utf8');
+
+  // Stem lookup only for bare names — a pathed input matching a same-named
+  // page in a *different* directory would be a silent misresolution.
+  const stem = cleaned.replace(/\.md$/i, '').toLowerCase();
+  if (!stem.includes('/')) {
+    const matches = pageStemMap(wikiPath).get(stem) ?? [];
+    if (matches.length > 1) {
+      throw new Error(`Ambiguous page "${input}" — matches: ${matches.join(', ')}. Pass a fuller path.`);
+    }
+    if (matches.length === 1) {
+      const form = matches[0].replace(/^wiki\//, '');
+      guard(form);
+      return form;
+    }
+    throw new Error(`Page not found: ${input} (tried: ${forms.join(', ')}; no page stem matches "${stem}")`);
+  }
+  throw new Error(`Page not found: ${input} (tried: ${forms.join(', ')})`);
+}
+
+export function readPage(wikiPath, relPath) {
+  const form = resolvePagePath(wikiPath, relPath);
+  return readFileSync(resolve(join(wikiPath, 'wiki'), form), 'utf8');
 }
 
 function walkMd(dir) {
@@ -119,26 +168,32 @@ export function listStalePages(wikiPath) {
   return results;
 }
 
+// Lowercase filename-stem → wiki-relative paths (e.g. "acme" → ["wiki/entities/acme.md"]).
+// Shared by listOrphanPages (inbound wikilink resolution) and resolvePagePath
+// (bare-stem / [[wikilink]] page lookup).
+export function pageStemMap(wikiPath) {
+  const map = new Map();
+  for (const file of walkMd(join(wikiPath, 'wiki'))) {
+    const rel = relative(wikiPath, file);
+    const stem = file.split(sep).pop().replace(/\.md$/, '').toLowerCase();
+    if (!map.has(stem)) map.set(stem, []);
+    map.get(stem).push(rel);
+  }
+  return map;
+}
+
 export function listOrphanPages(wikiPath) {
   const wikiDir = join(wikiPath, 'wiki');
   const files = walkMd(wikiDir);
+  const pageByStem = pageStemMap(wikiPath);
 
-  // Build a name-index of every page (stem of the filename)
-  const pageByStem = new Map();
-  for (const file of files) {
-    const rel = relative(wikiPath, file);
-    const stem = file.split('/').pop().replace(/\.md$/, '');
-    pageByStem.set(stem.toLowerCase(), rel);
-  }
-
-  // Count inbound [[wikilinks]] per page
+  // Count inbound [[wikilinks]] per page; an ambiguous stem credits every candidate
   const inbound = new Map();
   for (const file of files) {
     const content = readFileSync(file, 'utf8');
     for (const m of content.matchAll(/\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]/g)) {
       const target = m[1].trim().toLowerCase();
-      if (pageByStem.has(target)) {
-        const rel = pageByStem.get(target);
+      for (const rel of pageByStem.get(target) ?? []) {
         inbound.set(rel, (inbound.get(rel) ?? 0) + 1);
       }
     }

@@ -125,7 +125,7 @@ tng-wiki set-default <slug>         # Set the default wiki
 
 # Wiki access (the verbs your agent will call)
 tng-wiki query      [--wiki <slug>] [--json]
-tng-wiki read       <path> [--wiki <slug>] [--json]
+tng-wiki read       <page> [--wiki <slug>] [--json]   # path, [[wikilink]], or unique page stem
 tng-wiki search     <query> [--wiki <slug>] [--regex] [--include-raw] [--json]
 tng-wiki sources    [--wiki <slug>] [--uncompiled] [--json]
 
@@ -142,7 +142,7 @@ tng-wiki install-skill              # Install the Claude Code skill (~/.claude/s
                                     #   [--force] overwrite  [--uninstall] remove
 
 # Diagnostics
-tng-wiki status                     # Basic wiki health snapshot
+tng-wiki status     [path] [--wiki <slug>] [--json]   # Basic wiki health snapshot
 tng-wiki doctor                     # Environment check: agent CLIs, QMD, git
 tng-wiki help
 ```

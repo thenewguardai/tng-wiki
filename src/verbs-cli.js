@@ -1,6 +1,6 @@
 import pc from 'picocolors';
 import {
-  resolveWiki, queryIndex, readPage, searchWiki,
+  resolveWiki, queryIndex, readPage, resolvePagePath, searchWiki,
   listSources, listStalePages, listOrphanPages, roundsReport,
 } from './verbs.js';
 import {
@@ -15,7 +15,13 @@ function argValue(args, flag) {
 }
 
 function firstPositional(args) {
-  return args.find(a => !a.startsWith('--'));
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--wiki' || a === '--page') { i++; continue; } // skip value-taking flags
+    if (a.startsWith('--')) continue;
+    return a;
+  }
+  return undefined;
 }
 
 function wikiFromArgs(args) {
@@ -43,13 +49,14 @@ export async function runQuery(args) {
 export async function runRead(args) {
   const relPath = firstPositional(args);
   if (!relPath) {
-    process.stderr.write('Usage: tng-wiki read <relative-path> [--wiki <slug>] [--json]\n');
+    process.stderr.write('Usage: tng-wiki read <page> [--wiki <slug>] [--json]\n');
     process.exit(1);
   }
   const wiki = wikiFromArgs(args);
-  const content = readPage(wiki.path, relPath);
+  const resolved = resolvePagePath(wiki.path, relPath);
+  const content = readPage(wiki.path, resolved);
   if (args.includes('--json')) {
-    process.stdout.write(JSON.stringify({ wiki: wiki.slug, path: relPath, content }, null, 2) + '\n');
+    process.stdout.write(JSON.stringify({ wiki: wiki.slug, path: resolved, content }, null, 2) + '\n');
   } else {
     process.stdout.write(content);
   }

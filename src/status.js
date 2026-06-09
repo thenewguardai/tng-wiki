@@ -2,6 +2,7 @@ import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
+import { resolveWiki } from './verbs.js';
 
 export function computeStatus(root) {
   const hasWiki = existsSync(join(root, 'wiki'));
@@ -50,9 +51,42 @@ export function computeStatus(root) {
   };
 }
 
+function argValue(args, flag) {
+  const idx = args.indexOf(flag);
+  if (idx === -1) return null;
+  const next = args[idx + 1];
+  return next && !next.startsWith('--') ? next : null;
+}
+
+function firstPositional(args) {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--wiki') { i++; continue; } // skip the flag's value
+    if (a.startsWith('--')) continue;
+    return a;
+  }
+  return undefined;
+}
+
+// Same wiki-resolution semantics as the verbs (query/read/search):
+// --wiki <slug> targets a registered wiki from any cwd; bare `status` uses the
+// registered default; an explicit path argument bypasses the registry entirely.
+export function resolveStatusRoot(args, home) {
+  const slug = argValue(args, '--wiki');
+  const explicit = firstPositional(args);
+  if (!slug && explicit) return { root: resolve(explicit), slug: null };
+  const wiki = resolveWiki(slug, home);
+  return { root: wiki.path, slug: wiki.slug };
+}
+
 export async function runStatus(args) {
-  const root = resolve(args[0] || '.');
+  const { root, slug } = resolveStatusRoot(args);
   const status = computeStatus(root);
+
+  if (args.includes('--json')) {
+    process.stdout.write(JSON.stringify({ wiki: slug, ...status }, null, 2) + '\n');
+    return;
+  }
 
   if (!status.isWiki) {
     p.log.error('Not a wiki directory. Run this from your wiki root, or pass the path as an argument.');
@@ -63,7 +97,7 @@ export async function runStatus(args) {
   p.intro(pc.bgCyan(pc.black(' wiki status ')));
 
   console.log('');
-  console.log(`  ${pc.bold('Wiki Health')}  ${pc.dim(status.root)}`);
+  console.log(`  ${pc.bold('Wiki Health')}  ${pc.dim(slug ? `${slug} · ${status.root}` : status.root)}`);
   console.log('');
   console.log(`  ${pc.cyan('Sources (raw/):')}      ${status.rawFiles} markdown files`);
   console.log(`  ${pc.cyan('Wiki pages:')}          ${status.wikiPages} pages`);
