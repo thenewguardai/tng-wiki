@@ -153,6 +153,16 @@ export function listOrphanPages(wikiPath) {
     .map(path => ({ path }));
 }
 
+// Rejection logs — NOTES deliverables produced by verification-first campaigns
+// (every rejected/corrected/downgraded lead claim with its disposition). They
+// live under deliverables/ and match `*_NOTES_*.md`. A verification-first wiki
+// shows ~zero markers by construction, so these files are its audit surface.
+export function listRejectionNotes(wikiPath) {
+  return walkMd(join(wikiPath, 'deliverables'))
+    .filter(f => /_NOTES_/.test(f.split('/').pop()))
+    .map(f => ({ path: relative(wikiPath, f) }));
+}
+
 // "Rounds" maintenance dashboard — zero-LLM counts the named bundle anchors on:
 // pending ingest + structural lint surfaces. Gives `tng-wiki rounds` (and cron/
 // scripts) a single number per category and the agent something to drive.
@@ -167,5 +177,7 @@ export function roundsReport(wikiPath) {
     unverified: listUnverifiedPages(wikiPath).length,
     stale: listStalePages(wikiPath).length,
     drift: listDriftPages(wikiPath).length,
+    // informational, not a to-do count — audit artifact of verification-first flows
+    rejection_notes: listRejectionNotes(wikiPath).length,
   };
 }
