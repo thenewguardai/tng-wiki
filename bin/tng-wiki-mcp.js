@@ -93,16 +93,17 @@ server.registerTool(
   'search',
   {
     title: 'Search wiki pages',
-    description: 'Case-insensitive search across wiki pages. Returns grep-style hits tagged source:"wiki" by default. Pass include_raw=true to also search raw/ sources — use this for deep searches, source-verification ("confirm this", "consult the official docs"), or when a compiled answer is missing and you suspect the detail survives in the archival source.',
+    description: 'Case-insensitive search across wiki pages. Returns grep-style hits tagged source:"wiki" by default. Pass include_raw=true to also search raw/ sources — use this for deep searches, source-verification ("confirm this", "consult the official docs"), or when a compiled answer is missing and you suspect the detail survives in the archival source. Pass include_leads=true to also search registered lead archives (.tng-wiki.json lead_archives) — external untrusted doc trees; hits are tagged source:"lead" with the archive name. Leads are never citable sources.',
     inputSchema: {
       query: z.string().describe('Search term. Substring by default; pass regex=true for regex patterns.'),
       wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki.'),
       regex: z.boolean().optional().describe('Interpret `query` as a regex pattern. Default: false.'),
       include_raw: z.boolean().optional().describe('Also search raw/ source material, not just compiled wiki/ pages. Each hit is tagged source:"wiki" or source:"raw". Default: false.'),
+      include_leads: z.boolean().optional().describe('Also search registered lead archives. Lead hits are tagged source:"lead" and archive:"<name>", with paths relative to the archive root. Independent of include_raw. Default: false.'),
     },
   },
-  async ({ query, wiki, regex, include_raw }) => withWiki(wiki, (w) => ok({
-    wiki: w.slug, query, hits: searchWiki(w.path, query, { regex: !!regex, includeRaw: !!include_raw }),
+  async ({ query, wiki, regex, include_raw, include_leads }) => withWiki(wiki, (w) => ok({
+    wiki: w.slug, query, hits: searchWiki(w.path, query, { regex: !!regex, includeRaw: !!include_raw, includeLeads: !!include_leads }),
   })),
 );
 

@@ -58,17 +58,20 @@ export async function runRead(args) {
 export async function runSearch(args) {
   const query = firstPositional(args);
   if (!query) {
-    process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--json]\n');
+    process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--include-leads] [--json]\n');
     process.exit(1);
   }
   const wiki = wikiFromArgs(args);
   const hits = searchWiki(wiki.path, query, {
     regex: args.includes('--regex'),
     includeRaw: args.includes('--include-raw'),
+    includeLeads: args.includes('--include-leads'),
   });
   maybeJson(args, { wiki: wiki.slug, query, hits }, () => {
     for (const h of hits) {
-      const tag = h.source === 'raw' ? pc.yellow('[raw] ') : pc.dim('[wiki]');
+      const tag = h.source === 'raw' ? pc.yellow('[raw] ')
+        : h.source === 'lead' ? pc.magenta(`[lead:${h.archive}]`)
+        : pc.dim('[wiki]');
       process.stdout.write(`${tag} ${h.path}:${h.line}: ${h.text}\n`);
     }
   });
@@ -118,6 +121,9 @@ const ISSUE_LABEL = {
   code_line_out_of_range: 'cited line range exceeds the file',
   code_updated_after_page: 'code authority modified after page `updated`',
   code_ref_unresolvable: 'authority `ref` is not a resolvable git ref',
+  cited_lead_archive: 'citation resolves into a lead archive — leads are never citable sources',
+  missing_lead: '`leads:` entry points at a file the archive no longer has',
+  unknown_lead_archive: '`leads:` entry names an archive not registered in `.tng-wiki.json`',
 };
 
 export async function runGround(args) {
@@ -141,9 +147,12 @@ export async function runGround(args) {
         const label = ISSUE_LABEL[i.issue] ?? i.issue;
         const filePart = i.file ? (i.ref ? `${i.file}@${i.ref}` : i.file) : null;
         const target = i.raw
+          ?? i.lead
           ?? (i.authority && filePart ? `${i.authority}/${filePart}` : null)
           ?? (i.authority && i.ref ? `${i.authority}@${i.ref}` : null)
           ?? i.authority
+          ?? (i.archive && i.file ? `${i.archive}/${i.file}` : null)
+          ?? i.archive
           ?? null;
         const detail = target ? ` ${pc.dim('→')} ${target}` : '';
         const loc = i.line ? pc.dim(` (line ${i.line})`) : '';
@@ -151,7 +160,9 @@ export async function runGround(args) {
           ? pc.dim(` [${i.range} vs ${i.line_count} lines]`) : '';
         const stamp = i.source_mtime ?? i.source_commit;
         const ts = stamp ? pc.dim(` (page ${i.page_updated}, source ${stamp})`) : '';
-        process.stdout.write(`  ${pc.yellow(i.issue)}: ${label}${detail}${loc}${range}${ts}\n`);
+        // warn-level findings (lead provenance) render dimmed — informational, not failures
+        const issueTag = i.level === 'warn' ? pc.dim(`${i.issue} (warn)`) : pc.yellow(i.issue);
+        process.stdout.write(`  ${issueTag}: ${label}${detail}${loc}${range}${ts}\n`);
       }
     }
     process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);

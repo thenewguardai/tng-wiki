@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
-import { join, relative, resolve } from 'path';
+import { join, relative, resolve, sep } from 'path';
 import { matchesAnyGlob } from './glob.js';
 import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate } from './git-read.js';
 
@@ -19,15 +19,29 @@ function readFileSafe(absPath) {
   }
 }
 
-function loadCodeAuthorities(wikiPath) {
+function loadWikiMeta(wikiPath) {
   const metaPath = join(wikiPath, '.tng-wiki.json');
-  if (!existsSync(metaPath)) return [];
+  if (!existsSync(metaPath)) return {};
   try {
-    const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
-    return Array.isArray(meta.code_authorities) ? meta.code_authorities : [];
+    return JSON.parse(readFileSync(metaPath, 'utf8'));
   } catch {
-    return [];
+    return {};
   }
+}
+
+function loadCodeAuthorities(wikiPath) {
+  const meta = loadWikiMeta(wikiPath);
+  return Array.isArray(meta.code_authorities) ? meta.code_authorities : [];
+}
+
+// External, fallible doc archives ("leads, never sources"). Each entry:
+// { name, path, description? } — path resolved relative to the wiki root,
+// same as code_authorities.path.
+// TODO(#16): adopt the shared ~-expanding resolver (src/paths.js) once it lands,
+// so both config families resolve paths identically.
+export function loadLeadArchives(wikiPath) {
+  const meta = loadWikiMeta(wikiPath);
+  return Array.isArray(meta.lead_archives) ? meta.lead_archives : [];
 }
 
 function walkMd(dir) {
@@ -55,14 +69,17 @@ export function splitFrontmatter(content) {
   };
 }
 
-export function extractSources(frontmatter) {
+// Shared parser for top-level frontmatter list keys (`sources:`, `leads:`).
+// Handles inline arrays, block lists, scalars, and quoted entries identically
+// so the two keys can never drift in what they accept.
+function extractListKey(frontmatter, key) {
   const lines = frontmatter.split('\n');
-  const idx = lines.findIndex((l) => /^sources:/.test(l));
+  const idx = lines.findIndex((l) => l.startsWith(`${key}:`));
   if (idx === -1) return null;
   const line = lines[idx];
 
-  // inline array form: `sources: [a, b]` or `sources: []`
-  const inline = line.match(/^sources:\s*\[(.*)\]/);
+  // inline array form: `<key>: [a, b]` or `<key>: []`
+  const inline = line.match(new RegExp(`^${key}:\\s*\\[(.*)\\]`));
   if (inline) {
     return inline[1].trim()
       ? inline[1].split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
@@ -70,7 +87,7 @@ export function extractSources(frontmatter) {
   }
 
   // scalar form: legacy `sources: 3` (count) — treat as empty, it's a migration target
-  const scalar = line.replace(/^sources:\s*/, '').replace(/#.*$/, '').trim();
+  const scalar = line.slice(key.length + 1).replace(/#.*$/, '').trim();
   if (scalar && !scalar.startsWith('[')) {
     if (/^\d+$/.test(scalar)) return [];
     return [scalar.replace(/^["']|["']$/g, '')];
@@ -84,6 +101,17 @@ export function extractSources(frontmatter) {
     out.push(m[1].replace(/^["']|["']$/g, ''));
   }
   return out;
+}
+
+export function extractSources(frontmatter) {
+  return extractListKey(frontmatter, 'sources');
+}
+
+// `leads:` — structured provenance ("distilled from lead X"), explicitly NOT a
+// source. Entries take the form `<archive-name>:<relative-path-within-archive>`.
+// Exempt from every `sources:` invariant.
+export function extractLeads(frontmatter) {
+  return extractListKey(frontmatter, 'leads') ?? [];
 }
 
 export function extractCitations(body, bodyStartLine = 1) {
@@ -142,6 +170,14 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
   const codeAuthorities = loadCodeAuthorities(wikiPath);
   const authorityByName = new Map(codeAuthorities.map((a) => [a.name, a]));
 
+  // Lead archives: external untrusted doc trees. Anything resolving inside one
+  // is a lead, never a source — citing it is an error-level finding.
+  const leadArchives = loadLeadArchives(wikiPath);
+  const archiveByName = new Map(leadArchives.map((a) => [a.name, a]));
+  const archiveRoots = leadArchives.map((a) => ({ name: a.name, root: resolve(wikiPath, a.path) }));
+  const leadArchiveOf = (absPath) =>
+    archiveRoots.find(({ root }) => absPath === root || absPath.startsWith(root + sep))?.name ?? null;
+
   // Under --at-ref, resolve each ref'd authority's ref ONCE (the repo+ref pair is
   // page-independent). true -> read at ref; false -> code_ref_unresolvable.
   // Authorities without a ref, or any authority when !atRef, are absent here and
@@ -182,6 +218,20 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
     // missing raw files (union of declared + cited)
     const allRawPaths = new Set([...declaredRaw, ...citedRaw.map((c) => c.path)]);
     for (const refPath of allRawPaths) {
+      // resolved target inside a registered lead archive — a lead is never a
+      // source, regardless of whether the file exists (it usually does)
+      const archive = leadArchiveOf(resolve(wikiPath, refPath));
+      if (archive) {
+        const citedHere = citedRaw.filter((c) => c.path === refPath);
+        if (citedHere.length > 0) {
+          for (const c of citedHere) {
+            issues.push({ page: rel, issue: 'cited_lead_archive', archive, raw: refPath, line: c.line });
+          }
+        } else {
+          issues.push({ page: rel, issue: 'cited_lead_archive', archive, raw: refPath });
+        }
+        continue;
+      }
       if (!existsSync(join(wikiPath, refPath))) {
         const citedHere = citedRaw.filter((c) => c.path === refPath);
         if (citedHere.length > 0) {
@@ -217,10 +267,18 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
       }
     }
 
-    // unknown code authority (frontmatter declares `code:<name>` not in .tng-wiki.json)
+    // unknown code authority (frontmatter declares `code:<name>` not in .tng-wiki.json).
+    // A lead archive declared as if it were an authority is the sharper finding —
+    // the page is treating untrusted leads as a trust anchor.
+    const citedCodeNames = new Set(citedCode.map((c) => c.authority));
     for (const d of declaredCode) {
       const name = d.slice('code:'.length);
-      if (!authorityByName.has(name)) {
+      if (archiveByName.has(name) && !authorityByName.has(name)) {
+        // inline cites of the same archive are flagged per-cite below (with lines)
+        if (!citedCodeNames.has(name)) {
+          issues.push({ page: rel, issue: 'cited_lead_archive', archive: name, raw: d });
+        }
+      } else if (!authorityByName.has(name)) {
         issues.push({ page: rel, issue: 'unknown_code_authority', authority: name });
       }
     }
@@ -233,17 +291,36 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
     // never count lines or commit dates for a file we shouldn't have cited or can't read.
     const refFlaggedThisPage = new Set();
     for (const c of citedCode) {
+      // 0. lead archive cited via the [^code:<name>/...] form — the most likely
+      // shape of "cited a lead as if it were an authority". Flag per-cite (with
+      // the line), regardless of whether a file path is present.
+      if (archiveByName.has(c.authority) && !authorityByName.has(c.authority)) {
+        const issue = { page: rel, issue: 'cited_lead_archive', archive: c.authority, line: c.line };
+        if (c.file) issue.file = c.file;
+        issues.push(issue);
+        continue;
+      }
+
       if (!c.file) continue;  // whole-authority reference — no file to check
       const authority = authorityByName.get(c.authority);
       if (!authority) continue;  // unknown authority already flagged above
 
-      // 1. exclude — a cite to an excluded path is wrong even if the file exists.
+      const repoAbs = resolve(wikiPath, authority.path);
+
+      // 1a. resolved target inside a registered lead archive (e.g. an authority
+      // whose tree overlaps an archive) — leads are never citable.
+      const archive = leadArchiveOf(resolve(repoAbs, c.file));
+      if (archive) {
+        issues.push({ page: rel, issue: 'cited_lead_archive', archive, authority: c.authority, file: c.file, line: c.line });
+        continue;
+      }
+
+      // 1b. exclude — a cite to an excluded path is wrong even if the file exists.
       if (matchesAnyGlob(c.file, authority.exclude)) {
         issues.push({ page: rel, issue: 'excluded_code_file', authority: c.authority, file: c.file, line: c.line });
         continue;
       }
 
-      const repoAbs = resolve(wikiPath, authority.path);
       const useRef = atRef && Boolean(authority.ref);
 
       // 2. unresolvable ref — flag once per authority per page, then skip its cites.
@@ -319,6 +396,24 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
             source_mtime: sourceDate,
           });
         }
+      }
+    }
+
+    // `leads:` provenance — warn-level only, never errors. Archives evolve, so a
+    // vanished lead file is informational (missing_lead); an unregistered archive
+    // name is a config smell (unknown_lead_archive). Both carry level:'warn' so
+    // rounds can exclude them from the ground-issue count.
+    for (const lead of extractLeads(frontmatter)) {
+      const colon = lead.indexOf(':');
+      const archiveName = colon === -1 ? lead : lead.slice(0, colon);
+      const leadPath = colon === -1 ? '' : lead.slice(colon + 1).trim();
+      const archive = archiveByName.get(archiveName);
+      if (!archive) {
+        issues.push({ page: rel, issue: 'unknown_lead_archive', level: 'warn', lead, archive: archiveName });
+        continue;
+      }
+      if (!leadPath || !existsSync(resolve(resolve(wikiPath, archive.path), leadPath))) {
+        issues.push({ page: rel, issue: 'missing_lead', level: 'warn', lead, archive: archiveName });
       }
     }
   }

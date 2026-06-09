@@ -26,11 +26,13 @@ export const COMMANDS = [
       { name: '--no-integrations', desc: 'shorthand for --no-git --no-qmd' },
       { name: '--into-existing', alias: '--adopt', desc: 'adopt a non-empty dir: never overwrite existing files, merge .gitignore' },
       { name: '--force', desc: 'replace an existing registry entry of the same name' },
+      { name: '--lead', value: '<name>=<path>', desc: 'register an external lead archive (repeatable, --yes mode) — searchable with `search --include-leads`, never citable' },
     ],
     examples: [
       'tng-wiki init',
       'tng-wiki init --yes --dir ./my-wiki --domain software-engineering --name "My Wiki"',
       'tng-wiki init --yes --dir . --into-existing --no-integrations',
+      'tng-wiki init --yes --dir ./wiki --domain software-engineering --lead ai-archive=../legacy/ai-docs',
     ],
   },
   {
@@ -74,10 +76,16 @@ export const COMMANDS = [
   },
   {
     name: 'search', group: 'Wiki access', summary: 'Case-insensitive search across wiki pages',
-    usage: 'tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--json]',
+    usage: 'tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--include-leads] [--json]',
     args: [{ name: 'query', required: true, desc: 'search term (quote multi-word)' }],
-    flags: [WIKI, { name: '--regex', desc: 'interpret the query as a regular expression' }, { name: '--include-raw', desc: 'also search archival raw/ sources' }, JSON_FLAG],
-    examples: ['tng-wiki search "openai"', 'tng-wiki search "PKCE" --include-raw'],
+    flags: [
+      WIKI,
+      { name: '--regex', desc: 'interpret the query as a regular expression' },
+      { name: '--include-raw', desc: 'also search archival raw/ sources' },
+      { name: '--include-leads', desc: 'also search registered lead archives (.tng-wiki.json lead_archives) — hits tagged [lead:<name>]; leads are never citable' },
+      JSON_FLAG,
+    ],
+    examples: ['tng-wiki search "openai"', 'tng-wiki search "PKCE" --include-raw', 'tng-wiki search "RAPS" --include-leads'],
   },
   {
     name: 'sources', group: 'Wiki access', summary: 'List raw sources',
@@ -87,7 +95,7 @@ export const COMMANDS = [
   },
   {
     name: 'ground', group: 'Grounding & lint',
-    summary: 'Structural ground-check: attribution, dead cites, staleness, code authorities (zero-LLM)',
+    summary: 'Structural ground-check: attribution, dead cites, staleness, code authorities, lead archives (zero-LLM)',
     usage: 'tng-wiki ground [--page <path>] [--at-ref] [--wiki <slug>] [--json]',
     args: [], flags: [
       { name: '--page', value: '<path>', desc: 'scope the check to a single page' },

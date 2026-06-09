@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
-import { isGroundable, checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
+import { isGroundable, checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
 
 export function resolveWiki(slug, home) {
   const registry = loadRegistry(home);
@@ -44,21 +44,22 @@ function walkMd(dir) {
   return out;
 }
 
-export function searchWiki(wikiPath, query, { regex = false, includeRaw = false } = {}) {
+export function searchWiki(wikiPath, query, { regex = false, includeRaw = false, includeLeads = false } = {}) {
   if (!query) return [];
   const pattern = regex
     ? new RegExp(query, 'i')
     : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
   const hits = [];
-  const scan = (dir, source) => {
+  const scan = (dir, source, { base = wikiPath, extra = {} } = {}) => {
     for (const file of walkMd(dir)) {
       const lines = readFileSync(file, 'utf8').split('\n');
       lines.forEach((line, i) => {
         if (pattern.test(line)) {
           hits.push({
             source,
-            path: relative(wikiPath, file),
+            ...extra,
+            path: relative(base, file),
             line: i + 1,
             text: line.trim(),
           });
@@ -69,6 +70,16 @@ export function searchWiki(wikiPath, query, { regex = false, includeRaw = false 
 
   scan(join(wikiPath, 'wiki'), 'wiki');
   if (includeRaw) scan(join(wikiPath, 'raw'), 'raw');
+  if (includeLeads) {
+    // Registered lead archives (.tng-wiki.json lead_archives) — external,
+    // untrusted doc trees. Hit paths are relative to the archive root so they
+    // match the `leads:` frontmatter form `<archive>:<relative-path>`.
+    // Independent of includeRaw; both may be on at once.
+    for (const a of loadLeadArchives(wikiPath)) {
+      const root = resolve(wikiPath, a.path);
+      scan(root, 'lead', { base: root, extra: { archive: a.name } });
+    }
+  }
 
   return hits;
 }
@@ -161,7 +172,9 @@ export function roundsReport(wikiPath) {
   return {
     scanned: ground.scanned,
     uncompiled: listSources(wikiPath, { uncompiledOnly: true }).length,
-    ground: ground.issues.length,
+    // warn-level findings (missing_lead / unknown_lead_archive) are informational
+    // — they never count as ground issues in the rounds dashboard
+    ground: ground.issues.filter((i) => i.level !== 'warn').length,
     orphans: listOrphanPages(wikiPath).length,
     unsourced: listUnsourcedPages(wikiPath).length,
     unverified: listUnverifiedPages(wikiPath).length,

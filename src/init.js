@@ -44,7 +44,7 @@ export function writeSchemaAlias(root, aliasName, canonical = CANONICAL_SCHEMA_F
   }
 }
 
-export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = [], intoExisting = false }) {
+export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = [], leadArchives = [], intoExisting = false }) {
   const template = getTemplate(domain);
   const skipped = [];
 
@@ -63,7 +63,7 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
     mkdirSync(join(root, dir), { recursive: true });
   }
 
-  const schemaContent = generateAgentsMd({ domain, wikiName, template });
+  const schemaContent = generateAgentsMd({ domain, wikiName, template, leadArchives });
   const { canonical, aliases } = schemaLayout(agent);
 
   putFile(canonical, schemaContent);
@@ -112,6 +112,19 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
       //     "ref": "v2.1.0"
       //   }]
       code_authorities: codeAuthorities,
+      // External, fallible doc archives — "leads, never sources". Typical in
+      // reverse-engineering / M&A workflows: a directory of AI-generated discovery
+      // docs living in another repo. Searchable via `tng-wiki search --include-leads`,
+      // never citable (`tng-wiki ground` errors with cited_lead_archive), recorded
+      // as provenance via `leads:` frontmatter. Each entry: { name, path, description? }.
+      // `path` resolves relative to the wiki root, like code_authorities.path.
+      // Example:
+      //   [{
+      //     "name": "kpom-ai-archive",
+      //     "path": "../../kp/KPOM-Legacy/Compliance/AI",
+      //     "description": "Legacy AI-generated discovery docs — leads only, never citable"
+      //   }]
+      lead_archives: leadArchives,
     }, null, 2) + '\n',
   );
 
@@ -158,7 +171,7 @@ export async function runInit(args) {
 }
 
 export function parseInitArgs(args) {
-  const opts = { help: false, yes: false, intoExisting: false, force: false, git: false, qmd: false, integrationsSet: false, unknown: [] };
+  const opts = { help: false, yes: false, intoExisting: false, force: false, git: false, qmd: false, integrationsSet: false, lead: [], unknown: [] };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     const value = () => (args[i + 1] !== undefined && !args[i + 1].startsWith('--') ? args[++i] : '');
@@ -176,6 +189,7 @@ export function parseInitArgs(args) {
       case '--agent': opts.agent = value().trim(); break;
       case '--dir': opts.dir = value().trim(); break;
       case '--name': opts.name = value(); break;
+      case '--lead': opts.lead.push(value().trim()); break; // repeatable: --lead <name>=<path>
       default: opts.unknown.push(a);
     }
   }
@@ -195,6 +209,7 @@ async function runInitNonInteractive(opts) {
   if (!VALID_DOMAINS.has(domain)) fail(`unknown --domain "${domain}". One of: ${[...VALID_DOMAINS].join(', ')}`);
   if (!VALID_AGENTS.has(agent)) fail(`unknown --agent "${agent}". One of: ${[...VALID_AGENTS].join(', ')}`);
   const wikiName = (opts.name ?? '').trim() || domainToName(domain);
+  const leadArchives = parseLeadFlags(opts.lead, fail);
 
   const root = resolve(opts.dir);
   if (existsSync(root)) {
@@ -212,7 +227,7 @@ async function runInitNonInteractive(opts) {
     fail(`registry slug "${slugifyName(wikiName)}" already points at ${conflictPath}.\n  Re-run with --force to replace it, or choose a different --name.`);
   }
 
-  const { canonical, skipped } = scaffoldWiki(root, { domain, agent, wikiName, intoExisting: opts.intoExisting });
+  const { canonical, skipped } = scaffoldWiki(root, { domain, agent, wikiName, leadArchives, intoExisting: opts.intoExisting });
 
   if (opts.git) await setupGit(root);
   if (opts.qmd) await setupQmd(root, wikiName);
@@ -224,6 +239,10 @@ async function runInitNonInteractive(opts) {
 
   console.log(`${pc.green('✓')} Scaffolded ${pc.cyan(domainLabel(domain))} wiki at ${pc.cyan(root)} ${pc.dim(`(${canonical})`)}`);
   if (skipped.length) console.log(`  ${pc.dim(`left ${skipped.length} existing file(s) untouched: ${skipped.join(', ')}`)}`);
+  if (leadArchives.length) {
+    const names = leadArchives.map((a) => a.name).join(', ');
+    console.log(`${pc.green('✓')} ${leadArchives.length} lead archive${leadArchives.length > 1 ? 's' : ''} registered ${pc.dim(`(${names} — leads, never sources)`)}`);
+  }
   if (registered) console.log(`${pc.green('✓')} Registered as ${pc.bold(slugifyName(wikiName))}`);
 }
 
@@ -296,6 +315,11 @@ async function runInitWizard(opts) {
     ? await promptCodeAuthorities(root)
     : [];
 
+  // --- Lead archives ("leads, never sources"): same engineering-shaped gate ---
+  const leadArchives = supportsCodeAuthorities(domain)
+    ? await promptLeadArchives(root)
+    : [];
+
   // --- Registry collision guard (issue #8): decide before scaffolding ---
   const existingRegistry = loadRegistry();
   const conflictPath = registryConflict(existingRegistry, { name: wikiName, path: root });
@@ -314,7 +338,7 @@ async function runInitWizard(opts) {
 
   s.start('Scaffolding wiki...');
 
-  const { template, canonical, aliases } = scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities });
+  const { template, canonical, aliases } = scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities, leadArchives });
 
   s.message('Setting up integrations...');
 
@@ -372,6 +396,12 @@ async function runInitWizard(opts) {
     const names = codeAuthorities.map((a) => a.name).join(', ');
     const noun = codeAuthorities.length === 1 ? 'code authority' : 'code authorities';
     results.push(`${pc.green('✓')} ${codeAuthorities.length} ${noun} configured ${pc.dim(`(${names})`)}`);
+  }
+
+  if (leadArchives.length > 0) {
+    const names = leadArchives.map((a) => a.name).join(', ');
+    const noun = leadArchives.length === 1 ? 'lead archive' : 'lead archives';
+    results.push(`${pc.green('✓')} ${leadArchives.length} ${noun} registered ${pc.dim(`(${names} — leads, never sources)`)}`);
   }
 
   if (useGit) {
@@ -570,6 +600,87 @@ export async function promptCodeAuthorities(wikiRoot) {
   }
 
   return authorities;
+}
+
+// --- Lead archives ("leads, never sources") ---
+
+// Parse repeatable headless `--lead <name>=<path>` flags into lead_archives
+// entries. `fail` is the caller's exit-with-error reporter.
+export function parseLeadFlags(specs, fail) {
+  const archives = [];
+  for (const spec of specs ?? []) {
+    const eq = spec.indexOf('=');
+    const name = eq === -1 ? '' : spec.slice(0, eq).trim();
+    const path = eq === -1 ? '' : spec.slice(eq + 1).trim();
+    if (!name || !path) {
+      fail(`--lead expects <name>=<path>, got "${spec}". Example: --lead kpom-ai-archive=../../kp/KPOM-Legacy/Compliance/AI`);
+      continue; // unreachable in the CLI (fail exits); keeps the helper testable
+    }
+    archives.push({ name, path });
+  }
+  return archives;
+}
+
+export async function promptLeadArchives(wikiRoot) {
+  const wants = await p.confirm({
+    message: 'Have an external doc archive to register as leads? (fallible docs — searchable, never citable)',
+    initialValue: false,
+  });
+  if (p.isCancel(wants)) throw new Error('CANCELLED');
+  if (!wants) return [];
+
+  const archives = [];
+  let addAnother = true;
+
+  while (addAnother) {
+    const path = await p.text({
+      message: 'Path to the archive (relative to wiki, or absolute):',
+      placeholder: '../legacy-docs/ai-archive',
+      validate: (val) => {
+        if (!val || !val.trim()) return 'Path is required.';
+      },
+    });
+    if (p.isCancel(path)) throw new Error('CANCELLED');
+
+    // Same convention as code authorities: warn on a missing path but keep the
+    // user-entered string so the config preserves the relative-path intent.
+    const resolved = resolve(wikiRoot, path);
+    if (!existsSync(resolved)) {
+      p.log.warn(`Path not found yet: ${pc.dim(resolved)} — saving anyway (the archive may live in a repo you haven't cloned).`);
+    }
+
+    const defaultName = path.split(/[\\/]/).filter(Boolean).pop() || 'archive';
+    const name = await p.text({
+      message: 'Short name (used in leads: frontmatter and [lead:<name>] search tags):',
+      placeholder: defaultName,
+      defaultValue: defaultName,
+      validate: (val) => {
+        if (val && !/^[a-z0-9][a-z0-9_-]*$/i.test(val)) {
+          return 'Use letters, numbers, dashes, underscores only.';
+        }
+      },
+    });
+    if (p.isCancel(name)) throw new Error('CANCELLED');
+
+    const description = await p.text({
+      message: 'Description (optional, shown in .tng-wiki.json for future-you):',
+      placeholder: 'AI-generated discovery docs — leads only, never citable',
+      defaultValue: '',
+    });
+    if (p.isCancel(description)) throw new Error('CANCELLED');
+
+    const entry = { name: name.trim(), path };
+    if (description && description.trim()) entry.description = description.trim();
+    archives.push(entry);
+
+    addAnother = await p.confirm({
+      message: 'Add another lead archive?',
+      initialValue: false,
+    });
+    if (p.isCancel(addAnother)) throw new Error('CANCELLED');
+  }
+
+  return archives;
 }
 
 const GITIGNORE = `# Dependencies
