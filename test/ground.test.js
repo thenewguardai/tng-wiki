@@ -7,7 +7,7 @@ import { join } from 'path';
 import { fileURLToPath } from 'node:url';
 import { scaffoldWiki } from '../src/init.js';
 import {
-  splitFrontmatter, extractSources, extractCitations, checkGrounding,
+  splitFrontmatter, extractSources, extractCitations, checkGrounding, buildStemMap,
   listDriftPages, listUnsourcedPages, listUnverifiedPages,
 } from '../src/ground.js';
 
@@ -620,6 +620,9 @@ test('plain run warns once per ref-d authority that code: cites consult, finding
       '---\ntitle: A\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nA.[^code:app/src/a.ts#L1-L5]\nB.[^code:app/src/b.ts]');
     writeFile(dir, 'wiki/entities/two.md',
       '---\ntitle: B\nupdated: 2099-01-01\nsources:\n  - code:app\n---\nC.[^code:app/src/a.ts]');
+    // keep the index header honest so index_header_drift stays out of this test
+    const indexPath = join(dir, 'wiki/index.md');
+    writeFileSync(indexPath, readFileSync(indexPath, 'utf8').replace('Total pages: 0', 'Total pages: 2'));
     const result = checkGrounding(dir);
     assert.deepEqual(result.warnings, [
       { code: 'working_tree_of_ref_authority', authority: 'app', ref: 'main' },
@@ -787,6 +790,218 @@ test('marker lint verbs skip _-prefixed templates and wiki/meta/*', () => {
     writeFile(dir, 'wiki/entities/real.md', 'claim ⚠️ DRIFT?');
     assert.deepEqual(listDriftPages(dir).map((p) => p.path), ['wiki/entities/real.md']);
     assert.equal(listUnsourcedPages(dir).length, 0); // only the exempt meta file had it
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- index header drift (#18) ---
+
+test('index_header_drift fires on a stale header count and clears when the header is fixed', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/entities/a.md', '---\ntitle: A\n---\nClaim.');
+    writeFile(dir, 'wiki/entities/b.md', '---\ntitle: B\n---\nClaim.');
+    writeFile(dir, 'wiki/meta/m.md', '---\ntitle: M\n---\nMeta pages count toward the header.');
+    writeFile(dir, 'wiki/_t.md', '---\ntitle: T\n---\nTemplates do not.');
+
+    const hit = checkGrounding(dir).issues.find((i) => i.issue === 'index_header_drift');
+    assert.ok(hit);
+    assert.equal(hit.page, 'wiki/index.md');
+    assert.equal(hit.expected_pages, 0);       // scaffold header says 0
+    assert.equal(hit.actual_pages, 3);         // a, b, meta — not _t
+    assert.match(hit.formula, /except index\.md, log\.md/);
+
+    // fix the header to the formula's count -> finding clears
+    const indexPath = join(dir, 'wiki/index.md');
+    writeFileSync(indexPath, readFileSync(indexPath, 'utf8').replace('Total pages: 0', 'Total pages: 3'));
+    assert.ok(!checkGrounding(dir).issues.some((i) => i.issue === 'index_header_drift'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('index_header_drift fires when the header date falls behind the newest page (mtime fallback)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/entities/a.md', '---\ntitle: A\n---\nClaim.');
+    writeFile(dir, 'wiki/index.md',
+      '# Demo — Index\n\n_Last updated: 2020-01-01 | Total pages: 1 | Total sources: 0_\n');
+    const hit = checkGrounding(dir).issues.find((i) => i.issue === 'index_header_drift');
+    assert.ok(hit);
+    assert.equal(hit.expected_pages, 1);            // count is right…
+    assert.equal(hit.actual_pages, 1);
+    assert.equal(hit.header_date, '2020-01-01');    // …the date is behind
+    assert.ok(hit.newest_page_date > '2020-01-01');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('index_header_drift skips a customized index without the scaffold header line', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/index.md', '# Custom Index\n\nHand-rolled, no scaffold header.\n');
+    writeFile(dir, 'wiki/entities/a.md', '---\ntitle: A\n---\nClaim.');
+    assert.ok(!checkGrounding(dir).issues.some((i) => i.issue === 'index_header_drift'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('index_header_drift uses git commit dates when the wiki is a repo (clone-safe)', () => {
+  const dir = makeWiki();
+  try {
+    git(dir, ['init', '-b', 'main']);
+    writeFile(dir, 'wiki/entities/a.md', '---\ntitle: A\n---\nClaim.');
+    writeFile(dir, 'wiki/index.md',
+      '# Demo — Index\n\n_Last updated: 2021-01-01 | Total pages: 1 | Total sources: 0_\n');
+    commitAll(dir, 'all', '2020-06-01 12:00:00 +0000');
+    // mtimes are "now" (would fire under the fallback); commit dates are 2020 -> header 2021 is current
+    assert.ok(!checkGrounding(dir).issues.some((i) => i.issue === 'index_header_drift'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('index_header_drift: uncommitted pages in a git wiki still contribute their mtime', () => {
+  const dir = makeWiki();
+  try {
+    git(dir, ['init', '-b', 'main']);
+    writeFile(dir, 'wiki/entities/a.md', '---\ntitle: A\n---\nClaim.');
+    writeFile(dir, 'wiki/index.md',
+      '# Demo — Index\n\n_Last updated: 2021-01-01 | Total pages: 2 | Total sources: 0_\n');
+    commitAll(dir, 'all', '2020-06-01 12:00:00 +0000');
+    // a brand-new page not yet committed: its mtime ("now") is the newest page
+    // date even though every committed page's commit date predates the header
+    writeFile(dir, 'wiki/entities/b.md', '---\ntitle: B\n---\nClaim.');
+    const hit = checkGrounding(dir).issues.find((i) => i.issue === 'index_header_drift');
+    assert.ok(hit);
+    assert.equal(hit.expected_pages, 2);          // count is right…
+    assert.equal(hit.actual_pages, 2);
+    assert.ok(hit.newest_page_date > '2021-01-01'); // …the date is behind the new page
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('index_header_drift is skipped on --page runs and clean on fresh scaffolds that ship meta pages', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-ground-'));
+  try {
+    scaffoldWiki(dir, { domain: 'ai-research', agent: 'claude-code', wikiName: 'AI' });
+    // ai-research ships 2 wiki/meta pages; the scaffolded header must already count them
+    assert.match(readFileSync(join(dir, 'wiki/index.md'), 'utf8'), /Total pages: 2/);
+    assert.ok(!checkGrounding(dir).issues.some((i) => i.issue === 'index_header_drift'));
+
+    // a --page run never raises the wiki-level finding, even when the header drifts
+    writeFile(dir, 'wiki/entities/x.md', '---\ntitle: X\n---\nClaim.');
+    const scoped = checkGrounding(dir, { page: 'entities/x.md' });
+    assert.ok(!scoped.issues.some((i) => i.issue === 'index_header_drift'));
+    assert.ok(checkGrounding(dir).issues.some((i) => i.issue === 'index_header_drift'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- frontmatter `updated` staleness (#18, warn-level) ---
+
+test('frontmatter_updated_stale fires when the page changed after `updated` (mtime fallback)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/entities/old.md', '---\ntitle: O\nupdated: 2020-01-01\n---\nClaim.');
+    const hit = checkGrounding(dir, { page: 'entities/old.md' }).issues
+      .find((i) => i.issue === 'frontmatter_updated_stale');
+    assert.ok(hit);
+    assert.equal(hit.updated, '2020-01-01');
+    assert.match(hit.last_commit, /^\d{4}-\d{2}-\d{2}$/);
+
+    // updated today (same-day edit) -> grace window, no finding
+    const today = new Date().toISOString().slice(0, 10);
+    writeFile(dir, 'wiki/entities/fresh.md', `---\ntitle: F\nupdated: ${today}\n---\nClaim.`);
+    assert.ok(!checkGrounding(dir, { page: 'entities/fresh.md' }).issues
+      .some((i) => i.issue === 'frontmatter_updated_stale'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('frontmatter_updated_stale uses git commit dates with a 1-day grace window', () => {
+  const dir = makeWiki();
+  try {
+    git(dir, ['init', '-b', 'main']);
+    writeFile(dir, 'wiki/entities/stale.md', '---\ntitle: S\nupdated: 2026-03-01\n---\nClaim.');
+    writeFile(dir, 'wiki/entities/grace.md', '---\ntitle: G\nupdated: 2026-03-09\n---\nClaim.');
+    commitAll(dir, 'edit pages', '2026-03-10 12:00:00 +0000');
+
+    const issues = checkGrounding(dir).issues.filter((i) => i.issue === 'frontmatter_updated_stale');
+    const stale = issues.find((i) => i.page === 'wiki/entities/stale.md');
+    assert.ok(stale);                                  // committed 9 days after `updated`
+    assert.equal(stale.last_commit, '2026-03-10');
+    // committed 1 day after `updated` -> inside the grace window
+    assert.ok(!issues.some((i) => i.page === 'wiki/entities/grace.md'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- prose internal refs (#21, warn-level) ---
+
+test('prose_internal_ref flags inline-code page tokens with a wikilink suggestion; fenced blocks stay silent', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/mw/bigfix-sync.md', '---\ntitle: Sync\n---\nTarget page.');
+    writeFile(dir, 'wiki/entities/ref.md',
+      '---\ntitle: R\n---\nSee `bigfix-sync.md` for details.\n\n```\nfenced mention of `bigfix-sync.md` is fine\n```\n');
+    const hits = checkGrounding(dir).issues
+      .filter((i) => i.issue === 'prose_internal_ref' && i.page === 'wiki/entities/ref.md');
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].matched, '`bigfix-sync.md`');
+    assert.equal(hits[0].suggest, '[[bigfix-sync]]');
+    assert.equal(hits[0].line, 4); // frontmatter is lines 1-3, prose starts on 4
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('prose_internal_ref flags relative markdown links to wiki pages; deliverables/raw paths and citations stay silent', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/mw/bigfix-sync.md', '---\ntitle: Sync\n---\nTarget page.');
+    writeFile(dir, 'raw/papers/p.md', 'body');
+    writeFile(dir, 'wiki/entities/links.md', [
+      '---', 'title: L', 'sources: [raw/papers/p.md]', '---',
+      'Cross-ref: [see sync](../mw/bigfix-sync.md).',
+      'A file: [doc](deliverables/x.md) and another [r](../../raw/papers/p.md).',
+      'A citation.[^raw/papers/p.md]',
+      'External: [ext](https://example.com/page.md).',
+    ].join('\n'));
+    const hits = checkGrounding(dir).issues
+      .filter((i) => i.issue === 'prose_internal_ref' && i.page === 'wiki/entities/links.md');
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].matched, '[see sync](../mw/bigfix-sync.md)');
+    assert.equal(hits[0].suggest, '[[bigfix-sync]]');
+    assert.equal(hits[0].line, 5);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('prose_internal_ref skips exempt pages and shares the orphans stem map (case-insensitive)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'wiki/mw/BigFix-Sync.md', '---\ntitle: Sync\n---\nTarget page.');
+    writeFile(dir, 'wiki/entities/c.md', '---\ntitle: C\n---\nSee `bigfix-sync.md`.');
+    // exempt pages legitimately mix link styles -> never scanned
+    writeFile(dir, 'wiki/index.md', '# Index\n\nSee `BigFix-Sync.md` and [s](mw/BigFix-Sync.md).\n');
+    writeFile(dir, 'wiki/meta/notes.md', 'See `BigFix-Sync.md`.');
+    writeFile(dir, 'wiki/_template.md', 'See `BigFix-Sync.md`.');
+
+    const hits = checkGrounding(dir).issues.filter((i) => i.issue === 'prose_internal_ref');
+    assert.deepEqual(hits.map((h) => h.page), ['wiki/entities/c.md']);
+    // suggestion preserves the target page's stem casing — one stem map with orphans
+    assert.equal(hits[0].suggest, '[[BigFix-Sync]]');
+    const stems = buildStemMap([join(dir, 'wiki/mw/BigFix-Sync.md')], dir);
+    assert.equal(stems.get('bigfix-sync'), 'wiki/mw/BigFix-Sync.md');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

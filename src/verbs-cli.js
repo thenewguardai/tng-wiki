@@ -4,7 +4,7 @@ import {
   listSources, listStalePages, listOrphanPages, roundsReport,
 } from './verbs.js';
 import {
-  checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages,
+  checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages,
 } from './ground.js';
 
 function argValue(args, flag) {
@@ -125,6 +125,9 @@ const ISSUE_LABEL = {
   code_line_out_of_range: 'cited line range exceeds the file',
   code_updated_after_page: 'code authority modified after page `updated`',
   code_ref_unresolvable: 'authority `ref` is not a resolvable git ref',
+  index_header_drift: '`index.md` header count/date does not match the wiki',
+  frontmatter_updated_stale: 'page changed after frontmatter `updated` — bump the date',
+  prose_internal_ref: 'internal page referenced in prose — use a [[wikilink]]',
 };
 
 export async function runGround(args) {
@@ -155,6 +158,7 @@ export async function runGround(args) {
         const label = ISSUE_LABEL[i.issue] ?? i.issue;
         const filePart = i.file ? (i.ref ? `${i.file}@${i.ref}` : i.file) : null;
         const target = i.raw
+          ?? i.matched
           ?? (i.authority && filePart ? `${i.authority}/${filePart}` : null)
           ?? (i.authority && i.ref ? `${i.authority}@${i.ref}` : null)
           ?? i.authority
@@ -165,7 +169,13 @@ export async function runGround(args) {
           ? pc.dim(` [${i.range} vs ${i.line_count} lines]`) : '';
         const stamp = i.source_mtime ?? i.source_commit;
         const ts = stamp ? pc.dim(` (page ${i.page_updated}, source ${stamp})`) : '';
-        process.stdout.write(`  ${pc.yellow(i.issue)}: ${label}${detail}${loc}${range}${ts}\n`);
+        const fmStale = i.issue === 'frontmatter_updated_stale'
+          ? pc.dim(` (updated ${i.updated}, last commit ${i.last_commit})`) : '';
+        const headerDrift = i.issue === 'index_header_drift'
+          ? pc.dim(` (header: ${i.expected_pages} pages, ${i.header_date}; actual: ${i.actual_pages} pages, ${i.newest_page_date})`) : '';
+        const suggest = i.suggest ? pc.dim(` — suggest ${i.suggest}`) : '';
+        const color = WARN_ISSUES.has(i.issue) ? pc.cyan : pc.yellow;
+        process.stdout.write(`  ${color(i.issue)}: ${label}${detail}${loc}${range}${ts}${fmStale}${headerDrift}${suggest}\n`);
       }
     }
     process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);
@@ -183,6 +193,7 @@ export async function runRounds(args) {
     };
     row('uncompiled sources (ingest)', r.uncompiled, 'tng-wiki sources --uncompiled');
     row('ground issues', r.ground, 'tng-wiki ground');
+    row('convention warnings', r.convention, 'tng-wiki ground');
     row('orphan pages', r.orphans, 'tng-wiki orphans');
     row('⚠️ UNSOURCED?', r.unsourced, 'tng-wiki unsourced');
     row('⚠️ UNVERIFIED?', r.unverified, 'tng-wiki unverified');
@@ -193,7 +204,7 @@ export async function runRounds(args) {
       const label = r.rejection_notes === 1 ? 'rejection log' : 'rejection logs';
       process.stdout.write(`  ${pc.cyan(String(r.rejection_notes).padStart(3))}  ${label} ${pc.dim('(verification-first audit trail — deliverables/*_NOTES_*.md)')}\n`);
     }
-    const total = r.uncompiled + r.ground + r.orphans + r.unsourced + r.unverified + r.stale + r.drift;
+    const total = r.uncompiled + r.ground + r.convention + r.orphans + r.unsourced + r.unverified + r.stale + r.drift;
     process.stdout.write('\n');
     process.stdout.write(total === 0
       ? `${pc.green('✓ Clean')} ${pc.dim('— nothing to do this round.')}\n`

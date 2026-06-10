@@ -51,12 +51,12 @@ If the user wants a *new* wiki, or to adopt the current project into one, scaffo
 - **\`tng-wiki sources [--uncompiled] [--wiki <slug>]\`** — lists \`raw/\` files. Use \`--uncompiled\` to find sources the wiki hasn't ingested yet.
 - **\`tng-wiki stale [--wiki <slug>]\`** — lint: pages with \`⚠️ STALE?\` markers.
 - **\`tng-wiki orphans [--wiki <slug>]\`** — lint: pages with no inbound \`[[wikilinks]]\`.
-- **\`tng-wiki ground [--wiki <slug>] [--page <path>]\`** — structural ground-check. Finds pages missing source attribution, inline citations pointing at non-existent raw files, declaration/citation mismatches, and raw sources modified after the page's \`updated\` date. Zero-LLM — a work queue for you to drive Layer 2 semantic re-verification.
+- **\`tng-wiki ground [--wiki <slug>] [--page <path>]\`** — structural ground-check. Finds pages missing source attribution, inline citations pointing at non-existent raw files, declaration/citation mismatches, raw sources modified after the page's \`updated\` date, index-header drift, and warn-level convention findings (stale frontmatter \`updated\`, prose internal refs). Zero-LLM — a work queue for you to drive Layer 2 semantic re-verification.
 - **\`tng-wiki cite show <page> [--wiki <slug>] [--at-ref] [--cite <n|key>] [--context <lines>]\`** — claim-next-to-evidence review: prints every citation in a page with the claim sentence that carries it and the exact source lines it cites (raw and code-authority cites alike). Use it instead of hand-running \`sed -n 'X,Yp'\` against authority files.
 - **\`tng-wiki drift [--wiki <slug>]\`** — pages carrying \`⚠️ DRIFT?\` markers (semantic or external grounding output).
 - **\`tng-wiki unsourced [--wiki <slug>]\`** — pages carrying \`⚠️ UNSOURCED?\` markers.
 - **\`tng-wiki unverified [--wiki <slug>]\`** — pages carrying \`⚠️ UNVERIFIED?\` markers.
-- **\`tng-wiki rounds [--wiki <slug>]\`** — maintenance dashboard: counts of uncompiled sources plus ground / orphans / unsourced / unverified / stale / drift. The anchor for "do your rounds".
+- **\`tng-wiki rounds [--wiki <slug>]\`** — maintenance dashboard: counts of uncompiled sources plus ground / convention warnings / orphans / unsourced / unverified / stale / drift. The anchor for "do your rounds".
 
 ## Typical flow
 

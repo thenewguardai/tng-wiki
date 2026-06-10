@@ -69,3 +69,42 @@ export function fileCommitDateAtRef(repoDir, ref, file) {
 export function fileCommitDate(repoDir, file) {
   return fileCommitDateAtRef(repoDir, 'HEAD', file);
 }
+
+// Repo-relative paths of files committed at HEAD under `dir`, as a Set, or null
+// when `repoDir` is not a git repo or has no commits yet — callers treat every
+// file as uncommitted (mtime fallback) in that case.
+export function filesAtHead(repoDir, dir) {
+  try {
+    const out = git(repoDir, ['ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', dir], { capture: true });
+    return new Set(out.split('\0').filter(Boolean));
+  } catch {
+    return null;
+  }
+}
+
+// Pathspecs per `git log` call below — well under OS arg-length limits even with
+// long wiki paths, while keeping the process count O(pages / chunk), not O(pages).
+const PATHSPEC_CHUNK = 500;
+
+// Newest commit date across `files` (repo-relative paths) at HEAD, as a Date, or
+// null when none of them has history. `git log -1` already returns the most
+// recent commit touching ANY of its pathspecs, so this is one process per chunk
+// of files instead of one per file.
+export function newestCommitDate(repoDir, files) {
+  let newest = null;
+  for (let i = 0; i < files.length; i += PATHSPEC_CHUNK) {
+    try {
+      const out = git(
+        repoDir,
+        ['log', '-1', '--format=%cI', 'HEAD', '--', ...files.slice(i, i + PATHSPEC_CHUNK)],
+        { capture: true },
+      ).trim();
+      if (!out) continue;
+      const d = new Date(out);
+      if (!isNaN(d.getTime()) && (newest === null || d > newest)) newest = d;
+    } catch {
+      // best-effort: a failed chunk contributes no date
+    }
+  }
+  return newest;
+}

@@ -307,6 +307,14 @@ $ tng-wiki ground --json | jq '.issues | group_by(.issue)'    # structured for a
 
 Detects structural issues: empty/missing `sources:`, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (frontmatter-only, never cited), raw sources whose last git commit-date (or mtime) is newer than the page's `updated` date, and code-authority problems (`unknown_code_authority`, `missing_code_file`, `excluded_code_file`, `code_line_out_of_range`). Add `--at-ref` to resolve code citations at each authority's pinned git `ref` instead of the working tree — this adds at-ref `missing_code_file`, `code_updated_after_page` (page `updated` predates the file's last commit at the ref), and `code_ref_unresolvable`; default `ground` stays working-tree-based. Skips `wiki/index.md`, `wiki/log.md`, `_`-prefixed template files, and `wiki/meta/*`.
 
+Three findings cover index and convention drift:
+
+- `index_header_drift` — the `wiki/index.md` scaffold header (`_Last updated: <date> | Total pages: <N> | ..._`) disagrees with reality. Page count = all `wiki/**/*.md` except `index.md`, `log.md`, and `_`-prefixed files (`wiki/meta/*` counts); the date drifts when it falls behind the newest page's git last-commit date (mtime fallback). JSON fields: `expected_pages` (header), `actual_pages`, `header_date`, `newest_page_date`, `formula`. Indexes without the scaffold header line are skipped — the check never imposes the header on customized indexes.
+- `frontmatter_updated_stale` *(warn-level)* — the page file changed (git last-commit date, mtime fallback) after its frontmatter `updated`, with a 1-day grace window for same-day/timezone noise. JSON fields: `updated`, `last_commit`.
+- `prose_internal_ref` *(warn-level)* — an internal page is referenced in prose (`` `page.md` `` inline-code token, or a markdown link to a relative `.md` path resolving to a wiki page) instead of a `[[wikilink]]`. Fenced code blocks, citation markers, and `raw/` / `deliverables/` file paths are exempt. JSON fields: `line`, `matched`, `suggest` (the `[[wikilink]]` to use).
+
+Warn-level findings are hygiene signals, not attribution breaks: they render in a distinct color (cyan instead of yellow), never change exit codes, and `tng-wiki rounds` counts them under `convention` instead of `ground`.
+
 ### Layer 2 — semantic re-verification (agent-driven)
 
 Agents re-read raw sources, compare against wiki claims, and emit `⚠️ DRIFT?` markers where they diverge:

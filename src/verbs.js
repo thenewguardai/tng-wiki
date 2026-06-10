@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { basename, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
-import { isGroundable, checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
+import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
 
 export function resolveWiki(slug, home) {
   const registry = loadRegistry(home);
@@ -227,10 +227,15 @@ export function listRejectionNotes(wikiPath) {
 // scripts) a single number per category and the agent something to drive.
 export function roundsReport(wikiPath) {
   const ground = checkGrounding(wikiPath);
+  // Warn-level ground findings (frontmatter_updated_stale, prose_internal_ref)
+  // are hygiene/convention signals, not attribution breaks — they get their own
+  // bucket so `ground` stays the hard-failure count.
+  const convention = ground.issues.filter((i) => WARN_ISSUES.has(i.issue)).length;
   return {
     scanned: ground.scanned,
     uncompiled: listSources(wikiPath, { uncompiledOnly: true }).length,
-    ground: ground.issues.length,
+    ground: ground.issues.length - convention,
+    convention,
     orphans: listOrphanPages(wikiPath).length,
     unsourced: listUnsourcedPages(wikiPath).length,
     unverified: listUnverifiedPages(wikiPath).length,
