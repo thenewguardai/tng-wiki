@@ -137,6 +137,25 @@ test('resolveStatusRoot matches query semantics: unknown slug and missing defaul
   }
 });
 
+test('resolveStatusRoot rejects an explicit path combined with --wiki', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
+  try {
+    const reg = registerWiki(emptyRegistry(), { name: 'Demo', path: '/tmp/demo-wiki', domain: 'blank' });
+    saveRegistry(reg, home);
+    assert.throws(
+      () => resolveStatusRoot(['/tmp/explicit-wiki', '--wiki', 'demo'], home),
+      /either a path .* or --wiki demo, not both/,
+    );
+    // flag-first ordering is rejected the same way
+    assert.throws(
+      () => resolveStatusRoot(['--wiki', 'demo', '/tmp/explicit-wiki'], home),
+      /not both/,
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('resolveStatusRoot does not mistake the --wiki value for an explicit path', () => {
   const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
   try {

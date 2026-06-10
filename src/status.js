@@ -71,10 +71,15 @@ function firstPositional(args) {
 // Same wiki-resolution semantics as the verbs (query/read/search):
 // --wiki <slug> targets a registered wiki from any cwd; bare `status` uses the
 // registered default; an explicit path argument bypasses the registry entirely.
+// A path *and* --wiki together is ambiguous (path bypasses the registry, the
+// slug goes through it) — rejected explicitly rather than silently picking one.
 export function resolveStatusRoot(args, home) {
   const slug = argValue(args, '--wiki');
   const explicit = firstPositional(args);
-  if (!slug && explicit) return { root: resolve(explicit), slug: null };
+  if (slug && explicit) {
+    throw new Error(`Pass either a path ("${explicit}") or --wiki ${slug}, not both — a path bypasses the registry, --wiki resolves through it.`);
+  }
+  if (explicit) return { root: resolve(explicit), slug: null };
   const wiki = resolveWiki(slug, home);
   return { root: wiki.path, slug: wiki.slug };
 }

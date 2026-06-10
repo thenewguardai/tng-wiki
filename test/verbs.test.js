@@ -104,6 +104,42 @@ test('readPage accepts every normalized path form and resolves to the same page'
   }
 });
 
+test('resolvePagePath: Windows-style \\ separators normalize like /', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'wiki/entities/acme.md', '# Acme\nbody');
+    const forms = [
+      'entities\\acme.md',      // exact path, backslash separators
+      'entities\\acme',         // + .md appended
+      'wiki\\entities\\acme.md',// leading wiki\ stripped
+      'wiki\\entities\\acme',   // leading wiki\ stripped + .md appended
+    ];
+    for (const form of forms) {
+      assert.equal(resolvePagePath(dir, form), 'entities/acme.md', `form normalized wrong: ${form}`);
+      assert.match(readPage(dir, form), /^# Acme/, `form failed: ${form}`);
+    }
+    // a backslash-pathed input is pathed, not bare — no stem fallback to a
+    // same-named page in a different directory
+    assert.throws(
+      () => resolvePagePath(dir, 'zone-x\\acme'),
+      /Page not found: zone-x\\acme \(tried: zone-x\/acme, zone-x\/acme\.md\)$/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readPage escape guard blocks ..\\ escapes after separator normalization', () => {
+  const dir = makeWiki();
+  try {
+    for (const form of ['..\\..\\etc\\passwd', 'wiki\\..\\..\\etc\\passwd', '..\\etc/passwd', '[[..\\..\\etc\\passwd]]']) {
+      assert.throws(() => readPage(dir, form), /escapes the wiki directory/, `form not blocked: ${form}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('resolvePagePath: ambiguous stem errors with the candidate list', () => {
   const dir = makeWiki();
   try {

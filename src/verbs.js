@@ -29,11 +29,14 @@ export function queryIndex(wikiPath) {
 //      with `[[…]]` wikilink wrapping stripped.
 // Zero matches → error listing the forms tried; multiple stem matches → error
 // listing the candidates. The `../` escape guard applies after normalization.
+// Windows-style `\` separators are folded to `/` up front so prefix-stripping,
+// bare-input detection, and the escape guard all see one canonical form.
 export function resolvePagePath(wikiPath, input) {
   const wikiDir = resolve(join(wikiPath, 'wiki'));
   let cleaned = String(input).trim();
   const wikilink = cleaned.match(/^\[\[([^\]]+)\]\]$/);
   if (wikilink) cleaned = wikilink[1].split(/[|#]/)[0].trim();
+  cleaned = cleaned.replace(/\\/g, '/');
 
   const forms = [];
   const addForm = (f) => {
@@ -67,7 +70,8 @@ export function resolvePagePath(wikiPath, input) {
       throw new Error(`Ambiguous page "${input}" — matches: ${matches.join(', ')}. Pass a fuller path.`);
     }
     if (matches.length === 1) {
-      const form = matches[0].replace(/^wiki\//, '');
+      // pageStemMap paths come from path.relative, so fold OS separators too
+      const form = matches[0].replace(/\\/g, '/').replace(/^wiki\//, '');
       guard(form);
       return form;
     }

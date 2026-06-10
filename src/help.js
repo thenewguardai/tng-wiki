@@ -126,7 +126,7 @@ export const COMMANDS = [
   {
     name: 'status', group: 'Diagnostics', summary: 'Basic wiki health snapshot',
     usage: 'tng-wiki status [path] [--wiki <slug>] [--json]',
-    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (bypasses the registry; default: the registered default wiki)' }],
+    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (bypasses the registry — mutually exclusive with --wiki; default: the registered default wiki)' }],
     flags: [WIKI, JSON_FLAG],
     examples: ['tng-wiki status', 'tng-wiki status --wiki research', 'tng-wiki status --json'],
   },
