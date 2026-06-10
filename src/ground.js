@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
-import { join, relative, resolve, sep } from 'path';
+import { join, relative, resolve, sep, isAbsolute } from 'path';
 import { matchesAnyGlob } from './glob.js';
 import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate } from './git-read.js';
 
@@ -175,8 +175,15 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
   const leadArchives = loadLeadArchives(wikiPath);
   const archiveByName = new Map(leadArchives.map((a) => [a.name, a]));
   const archiveRoots = leadArchives.map((a) => ({ name: a.name, root: resolve(wikiPath, a.path) }));
+  // Containment via relative() rather than startsWith(root + sep): a root that
+  // already ends with the separator (e.g. `/` or `C:\`) would make `root + sep`
+  // unmatchable and silently disarm the guardrail (false negatives).
+  const insideRoot = (root, absPath) => {
+    const rel = relative(root, absPath);
+    return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+  };
   const leadArchiveOf = (absPath) =>
-    archiveRoots.find(({ root }) => absPath === root || absPath.startsWith(root + sep))?.name ?? null;
+    archiveRoots.find(({ root }) => insideRoot(root, absPath))?.name ?? null;
 
   // Under --at-ref, resolve each ref'd authority's ref ONCE (the repo+ref pair is
   // page-independent). true -> read at ref; false -> code_ref_unresolvable.

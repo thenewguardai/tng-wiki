@@ -75,9 +75,17 @@ export function searchWiki(wikiPath, query, { regex = false, includeRaw = false,
     // untrusted doc trees. Hit paths are relative to the archive root so they
     // match the `leads:` frontmatter form `<archive>:<relative-path>`.
     // Independent of includeRaw; both may be on at once.
+    // Archives are fallible external inputs: a root that exists but is not a
+    // directory (ENOTDIR) or is unreadable (EACCES) degrades to "missing" and
+    // is skipped, rather than crashing the whole search. The wiki's own tree
+    // (scanned above) keeps strict behavior.
     for (const a of loadLeadArchives(wikiPath)) {
       const root = resolve(wikiPath, a.path);
-      scan(root, 'lead', { base: root, extra: { archive: a.name } });
+      try {
+        scan(root, 'lead', { base: root, extra: { archive: a.name } });
+      } catch (err) {
+        if (!err?.code) throw err; // only swallow filesystem-level failures
+      }
     }
   }
 

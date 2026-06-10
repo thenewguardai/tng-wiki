@@ -150,6 +150,25 @@ test('ground flags cited_lead_archive when a real code authority cite resolves i
   }
 });
 
+test('ground flags cited_lead_archive when the archive root ends with the separator (filesystem root)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'raw/papers/doc.md', 'body');
+    // resolve() preserves the trailing separator only for the filesystem root,
+    // so this is the case where startsWith(root + sep) containment would fail.
+    setLeadArchives(dir, [{ name: 'rootfs', path: '/' }]);
+    writeFile(dir, 'wiki/entities/r.md',
+      '---\nsources:\n  - raw/papers/doc.md\n---\nClaim.[^raw/papers/doc.md]');
+    const { issues } = checkGrounding(dir, { page: 'entities/r.md' });
+    const hit = issues.find((i) => i.issue === 'cited_lead_archive');
+    assert.ok(hit, 'containment must not produce false negatives for a trailing-separator root');
+    assert.equal(hit.archive, 'rootfs');
+    assert.equal(hit.raw, 'raw/papers/doc.md');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // --- leads: provenance validation (warn-level) ---
 
 test('ground: valid leads entries produce no findings and are exempt from sources invariants', () => {
@@ -276,6 +295,27 @@ test('searchWiki includeLeads and includeRaw combine, wiki hits first', () => {
     assert.deepEqual(hits.map((h) => h.source), ['wiki', 'raw', 'lead']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    rmSync(join(dir, '..', 'lead-docs'), { recursive: true, force: true });
+  }
+});
+
+test('searchWiki includeLeads skips an archive whose path is a file, not a directory', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, '../lead-notdir.md', 'RAPS inside a plain file, not a directory');
+    writeFile(dir, '../lead-docs/a.md', 'RAPS inside the real archive');
+    setLeadArchives(dir, [
+      { name: 'bad', path: '../lead-notdir.md' }, // exists, but readdir -> ENOTDIR
+      { name: 'good', path: '../lead-docs' },
+    ]);
+    // must not throw, and must still surface hits from the healthy archive
+    const hits = searchWiki(dir, 'RAPS', { includeLeads: true });
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].archive, 'good');
+    assert.equal(hits[0].path, 'a.md');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(dir, '..', 'lead-notdir.md'), { force: true });
     rmSync(join(dir, '..', 'lead-docs'), { recursive: true, force: true });
   }
 });
