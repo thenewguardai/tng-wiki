@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { basename, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
-import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
+import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
 
 export function resolveWiki(slug, home) {
   const registry = loadRegistry(home);
@@ -97,21 +97,22 @@ function walkMd(dir) {
   return out;
 }
 
-export function searchWiki(wikiPath, query, { regex = false, includeRaw = false } = {}) {
+export function searchWiki(wikiPath, query, { regex = false, includeRaw = false, includeLeads = false } = {}) {
   if (!query) return [];
   const pattern = regex
     ? new RegExp(query, 'i')
     : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
 
   const hits = [];
-  const scan = (dir, source) => {
+  const scan = (dir, source, { base = wikiPath, extra = {} } = {}) => {
     for (const file of walkMd(dir)) {
       const lines = readFileSync(file, 'utf8').split('\n');
       lines.forEach((line, i) => {
         if (pattern.test(line)) {
           hits.push({
             source,
-            path: relative(wikiPath, file),
+            ...extra,
+            path: relative(base, file),
             line: i + 1,
             text: line.trim(),
           });
@@ -122,6 +123,24 @@ export function searchWiki(wikiPath, query, { regex = false, includeRaw = false 
 
   scan(join(wikiPath, 'wiki'), 'wiki');
   if (includeRaw) scan(join(wikiPath, 'raw'), 'raw');
+  if (includeLeads) {
+    // Registered lead archives (.tng-wiki.json lead_archives) — external,
+    // untrusted doc trees. Hit paths are relative to the archive root so they
+    // match the `leads:` frontmatter form `<archive>:<relative-path>`.
+    // Independent of includeRaw; both may be on at once.
+    // Archives are fallible external inputs: a root that exists but is not a
+    // directory (ENOTDIR) or is unreadable (EACCES) degrades to "missing" and
+    // is skipped, rather than crashing the whole search. The wiki's own tree
+    // (scanned above) keeps strict behavior.
+    for (const a of loadLeadArchives(wikiPath)) {
+      const root = resolve(wikiPath, a.path);
+      try {
+        scan(root, 'lead', { base: root, extra: { archive: a.name } });
+      } catch (err) {
+        if (!err?.code) throw err; // only swallow filesystem-level failures
+      }
+    }
+  }
 
   return hits;
 }
@@ -230,7 +249,7 @@ export function roundsReport(wikiPath) {
   // Warn-level ground findings (frontmatter_updated_stale, prose_internal_ref)
   // are hygiene/convention signals, not attribution breaks — they get their own
   // bucket so `ground` stays the hard-failure count.
-  const convention = ground.issues.filter((i) => WARN_ISSUES.has(i.issue)).length;
+  const convention = ground.issues.filter((i) => WARN_ISSUES.has(i.issue) || i.level === 'warn').length;
   return {
     scanned: ground.scanned,
     uncompiled: listSources(wikiPath, { uncompiledOnly: true }).length,

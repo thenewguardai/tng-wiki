@@ -19,7 +19,7 @@ test('manifest has the expected agent-onboarding shape', () => {
 test('commandJson returns one command spec with structured flags', () => {
   const c = commandJson('search');
   assert.equal(c.name, 'search');
-  assert.deepEqual(c.flags.map((f) => f.name), ['--wiki', '--regex', '--include-raw', '--json']);
+  assert.deepEqual(c.flags.map((f) => f.name), ['--wiki', '--regex', '--include-raw', '--include-leads', '--json']);
   assert.equal(commandJson('nope'), null);
 });
 

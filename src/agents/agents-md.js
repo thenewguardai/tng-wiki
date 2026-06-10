@@ -11,7 +11,7 @@ const DOMAIN_SECTIONS = {
   'blank': blankSchema,
 };
 
-export function generateAgentsMd({ domain, wikiName, template }) {
+export function generateAgentsMd({ domain, wikiName, template, leadArchives = [] }) {
   const domainSchema = (DOMAIN_SECTIONS[domain] || blankSchema)();
   return `# ${wikiName}
 
@@ -26,7 +26,7 @@ ${MARKER_TAXONOMY}
 ${domainSchema}
 
 ${OPERATIONS(domain)}
-
+${leadArchives.length > 0 ? `\n${LEAD_ARCHIVES(leadArchives)}\n` : ''}
 ${INDEXING}
 
 ${LOGGING}
@@ -458,6 +458,33 @@ After publishing an issue:
   }
 
   return ops;
+}
+
+// Emitted only when the wiki registers lead_archives in .tng-wiki.json — the
+// config-backed form of the "leads, never sources" guardrail.
+function LEAD_ARCHIVES(archives) {
+  const rows = archives
+    .map((a) => `- **${a.name}** — \`${a.path}\`${a.description ? ` — ${a.description}` : ''}`)
+    .join('\n');
+  return `## Leads, Never Sources
+
+This wiki registers external, fallible doc archives in \`.tng-wiki.json → lead_archives\`:
+
+${rows}
+
+A lead archive is **search surface, not trust surface** — typically AI-generated discovery or analysis docs that may hallucinate. Every hit is a lead to investigate, never evidence to cite.
+
+- **Search the archives** with \`tng-wiki search <term> --include-leads\`. Hits are tagged \`[lead:<name>]\` in plain output and \`source: "lead", archive: "<name>"\` in \`--json\`. Independent of \`--include-raw\`; pass both when you want the full surface.
+- **Never cite a lead.** No inline citation and no frontmatter \`sources:\` entry may resolve into a lead archive — \`tng-wiki ground\` flags it as \`cited_lead_archive\` (error-level). A lead is explicitly *not* a source.
+- **Re-ground every carried claim.** Anything a lead suggests enters the wiki only after it's verified against a real authority — \`code_authorities\` or \`raw/\` — and cited from there. If you can't ground it, it stays out (or enters as \`[inference]\` with the uncertainty stated).
+- **Record provenance** with the \`leads:\` frontmatter key — the machine-readable replacement for hand-written provenance blockquotes:
+
+  \`\`\`yaml
+  leads:
+    - ${archives[0].name}:20260504_RAPS_Analysis2.md
+  \`\`\`
+
+  Form: \`<archive-name>:<relative-path-within-archive>\`. Purely informational ("distilled from lead X"). \`leads:\` entries are exempt from the \`sources:\` invariants — they need no inline citation and never count as attribution. \`tng-wiki ground\` warns (never errors) with \`missing_lead\` when the referenced file no longer exists (archives evolve) and \`unknown_lead_archive\` when the archive name isn't registered.`;
 }
 
 const INDEXING = `## Indexing

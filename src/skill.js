@@ -46,7 +46,7 @@ If the user wants a *new* wiki, or to adopt the current project into one, scaffo
 ## Verbs (invoke via Bash)
 
 - **\`tng-wiki query [--wiki <slug>]\`** — prints \`wiki/index.md\`. Always start here to see what pages exist before searching or reading.
-- **\`tng-wiki search <term> [--wiki <slug>] [--regex] [--include-raw]\`** — case-insensitive search. By default searches compiled \`wiki/\` only. Pass \`--include-raw\` to also search archival \`raw/\` sources — each hit is tagged \`[wiki]\` or \`[raw]\`.
+- **\`tng-wiki search <term> [--wiki <slug>] [--regex] [--include-raw] [--include-leads]\`** — case-insensitive search. By default searches compiled \`wiki/\` only. Pass \`--include-raw\` to also search archival \`raw/\` sources — each hit is tagged \`[wiki]\` or \`[raw]\`. Pass \`--include-leads\` to also search registered lead archives (\`.tng-wiki.json → lead_archives\`) — external, fallible doc trees; hits tagged \`[lead:<name>]\`. Leads are never citable.
 - **\`tng-wiki read <page> [--wiki <slug>]\`** — fetches a specific page. Accepts a path relative to \`wiki/\` (e.g. \`entities/openai.md\`; \`.md\` optional, a leading \`wiki/\` is tolerated), a \`[[wikilink]]\`, or a unique page stem (e.g. \`openai\`). Ambiguous stems error with the candidate list.
 - **\`tng-wiki sources [--uncompiled] [--wiki <slug>]\`** — lists \`raw/\` files. Use \`--uncompiled\` to find sources the wiki hasn't ingested yet.
 - **\`tng-wiki stale [--wiki <slug>]\`** — lint: pages with \`⚠️ STALE?\` markers.
@@ -77,6 +77,16 @@ Default search (\`tng-wiki search <term>\`) only returns hits from compiled wiki
 - You're about to make a claim that should be double-checked against the source of truth before stating it confidently
 
 Raw hits are tagged \`[raw]\` in plain output and \`source:"raw"\` in JSON. Always cite *which* layer an answer came from when the distinction matters — "per the compiled wiki page \`entities/openai.md\`" vs. "per the original \`raw/papers/<file>\` source."
+
+## Lead archives (\`--include-leads\`)
+
+Some wikis register external, fallible doc archives in \`.tng-wiki.json → lead_archives\` — e.g. a directory of AI-generated discovery docs in another repo. Reach for \`tng-wiki search <term> --include-leads\` when:
+
+- The user names a registered lead archive, or says "check the leads", "search the archive", "what did the discovery docs say"
+- A default (and \`--include-raw\`) search misses but the topic plausibly lives in pre-distillation discovery material
+- You're orienting in a reverse-engineering / M&A wiki and need candidate places to look before grounding
+
+Lead hits are tagged \`[lead:<name>]\` in plain output and \`source:"lead", archive:"<name>"\` in JSON; \`--include-leads\` and \`--include-raw\` are independent and combine. **Leads are never sources**: never cite a lead inline or in frontmatter \`sources:\` (\`tng-wiki ground\` errors with \`cited_lead_archive\`). Re-ground anything a lead suggests against \`code_authorities\` or \`raw/\` before it enters the wiki, and record provenance with \`leads:\` frontmatter (\`<archive>:<relative-path>\`).
 
 ## Grounding and drift reconciliation
 

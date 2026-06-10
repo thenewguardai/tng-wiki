@@ -65,17 +65,20 @@ export async function runRead(args) {
 export async function runSearch(args) {
   const query = firstPositional(args);
   if (!query) {
-    process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--json]\n');
+    process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--include-leads] [--json]\n');
     process.exit(1);
   }
   const wiki = wikiFromArgs(args);
   const hits = searchWiki(wiki.path, query, {
     regex: args.includes('--regex'),
     includeRaw: args.includes('--include-raw'),
+    includeLeads: args.includes('--include-leads'),
   });
   maybeJson(args, { wiki: wiki.slug, query, hits }, () => {
     for (const h of hits) {
-      const tag = h.source === 'raw' ? pc.yellow('[raw] ') : pc.dim('[wiki]');
+      const tag = h.source === 'raw' ? pc.yellow('[raw] ')
+        : h.source === 'lead' ? pc.magenta(`[lead:${h.archive}]`)
+        : pc.dim('[wiki]');
       process.stdout.write(`${tag} ${h.path}:${h.line}: ${h.text}\n`);
     }
   });
@@ -128,6 +131,9 @@ const ISSUE_LABEL = {
   index_header_drift: '`index.md` header count/date does not match the wiki',
   frontmatter_updated_stale: 'page changed after frontmatter `updated` — bump the date',
   prose_internal_ref: 'internal page referenced in prose — use a [[wikilink]]',
+  cited_lead_archive: 'citation resolves into a lead archive — leads are never citable sources',
+  missing_lead: '`leads:` entry points at a file the archive no longer has',
+  unknown_lead_archive: '`leads:` entry names an archive not registered in `.tng-wiki.json`',
 };
 
 export async function runGround(args) {
@@ -159,9 +165,12 @@ export async function runGround(args) {
         const filePart = i.file ? (i.ref ? `${i.file}@${i.ref}` : i.file) : null;
         const target = i.raw
           ?? i.matched
+          ?? i.lead
           ?? (i.authority && filePart ? `${i.authority}/${filePart}` : null)
           ?? (i.authority && i.ref ? `${i.authority}@${i.ref}` : null)
           ?? i.authority
+          ?? (i.archive && i.file ? `${i.archive}/${i.file}` : null)
+          ?? i.archive
           ?? null;
         const detail = target ? ` ${pc.dim('→')} ${target}` : '';
         const loc = i.line ? pc.dim(` (line ${i.line})`) : '';
@@ -174,8 +183,12 @@ export async function runGround(args) {
         const headerDrift = i.issue === 'index_header_drift'
           ? pc.dim(` (header: ${i.expected_pages} pages, ${i.header_date}; actual: ${i.actual_pages} pages, ${i.newest_page_date})`) : '';
         const suggest = i.suggest ? pc.dim(` — suggest ${i.suggest}`) : '';
-        const color = WARN_ISSUES.has(i.issue) ? pc.cyan : pc.yellow;
-        process.stdout.write(`  ${color(i.issue)}: ${label}${detail}${loc}${range}${ts}${fmStale}${headerDrift}${suggest}\n`);
+        // warn-level lead-provenance findings render dimmed with a (warn) tag;
+        // convention findings (WARN_ISSUES) render cyan; errors stay yellow.
+        const issueTag = i.level === 'warn' ? pc.dim(`${i.issue} (warn)`)
+          : WARN_ISSUES.has(i.issue) ? pc.cyan(i.issue)
+          : pc.yellow(i.issue);
+        process.stdout.write(`  ${issueTag}: ${label}${detail}${loc}${range}${ts}${fmStale}${headerDrift}${suggest}\n`);
       }
     }
     process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);
