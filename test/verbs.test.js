@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
 import { scaffoldWiki } from '../src/init.js';
 import {
   resolveWiki, queryIndex, readPage, searchWiki,
-  listSources, listStalePages, listOrphanPages, roundsReport,
+  listSources, listStalePages, listOrphanPages, listRejectionNotes, roundsReport,
 } from '../src/verbs.js';
 import { saveRegistry, emptyRegistry, registerWiki } from '../src/registry.js';
 
@@ -237,6 +239,70 @@ test('roundsReport returns counts and skips template/meta example markers', () =
     writePage(dir, 'wiki/entities/old.md', 'x ⚠️ STALE?');
     assert.equal(roundsReport(dir).stale, 1);
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- rejection logs (verification-first audit artifact) ---
+
+test('listRejectionNotes matches *_NOTES_*.md under deliverables/, recursively', () => {
+  const dir = makeWiki();
+  try {
+    // no deliverables/ at all — additive default, nothing reported
+    assert.deepEqual(listRejectionNotes(dir), []);
+    writePage(dir, 'deliverables/auth_NOTES_2026-06-01.md', '# Rejection log');
+    writePage(dir, 'deliverables/q2/billing_NOTES_2026-06-02.md', '# Rejection log');
+    writePage(dir, 'deliverables/summary.md', '# Not a rejection log');
+    writePage(dir, 'wiki/entities/x_NOTES_y.md', '# Wrong directory — not a deliverable');
+    // marker in a directory name only — must match the filename, not the full path
+    writePage(dir, 'deliverables/auth_NOTES_archive/readme.md', '# Not a rejection log');
+    const paths = listRejectionNotes(dir).map(n => n.path);
+    assert.deepEqual(paths.sort(), [
+      'deliverables/auth_NOTES_2026-06-01.md',
+      'deliverables/q2/billing_NOTES_2026-06-02.md',
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('roundsReport includes rejection_notes without touching marker counts', () => {
+  const dir = makeWiki();
+  try {
+    assert.equal(roundsReport(dir).rejection_notes, 0);
+    writePage(dir, 'deliverables/auth_NOTES_2026-06-01.md', '# Rejection log ⚠️ STALE?');
+    const r = roundsReport(dir);
+    assert.equal(r.rejection_notes, 1);
+    // informational only — deliverables never feed the marker/ground counts
+    assert.equal(r.stale, 0);
+    assert.equal(r.ground, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rounds CLI prints the rejection-log line only when ≥1 exists; --json is additive', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  const dir = makeWiki();
+  try {
+    const reg = registerWiki(emptyRegistry(), { name: 'Demo', path: dir, domain: 'blank' });
+    saveRegistry(reg, home);
+    const cli = fileURLToPath(new URL('../bin/cli.js', import.meta.url));
+    const run = (...args) => execFileSync(process.execPath, [cli, 'rounds', ...args], {
+      env: { ...process.env, HOME: home },
+      encoding: 'utf8',
+    });
+
+    assert.ok(!run().includes('rejection log'), 'no rejection-log line on a wiki without deliverables/');
+
+    writePage(dir, 'deliverables/auth_NOTES_2026-06-01.md', '# Rejection log');
+    assert.match(run(), /1 {2}rejection log .*deliverables\/\*_NOTES_\*\.md/);
+
+    const json = JSON.parse(run('--json'));
+    assert.equal(json.rejection_notes, 1);
+    assert.equal(typeof json.stale, 'number'); // existing keys untouched
+  } finally {
+    rmSync(home, { recursive: true, force: true });
     rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
-import { join, relative, resolve, sep } from 'path';
+import { basename, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
 import { isGroundable, checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
 
@@ -127,7 +127,7 @@ export function listOrphanPages(wikiPath) {
   const pageByStem = new Map();
   for (const file of files) {
     const rel = relative(wikiPath, file);
-    const stem = file.split('/').pop().replace(/\.md$/, '');
+    const stem = basename(file, '.md');
     pageByStem.set(stem.toLowerCase(), rel);
   }
 
@@ -153,6 +153,16 @@ export function listOrphanPages(wikiPath) {
     .map(path => ({ path }));
 }
 
+// Rejection logs — NOTES deliverables produced by verification-first campaigns
+// (every rejected/corrected/downgraded lead claim with its disposition). They
+// live under deliverables/ and match `*_NOTES_*.md`. A verification-first wiki
+// shows ~zero markers by construction, so these files are its audit surface.
+export function listRejectionNotes(wikiPath) {
+  return walkMd(join(wikiPath, 'deliverables'))
+    .filter(f => /_NOTES_/.test(basename(f)))
+    .map(f => ({ path: relative(wikiPath, f) }));
+}
+
 // "Rounds" maintenance dashboard — zero-LLM counts the named bundle anchors on:
 // pending ingest + structural lint surfaces. Gives `tng-wiki rounds` (and cron/
 // scripts) a single number per category and the agent something to drive.
@@ -167,5 +177,7 @@ export function roundsReport(wikiPath) {
     unverified: listUnverifiedPages(wikiPath).length,
     stale: listStalePages(wikiPath).length,
     drift: listDriftPages(wikiPath).length,
+    // informational, not a to-do count — audit artifact of verification-first flows
+    rejection_notes: listRejectionNotes(wikiPath).length,
   };
 }

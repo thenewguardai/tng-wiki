@@ -174,6 +174,11 @@ export async function runRounds(args) {
     row('⚠️ UNVERIFIED?', r.unverified, 'tng-wiki unverified');
     row('⚠️ STALE?', r.stale, 'tng-wiki stale');
     row('⚠️ DRIFT?', r.drift, 'tng-wiki drift');
+    if (r.rejection_notes > 0) {
+      // informational, not a to-do: audit artifact of verification-first campaigns
+      const label = r.rejection_notes === 1 ? 'rejection log' : 'rejection logs';
+      process.stdout.write(`  ${pc.cyan(String(r.rejection_notes).padStart(3))}  ${label} ${pc.dim('(verification-first audit trail — deliverables/*_NOTES_*.md)')}\n`);
+    }
     const total = r.uncompiled + r.ground + r.orphans + r.unsourced + r.unverified + r.stale + r.drift;
     process.stdout.write('\n');
     process.stdout.write(total === 0

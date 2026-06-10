@@ -277,6 +277,16 @@ The company was founded in 2021.[^raw/papers/anthropic-origins.md]
 
 The `sources:` list is the trust anchor. Every grounding workflow walks it. The four markers (`⚠️ STALE?`, `⚠️ UNSOURCED?`, `⚠️ UNVERIFIED?`, `⚠️ DRIFT?`) are documented with specific resolution actions inside every generated `AGENTS.md` — agents follow those instructions, not a README.
 
+### Two canonical flows
+
+There are two honest ways to run a wiki, distinguished by *when* verification happens:
+
+**Ingest-first (the default).** Compile raw sources into wiki pages, then verify over time. Grounding runs after the fact; the `⚠️` marker taxonomy is the **health surface** — markers accumulate where claims age, drift, or outrun their evidence, and rounds burns them down. Fits when sources are reasonably trusted and speed of compounding matters: research feeds, competitive intel, learning notes.
+
+**Verification-first (the inverse).** Treat every lead claim as a hypothesis: refute the premise first, validate against authorities (web or [code](#3b--code-authorities-local-filesystem)), and distill **only what survives** — typically `[confirmed]` claims — into the wiki. This flow produces near-zero markers by construction, so the health surface moves: the audit artifact is the **rejection log**, a NOTES deliverable (`deliverables/*_NOTES_*.md`) listing every rejected, corrected, or downgraded lead claim with its disposition. Its core argument: *"we verified it" without a list of what failed verification is evidence nothing was looked for.* Fits when the leads themselves are fallible and rigor beats speed: AI-generated PRDs, reverse-engineering, M&A / IP diligence.
+
+The two flows share everything else — same schema invariant, same citation forms, same grounding layers. `tng-wiki rounds` reads both surfaces: marker counts for ingest-first health, plus an informational rejection-log count whenever `deliverables/*_NOTES_*.md` files exist.
+
 ### Layer 1 — `ground` (structural, zero-LLM)
 
 ```bash
@@ -420,7 +430,7 @@ Give your agent the one-liner:
 claude "Read AGENTS.md, then do your wiki rounds"
 ```
 
-`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard — one count per category, zero-LLM — the anchor cron jobs and agents key off. The bundle is defined precisely in every generated `AGENTS.md` (`### Rounds`) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
+`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard — one count per category, zero-LLM — the anchor cron jobs and agents key off. When [verification-first](#two-canonical-flows) rejection logs exist (`deliverables/*_NOTES_*.md`), it adds an informational count so the audit artifact stays visible. The bundle is defined precisely in every generated `AGENTS.md` (`### Rounds`) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
 
 ## Ambient Cross-Project Access
 

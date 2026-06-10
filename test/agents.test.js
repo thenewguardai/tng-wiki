@@ -34,6 +34,15 @@ test('generateAgentsMd documents per-claim citations and sources as a path list'
   assert.match(out, /sources:[ \t]*#[^\n]*\n\s*-\s*raw\//);
 });
 
+test('generateAgentsMd names the verification-first flow and the rejection-log audit pattern', () => {
+  const out = generateAgentsMd(ctx);
+  assert.match(out, /Verification-first option/);
+  assert.match(out, /rejection log/);
+  assert.match(out, /deliverables\/\*_NOTES_\*\.md/);
+  // the core argument, verbatim
+  assert.match(out, /"we verified it" without a list of what failed verification is evidence nothing was looked for/);
+});
+
 test('generateAgentsMd includes Grounding and Reconcile Drifts operations', () => {
   const out = generateAgentsMd(ctx);
   assert.match(out, /### Grounding/);

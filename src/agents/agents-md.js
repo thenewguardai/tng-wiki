@@ -229,6 +229,8 @@ Output a lint report. Suggest specific actions.
 
 Ground-truth the wiki against its source material. Three layers, escalating in cost and thoroughness. Run them in order — Layer 1 before Layer 2, Layer 2 before Layer 3 — so cheap structural checks catch the easy problems before you pay for semantic re-reading.
 
+**Verification-first option.** The default flow is ingest-first: compile raw sources, then ground later, with the \`⚠️\` markers as the health surface. When the leads themselves are fallible — AI-generated PRDs, premises worth refuting, claims that must be validated against authorities before they're worth keeping — invert it: verify each lead claim first, distill only what survives (typically \`[confirmed]\`), and record every rejected, corrected, or downgraded claim with its disposition in a **rejection log** — a NOTES deliverable (\`deliverables/*_NOTES_*.md\`, surfaced by \`tng-wiki rounds\`). A verification-first wiki carries near-zero markers by construction, so the rejection log is the audit surface instead: "we verified it" without a list of what failed verification is evidence nothing was looked for.
+
 #### Layer 1 — Structural (cheap, always safe)
 
 Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catches:
