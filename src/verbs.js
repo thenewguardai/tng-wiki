@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
-import { join, relative, resolve, sep } from 'path';
+import { basename, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
 import { isGroundable, checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages } from './ground.js';
 
@@ -127,7 +127,7 @@ export function listOrphanPages(wikiPath) {
   const pageByStem = new Map();
   for (const file of files) {
     const rel = relative(wikiPath, file);
-    const stem = file.split('/').pop().replace(/\.md$/, '');
+    const stem = basename(file, '.md');
     pageByStem.set(stem.toLowerCase(), rel);
   }
 
@@ -159,7 +159,7 @@ export function listOrphanPages(wikiPath) {
 // shows ~zero markers by construction, so these files are its audit surface.
 export function listRejectionNotes(wikiPath) {
   return walkMd(join(wikiPath, 'deliverables'))
-    .filter(f => /_NOTES_/.test(f.split('/').pop()))
+    .filter(f => /_NOTES_/.test(basename(f)))
     .map(f => ({ path: relative(wikiPath, f) }));
 }
 

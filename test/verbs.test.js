@@ -254,6 +254,8 @@ test('listRejectionNotes matches *_NOTES_*.md under deliverables/, recursively',
     writePage(dir, 'deliverables/q2/billing_NOTES_2026-06-02.md', '# Rejection log');
     writePage(dir, 'deliverables/summary.md', '# Not a rejection log');
     writePage(dir, 'wiki/entities/x_NOTES_y.md', '# Wrong directory — not a deliverable');
+    // marker in a directory name only — must match the filename, not the full path
+    writePage(dir, 'deliverables/auth_NOTES_archive/readme.md', '# Not a rejection log');
     const paths = listRejectionNotes(dir).map(n => n.path);
     assert.deepEqual(paths.sort(), [
       'deliverables/auth_NOTES_2026-06-01.md',
