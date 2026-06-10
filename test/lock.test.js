@@ -112,3 +112,64 @@ test('readLock returns null on a missing or corrupt lockfile (never throws)', ()
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function captureStderr(fn) {
+  const chunks = [];
+  const orig = process.stderr.write;
+  process.stderr.write = (chunk) => { chunks.push(String(chunk)); return true; };
+  try {
+    return { result: fn(), stderr: chunks.join('') };
+  } finally {
+    process.stderr.write = orig;
+  }
+}
+
+test('readLock treats an unsupported lock version as "no lockfile" and warns on stderr', () => {
+  const dir = makeDir();
+  try {
+    // future version
+    writeFileSync(join(dir, LOCK_RELPATH), JSON.stringify({ version: 2, authorities: {}, citations: {} }));
+    let { result, stderr } = captureStderr(() => readLock(dir));
+    assert.equal(result, null);
+    assert.match(stderr, /unsupported lock version 2/);
+    assert.match(stderr, /\.tng-wiki\.lock\.json/);
+
+    // missing version
+    writeFileSync(join(dir, LOCK_RELPATH), JSON.stringify({ authorities: {}, citations: {} }));
+    ({ result, stderr } = captureStderr(() => readLock(dir)));
+    assert.equal(result, null);
+    assert.match(stderr, /unsupported lock version null/);
+
+    // garbage version
+    writeFileSync(join(dir, LOCK_RELPATH), JSON.stringify({ version: 'one' }));
+    ({ result, stderr } = captureStderr(() => readLock(dir)));
+    assert.equal(result, null);
+    assert.match(stderr, /unsupported lock version "one"/);
+
+    // supported version stays readable and emits no notice
+    writeFileSync(join(dir, LOCK_RELPATH), JSON.stringify({ version: 1, authorities: {}, citations: {} }));
+    ({ result, stderr } = captureStderr(() => readLock(dir)));
+    assert.equal(result.version, 1);
+    assert.equal(stderr, '');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readLock rejects non-object authorities/citations (arrays, scalars, null) -> {}', () => {
+  const dir = makeDir();
+  try {
+    for (const bad of [[], ['x'], 'str', 42, null, true]) {
+      writeFileSync(join(dir, LOCK_RELPATH), JSON.stringify({ version: 1, authorities: bad, citations: bad }));
+      const lock = readLock(dir);
+      assert.deepEqual(lock.authorities, {}, `authorities for ${JSON.stringify(bad)}`);
+      assert.deepEqual(lock.citations, {}, `citations for ${JSON.stringify(bad)}`);
+      assert.ok(!Array.isArray(lock.authorities) && !Array.isArray(lock.citations));
+    }
+    // non-string updated_at normalizes to null
+    writeFileSync(join(dir, LOCK_RELPATH), JSON.stringify({ version: 1, updated_at: 12345 }));
+    assert.equal(readLock(dir).updated_at, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

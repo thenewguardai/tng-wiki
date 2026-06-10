@@ -8,9 +8,9 @@
 // (`cite_content_changed` / `cite_moved`) instead of per-file churn, and to make
 // branch refs deterministic ("verified against develop@5e36f17").
 //
-// Every function here is pure or fail-soft: a missing / corrupt lockfile reads
-// as null and an unwritable lockfile reports `false` — ground never crashes on
-// lock state.
+// Every function here is pure or fail-soft: a missing / corrupt /
+// unsupported-version lockfile reads as null and an unwritable lockfile reports
+// `false` — ground never crashes on lock state.
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'fs';
@@ -23,17 +23,33 @@ export function lockPath(wikiPath) {
   return join(wikiPath, LOCK_RELPATH);
 }
 
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
 // Parsed lockfile, normalized to `{ version, updated_at, authorities, citations }`,
 // or null when absent / unreadable / malformed (treated as "no lockfile").
+// A recognizable lockfile whose `version` isn't the supported LOCK_VERSION is
+// also treated as absent — schema changes must never silently feed wrong-shape
+// data into churn detection — but gets a one-line stderr notice so the user
+// knows their lock state is being ignored (and that `--update-lock` would
+// rewrite it at the current version).
 export function readLock(wikiPath) {
   try {
     const lock = JSON.parse(readFileSync(lockPath(wikiPath), 'utf8'));
-    if (!lock || typeof lock !== 'object' || Array.isArray(lock)) return null;
+    if (!isPlainObject(lock)) return null;
+    if (lock.version !== LOCK_VERSION) {
+      process.stderr.write(
+        `tng-wiki: ignoring ${LOCK_RELPATH} — unsupported lock version ${JSON.stringify(lock.version ?? null)} ` +
+        `(this tng-wiki supports version ${LOCK_VERSION}); \`ground --update-lock\` would rewrite it\n`,
+      );
+      return null;
+    }
     return {
-      version: lock.version ?? LOCK_VERSION,
-      updated_at: lock.updated_at ?? null,
-      authorities: lock.authorities && typeof lock.authorities === 'object' ? lock.authorities : {},
-      citations: lock.citations && typeof lock.citations === 'object' ? lock.citations : {},
+      version: lock.version,
+      updated_at: typeof lock.updated_at === 'string' ? lock.updated_at : null,
+      authorities: isPlainObject(lock.authorities) ? lock.authorities : {},
+      citations: isPlainObject(lock.citations) ? lock.citations : {},
     };
   } catch {
     return null;
