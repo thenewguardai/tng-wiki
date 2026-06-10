@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, rmSync } 
 import { join, resolve } from 'path';
 import pc from 'picocolors';
 import { resolveWiki } from './verbs.js';
+import { resolveConfigPath } from './paths.js';
 
 // Make agent sessions in OTHER repos aware of a registered wiki by writing a
 // managed nudge block into a local, git-excluded agent file (e.g. CLAUDE.local.md).
@@ -170,8 +171,11 @@ export async function runConnect(args) {
     return;
   }
 
-  const description = readWikiDescription(wiki.path);
-  const block = buildConnectBlock({ slug: wiki.slug, name: wiki.name, domain: wiki.domain, description, path: wiki.path });
+  // Registry paths are normally stored absolute, but expand `~` for hand-edited
+  // entries so the description lookup and the written block point at a real path.
+  const wikiPath = resolveConfigPath(process.cwd(), wiki.path);
+  const description = readWikiDescription(wikiPath);
+  const block = buildConnectBlock({ slug: wiki.slug, name: wiki.name, domain: wiki.domain, description, path: wikiPath });
 
   for (const f of files) {
     const full = join(repoRoot, f);
@@ -182,5 +186,5 @@ export async function runConnect(args) {
     const exNote = ex.ok ? (ex.already ? 'already git-excluded' : 'added to .git/info/exclude') : ex.reason;
     console.log(`${pc.green('✓')} ${verb} ${pc.cyan(f)} ${pc.dim(`(${exNote})`)}`);
   }
-  console.log(`  ${pc.dim(`Sessions in ${repoRoot} will be pointed at wiki "${wiki.slug}" (${wiki.path}).`)}`);
+  console.log(`  ${pc.dim(`Sessions in ${repoRoot} will be pointed at wiki "${wiki.slug}" (${wikiPath}).`)}`);
 }

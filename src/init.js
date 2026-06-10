@@ -1,6 +1,6 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
-import { resolve, join } from 'path';
+import { resolve, join, isAbsolute } from 'path';
 import { mkdirSync, existsSync, writeFileSync, readFileSync, readdirSync, symlinkSync } from 'fs';
 import { generateAgentsMd, schemaLayout, CANONICAL_SCHEMA_FILE } from './agents/index.js';
 import { getTemplate } from './templates/index.js';
@@ -8,6 +8,7 @@ import { setupGit } from './integrations/git.js';
 import { setupQmd } from './integrations/qmd.js';
 import { detectObsidian } from './integrations/obsidian.js';
 import { loadRegistry, saveRegistry, registerWiki, registryConflict, slugifyName } from './registry.js';
+import { resolveConfigPath, pathForm, suggestRelative } from './paths.js';
 
 const DOMAINS = [
   { value: 'ai-research',           label: 'AI / Tech Research',            hint: 'tracking the landscape, models, protocols, infrastructure' },
@@ -158,7 +159,7 @@ export async function runInit(args) {
 }
 
 export function parseInitArgs(args) {
-  const opts = { help: false, yes: false, intoExisting: false, force: false, git: false, qmd: false, integrationsSet: false, unknown: [] };
+  const opts = { help: false, yes: false, intoExisting: false, force: false, git: false, qmd: false, integrationsSet: false, codeAuthorities: [], unknown: [] };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     const value = () => (args[i + 1] !== undefined && !args[i + 1].startsWith('--') ? args[++i] : '');
@@ -176,6 +177,7 @@ export function parseInitArgs(args) {
       case '--agent': opts.agent = value().trim(); break;
       case '--dir': opts.dir = value().trim(); break;
       case '--name': opts.name = value(); break;
+      case '--code-authority': opts.codeAuthorities.push(value().trim()); break;
       default: opts.unknown.push(a);
     }
   }
@@ -212,7 +214,15 @@ async function runInitNonInteractive(opts) {
     fail(`registry slug "${slugifyName(wikiName)}" already points at ${conflictPath}.\n  Re-run with --force to replace it, or choose a different --name.`);
   }
 
-  const { canonical, skipped } = scaffoldWiki(root, { domain, agent, wikiName, intoExisting: opts.intoExisting });
+  // Code authorities from repeatable --code-authority flags. Headless is
+  // warning-only (issue #16): an absolute path is saved verbatim, but we say so
+  // on stderr because the config stops travelling across machines.
+  const codeAuthorities = buildHeadlessAuthorities(opts.codeAuthorities);
+  for (const warning of authorityPortabilityWarnings(codeAuthorities)) {
+    console.error(pc.yellow('Warning:'), warning);
+  }
+
+  const { canonical, skipped } = scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities, intoExisting: opts.intoExisting });
 
   if (opts.git) await setupGit(root);
   if (opts.qmd) await setupQmd(root, wikiName);
@@ -487,6 +497,30 @@ const EXCLUDE_DEFAULTS = {
   other:      ['**/*.md', '**/*.rst', '**/node_modules/**', '**/dist/**'],
 };
 
+// Build code_authorities entries from repeatable `--code-authority <path>` flags
+// (headless --yes path). Name derives from the last path segment, mirroring the
+// interactive prompt's default; excludes fall back to the language-agnostic set.
+export function buildHeadlessAuthorities(paths = []) {
+  return paths
+    .filter((s) => s && s.trim())
+    .map((s) => {
+      const path = s.trim();
+      return {
+        name: path.split(/[\\/]/).filter(Boolean).pop() || 'code',
+        path,
+        exclude: EXCLUDE_DEFAULTS.other,
+      };
+    });
+}
+
+// One warning line per non-portable (absolute) authority path. Pure so both the
+// headless path and tests can use it; `~` and relative forms are portable.
+export function authorityPortabilityWarnings(authorities) {
+  return authorities
+    .filter((a) => pathForm(a.path) === 'absolute')
+    .map((a) => `code authority "${a.name}" uses an absolute path (${a.path}) — it won't resolve on other machines. Prefer a path relative to the wiki.`);
+}
+
 export async function promptCodeAuthorities(wikiRoot) {
   const wants = await p.confirm({
     message: 'Have a reference codebase to ground against? (e.g. porting, reverse-engineering, M&A integration)',
@@ -508,15 +542,39 @@ export async function promptCodeAuthorities(wikiRoot) {
     });
     if (p.isCancel(path)) throw new Error('CANCELLED');
 
-    // Resolve to absolute for an existence check, but keep the user-entered string
-    // so the persisted config preserves the relative path intent.
-    const resolved = resolve(wikiRoot, path);
+    let entryPath = path.trim();
+
+    // Absolute-path nudge (issue #16): relative paths travel across machines.
+    // When the entered path stays within reach of the wiki (≤ 4 leading `..`
+    // segments), offer to store the relative form; otherwise — or on decline —
+    // save verbatim with a one-line portability warning.
+    if (isAbsolute(entryPath)) {
+      const suggestion = suggestRelative(wikiRoot, entryPath);
+      let storeRelative = false;
+      if (suggestion) {
+        const useRelative = await p.confirm({
+          message: `Store as relative (${pc.cyan(suggestion)}) so the config travels across machines?`,
+          initialValue: true,
+        });
+        if (p.isCancel(useRelative)) throw new Error('CANCELLED');
+        storeRelative = useRelative;
+      }
+      if (storeRelative) {
+        entryPath = suggestion;
+      } else {
+        p.log.warn(`Absolute path saved verbatim — this code authority won't resolve on other machines.`);
+      }
+    }
+
+    // Resolve to absolute for an existence check (expanding a leading `~`), but
+    // persist the user-facing string so the config preserves the path intent.
+    const resolved = resolveConfigPath(wikiRoot, entryPath);
     const pathExists = existsSync(resolved);
     if (!pathExists) {
       p.log.warn(`Path not found yet: ${pc.dim(resolved)} — saving anyway (you may be scaffolding before cloning the source).`);
     }
 
-    const defaultName = path.split(/[\\/]/).filter(Boolean).pop() || 'code';
+    const defaultName = entryPath.split(/[\\/]/).filter(Boolean).pop() || 'code';
     const name = await p.text({
       message: 'Short name (used in citations like [^code:<name>/...]):',
       placeholder: defaultName,
@@ -553,7 +611,7 @@ export async function promptCodeAuthorities(wikiRoot) {
 
     const entry = {
       name: name.trim(),
-      path,
+      path: entryPath,
     };
     if (description && description.trim()) entry.description = description.trim();
     entry.exclude = EXCLUDE_DEFAULTS[language] ?? EXCLUDE_DEFAULTS.other;

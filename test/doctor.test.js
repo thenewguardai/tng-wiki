@@ -83,6 +83,102 @@ test('runChecks on a wiki directory missing every schema file flags the schema c
   }
 });
 
+// --- code-authority rows (issue #16) ---
+
+function makeWikiDir(authorities) {
+  const wiki = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  mkdirSync(join(wiki, 'wiki'));
+  mkdirSync(join(wiki, 'raw'));
+  writeFileSync(join(wiki, 'CLAUDE.md'), '# schema');
+  if (authorities) {
+    writeFileSync(join(wiki, '.tng-wiki.json'), JSON.stringify({ version: 1, code_authorities: authorities }));
+  }
+  return wiki;
+}
+
+test('runChecks adds an optional row per code authority with path form and existence', () => {
+  const wiki = makeWikiDir([
+    { name: 'sibling', path: 'authority-src' },          // relative, exists
+    { name: 'machine', path: '/nonexistent/elsewhere' }, // absolute, missing
+  ]);
+  try {
+    mkdirSync(join(wiki, 'authority-src'));
+    const checks = runChecks(wiki, fakeDeps());
+
+    const sibling = checkByName(checks, 'Code authority "sibling"');
+    assert.equal(sibling.ok, true);
+    assert.equal(sibling.optional, true);
+    assert.match(sibling.detail, /relative path, exists/);
+    assert.ok(!sibling.detail.includes("won't travel"));
+
+    const machine = checkByName(checks, 'Code authority "machine"');
+    assert.equal(machine.ok, false);
+    assert.equal(machine.optional, true);
+    assert.match(machine.detail, /absolute path, missing on this machine/);
+    assert.match(machine.detail, /⚠ won't travel across machines/);
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+  }
+});
+
+test('runChecks resolves ~ authority paths against the home directory', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-home-'));
+  const wiki = makeWikiDir([{ name: 'home-tree', path: '~/legacy-app' }]);
+  const oldHome = process.env.HOME;
+  const oldProfile = process.env.USERPROFILE;
+  try {
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    mkdirSync(join(fakeHome, 'legacy-app'));
+    const row = checkByName(runChecks(wiki, fakeDeps()), 'Code authority "home-tree"');
+    assert.equal(row.ok, true);
+    assert.match(row.detail, /~ path, exists/);
+    assert.ok(!row.detail.includes("won't travel")); // ~ travels (per-user)
+  } finally {
+    process.env.HOME = oldHome;
+    process.env.USERPROFILE = oldProfile;
+    rmSync(wiki, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('runChecks renders a malformed-path authority as a required failure and keeps other rows', () => {
+  const wiki = makeWikiDir([
+    { name: 'broken' },                          // path missing entirely
+    { name: 'blank', path: '   ' },              // whitespace-only path
+    { name: 'sibling', path: 'authority-src' },  // valid neighbor must still render
+  ]);
+  try {
+    mkdirSync(join(wiki, 'authority-src'));
+    const checks = runChecks(wiki, fakeDeps());
+
+    const broken = checkByName(checks, 'Code authority "broken"');
+    assert.equal(broken.ok, false);
+    assert.ok(!broken.optional); // malformed config is a real failure, not a soft warning
+    assert.match(broken.detail, /malformed path in \.tng-wiki\.json \(undefined\)/);
+
+    const blank = checkByName(checks, 'Code authority "blank"');
+    assert.equal(blank.ok, false);
+    assert.match(blank.detail, /malformed path/);
+
+    const sibling = checkByName(checks, 'Code authority "sibling"');
+    assert.equal(sibling.ok, true);
+    assert.match(sibling.detail, /relative path, exists/);
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+  }
+});
+
+test('runChecks emits no authority rows without .tng-wiki.json or code_authorities', () => {
+  const wiki = makeWikiDir(null);
+  try {
+    const rows = runChecks(wiki, fakeDeps()).filter((c) => c.name.startsWith('Code authority'));
+    assert.deepEqual(rows, []);
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+  }
+});
+
 // --- recommendNextStep (the orientation an onboarding agent reads) ---
 
 test('recommendNextStep: no wikis, not a wiki dir -> create or adopt', () => {

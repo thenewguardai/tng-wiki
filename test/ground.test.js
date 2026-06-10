@@ -241,6 +241,22 @@ function setCodeAuthorities(wikiRoot, authorities) {
   writeFileSync(metaPath, JSON.stringify(meta, null, 2));
 }
 
+test('checkGrounding throws a clear error when a code authority path is malformed', () => {
+  const dir = makeWiki();
+  try {
+    setCodeAuthorities(dir, [{ name: 'broken' }]); // path missing entirely
+    assert.throws(
+      () => checkGrounding(dir),
+      /code authority "broken" has a malformed path in \.tng-wiki\.json \(undefined\)/,
+    );
+
+    setCodeAuthorities(dir, [{ name: 'blank', path: '   ' }]); // whitespace-only
+    assert.throws(() => checkGrounding(dir), /malformed path/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkGrounding flags unknown_code_authority when frontmatter names an authority not in .tng-wiki.json', () => {
   const dir = makeWiki();
   try {
@@ -283,6 +299,30 @@ test('checkGrounding is clean on a page cited purely against a registered code a
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(join(dir, '..', 'legacy-app'), { recursive: true, force: true });
+  }
+});
+
+test('checkGrounding expands ~/ in authority paths to the home directory (issue #16)', () => {
+  const dir = makeWiki();
+  const fakeHome = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  const oldHome = process.env.HOME;
+  const oldProfile = process.env.USERPROFILE;
+  try {
+    // os.homedir() reads $HOME (POSIX) / %USERPROFILE% (Windows) at call time
+    process.env.HOME = fakeHome;
+    process.env.USERPROFILE = fakeHome;
+    writeFile(fakeHome, 'legacy-app/src/a.ts', Array.from({ length: 50 }, (_, i) => `l${i + 1}`).join('\n'));
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '~/legacy-app' }]);
+    writeFile(dir, 'wiki/entities/h.md',
+      '---\ntitle: H\nupdated: 2099-01-01\nsources:\n  - code:legacy\n---\nClaim.[^code:legacy/src/a.ts#L1-L10]');
+    // without expansion, resolve(wikiRoot, '~/legacy-app') treats `~` as a
+    // literal directory and this would flag missing_code_file
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/h.md' }).issues, []);
+  } finally {
+    process.env.HOME = oldHome;
+    process.env.USERPROFILE = oldProfile;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
   }
 });
 
