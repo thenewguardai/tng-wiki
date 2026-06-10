@@ -701,6 +701,27 @@ test('index_header_drift uses git commit dates when the wiki is a repo (clone-sa
   }
 });
 
+test('index_header_drift: uncommitted pages in a git wiki still contribute their mtime', () => {
+  const dir = makeWiki();
+  try {
+    git(dir, ['init', '-b', 'main']);
+    writeFile(dir, 'wiki/entities/a.md', '---\ntitle: A\n---\nClaim.');
+    writeFile(dir, 'wiki/index.md',
+      '# Demo — Index\n\n_Last updated: 2021-01-01 | Total pages: 2 | Total sources: 0_\n');
+    commitAll(dir, 'all', '2020-06-01 12:00:00 +0000');
+    // a brand-new page not yet committed: its mtime ("now") is the newest page
+    // date even though every committed page's commit date predates the header
+    writeFile(dir, 'wiki/entities/b.md', '---\ntitle: B\n---\nClaim.');
+    const hit = checkGrounding(dir).issues.find((i) => i.issue === 'index_header_drift');
+    assert.ok(hit);
+    assert.equal(hit.expected_pages, 2);          // count is right…
+    assert.equal(hit.actual_pages, 2);
+    assert.ok(hit.newest_page_date > '2021-01-01'); // …the date is behind the new page
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('index_header_drift is skipped on --page runs and clean on fresh scaffolds that ship meta pages', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-ground-'));
   try {

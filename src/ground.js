@@ -1,7 +1,10 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative, resolve, dirname } from 'path';
 import { matchesAnyGlob } from './glob.js';
-import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate } from './git-read.js';
+import {
+  refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate,
+  filesAtHead, newestCommitDate,
+} from './git-read.js';
 
 // Warn-level findings: hygiene/convention signals, not attribution breaks.
 // Renderers color them differently and `rounds` counts them under `convention`;
@@ -233,11 +236,26 @@ function checkIndexHeader(wikiPath, allFiles) {
     return !STRUCTURAL_BASENAMES.has(basename) && !basename.startsWith('_');
   });
 
+  // Newest page date = max over countable files of (git last-commit date for
+  // committed files, mtime otherwise) — same reduction as a per-file
+  // `fileCommitDate(f) ?? mtime`, but with TWO git processes (ls-tree + a batched
+  // `git log -1`) instead of one per page. Uncommitted pages, or every page when
+  // the wiki is not a git repo, contribute their mtime as before.
   let newest = null;
-  for (const f of countable) {
-    const time = fileCommitDate(wikiPath, relative(wikiPath, f)) ?? statSync(f).mtime;
+  const consider = (time) => {
     const date = time.toISOString().slice(0, 10);
     if (newest === null || date > newest) newest = date;
+  };
+  const committed = filesAtHead(wikiPath, 'wiki');
+  const committedRel = [];
+  for (const f of countable) {
+    const rel = relative(wikiPath, f);
+    if (committed?.has(rel)) committedRel.push(rel);
+    else consider(statSync(f).mtime);
+  }
+  if (committedRel.length > 0) {
+    const commitTime = newestCommitDate(wikiPath, committedRel);
+    if (commitTime) consider(commitTime);
   }
 
   if (headerPages === countable.length && (newest === null || headerDate >= newest)) return null;

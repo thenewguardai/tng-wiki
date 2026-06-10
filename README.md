@@ -303,7 +303,7 @@ Three findings cover index and convention drift:
 - `frontmatter_updated_stale` *(warn-level)* — the page file changed (git last-commit date, mtime fallback) after its frontmatter `updated`, with a 1-day grace window for same-day/timezone noise. JSON fields: `updated`, `last_commit`.
 - `prose_internal_ref` *(warn-level)* — an internal page is referenced in prose (`` `page.md` `` inline-code token, or a markdown link to a relative `.md` path resolving to a wiki page) instead of a `[[wikilink]]`. Fenced code blocks, citation markers, and `raw/` / `deliverables/` file paths are exempt. JSON fields: `line`, `matched`, `suggest` (the `[[wikilink]]` to use).
 
-Warn-level findings are hygiene signals, not attribution breaks: they render dimmer, never change exit codes, and `tng-wiki rounds` counts them under `convention` instead of `ground`.
+Warn-level findings are hygiene signals, not attribution breaks: they render in a distinct color (cyan instead of yellow), never change exit codes, and `tng-wiki rounds` counts them under `convention` instead of `ground`.
 
 ### Layer 2 — semantic re-verification (agent-driven)
 
