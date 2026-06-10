@@ -126,6 +126,13 @@ export async function runGround(args) {
   const atRef = args.includes('--at-ref');
   const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef });
   maybeJson(args, { wiki: wiki.slug, ...result }, () => {
+    // Warnings go to stderr (findings stay on stdout); --json carries them in
+    // the top-level `warnings` array instead.
+    for (const w of result.warnings ?? []) {
+      if (w.code === 'working_tree_of_ref_authority') {
+        process.stderr.write(`${pc.yellow('⚠')} authority "${w.authority}" has ref "${w.ref}" — checking the WORKING TREE; pass --at-ref for ref-pinned checks\n`);
+      }
+    }
     if (result.issues.length === 0) {
       process.stdout.write(`${pc.green('✓')} ${pc.dim(`${result.scanned} pages clean`)}\n`);
       return;
