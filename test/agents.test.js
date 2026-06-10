@@ -94,10 +94,10 @@ test('generateAgentsMd Layer 3B documents the optional `ref` field for git-pinne
 test('generateAgentsMd documents branch-ref (tracking) vs tag/SHA-ref (true pin) semantics', () => {
   const out = generateAgentsMd(ctx);
   // tag/SHA refs are true pins; branch refs track and move
-  assert.match(out, /tag or commit SHA.*true pin/s);
-  assert.match(out, /branch ref.*\*tracking\* ref/is);
-  // deterministic grounding against a branch = record the resolved SHA
-  assert.match(out, /git -C <path> rev-parse <ref>/);
+  assert.match(out, /tag or commit-SHA refs.*true pins/is);
+  assert.match(out, /branch refs.*\*tracks\*, not pins/is);
+  // deterministic grounding against a branch = the lockfile records the resolved SHA
+  assert.match(out, /resolved_sha/);
   // the plain-run warning is documented so agents know to heed it
   assert.match(out, /working_tree_of_ref_authority/);
 });

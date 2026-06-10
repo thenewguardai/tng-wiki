@@ -1,11 +1,15 @@
-import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative, resolve, dirname, sep, isAbsolute } from 'path';
 import { matchesAnyGlob } from './glob.js';
 import { resolveConfigPath, pathForm, describePathValue } from './paths.js';
 import {
   refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate,
-  filesAtHead, newestCommitDate,
+  filesAtHead, newestCommitDate, resolveRefSha, repoIsDirty,
 } from './git-read.js';
+import {
+  readLock, writeLock, normalizeLines, hashLines, citeKey, rangeAnchor, rangeLabel,
+  sliceRange, findContentMatches,
+} from './lock.js';
 
 // Warn-level findings: hygiene/convention signals, not attribution breaks.
 // Renderers color them differently and `rounds` counts them under `convention`;
@@ -299,7 +303,7 @@ function checkIndexHeader(wikiPath, allFiles) {
   };
 }
 
-export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
+export function checkGrounding(wikiPath, { page, atRef = false, updateLock = false, fixMoved = false } = {}) {
   const wikiDir = join(wikiPath, 'wiki');
   const allFiles = walkMd(wikiDir);
   const targets = page
@@ -355,6 +359,38 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
   const stemByPage = buildStemMap(allFiles, wikiPath);
   const wikiFiles = new Set(allFiles.map((f) => resolve(f)));
 
+  // Per-citation content lockfile (wiki/.tng-wiki.lock.json). When present,
+  // locked cites get surgical churn detection (cite_content_changed / cite_moved)
+  // and the file-granular code_updated_after_page check is suppressed for them.
+  // When absent, behavior is identical to before the lockfile existed — the lock
+  // is never created implicitly (--update-lock is the explicit verification act).
+  const lock = readLock(wikiPath);
+  const lockActive = lock !== null;
+  const trackLock = lockActive || updateLock;
+  const lockEntryFor = (rel, key) => lock?.citations?.[rel]?.[key] ?? null;
+
+  // Authority git state (which SHA the ref — or HEAD on working-tree runs —
+  // resolves to, plus the dirty flag), computed once per authority actually
+  // cited. Feeds the lockfile `authorities` block so branch refs become
+  // deterministic ("verified against develop@5e36f17").
+  const authorityState = new Map();
+  const authorityStateFor = (a) => {
+    if (!authorityState.has(a.name)) {
+      const repoAbs = resolveConfigPath(wikiPath, a.path);
+      const useRef = atRef && Boolean(a.ref);
+      authorityState.set(a.name, {
+        ref: a.ref ?? null,
+        resolved_sha: resolveRefSha(repoAbs, useRef ? a.ref : 'HEAD'),
+        resolved_at: new Date().toISOString(),
+        dirty: useRef ? false : (repoIsDirty(repoAbs) ?? false),
+      });
+    }
+    return authorityState.get(a.name);
+  };
+
+  const newCitations = {};  // page -> cite key -> lock entry, collected for --update-lock
+  const moveFixes = [];     // cite_moved fixes to apply on --fix-moved
+
   const issues = [];
 
   // Foot-gun guard: on a plain (non --at-ref) run, a ref'd authority is still
@@ -366,6 +402,7 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
 
   for (const file of targets) {
     const rel = relative(wikiPath, file);
+    const lockSeen = new Set();  // cite keys are unique per (page, cite-string)
 
     if (!existsSync(file)) {
       issues.push({ page: rel, issue: 'page_not_found' });
@@ -413,6 +450,29 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
         } else {
           issues.push({ page: rel, issue: 'missing_raw', raw: refPath });
         }
+      }
+    }
+
+    // per-citation lock churn for raw cites: the hash input is the whole
+    // (normalized) raw file. Moves don't apply — there is no line anchor.
+    if (trackLock) {
+      for (const c of citedRaw) {
+        const key = citeKey(c);
+        if (lockSeen.has(key)) continue;
+        lockSeen.add(key);
+        const raw = readFileSafe(join(wikiPath, c.path));
+        if (raw == null) continue;  // missing_raw already flagged above
+        const currentHash = hashLines(normalizeLines(raw));
+        const entry = lockEntryFor(rel, key);
+        if (entry?.hash && entry.hash !== currentHash) {
+          issues.push({
+            page: rel, issue: 'cite_content_changed', cite: key, file: c.path,
+            range: null, locked_sha: entry.hash, current_sha: currentHash,
+          });
+        } else if (lockActive && !entry) {
+          issues.push({ page: rel, issue: 'cite_unlocked', cite: key });
+        }
+        if (updateLock) (newCitations[rel] ??= {})[key] = { hash: currentHash };
       }
     }
 
@@ -522,13 +582,17 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
         continue;
       }
 
-      // 4. cited line range within the file's bounds.
+      // 4. cited line range within the file's bounds. The content is also the
+      //    lock-hash input, so read it once for both checks.
+      const needContent = Boolean(c.range) || trackLock;
+      const content = needContent
+        ? (useRef ? readFileAtRef(repoAbs, authority.ref, c.file) : readFileSafe(resolve(repoAbs, c.file)))
+        : null;
+      let rangeValid = true;
       if (c.range) {
-        const content = useRef
-          ? readFileAtRef(repoAbs, authority.ref, c.file)
-          : readFileSafe(resolve(repoAbs, c.file));
         const lineCount = content == null ? null : countLines(content);
         if (lineCount != null && (c.range.start > c.range.end || c.range.end > lineCount)) {
+          rangeValid = false;
           const issue = {
             page: rel, issue: 'code_line_out_of_range',
             authority: c.authority, file: c.file, line: c.line,
@@ -539,8 +603,67 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
         }
       }
 
-      // 5. staleness (ref-only): page `updated` predates the file's last commit at ref.
-      if (useRef && updated) {
+      // 5. per-citation lock churn: hash the normalized cited range (whole file
+      //    when no anchor) and compare to the locked hash. On mismatch, look for
+      //    the locked content elsewhere in the file to tell a move (anchor shift,
+      //    content identical) from a real edit (cite_content_changed).
+      const key = citeKey(c);
+      if (trackLock && content != null && rangeValid && !lockSeen.has(key)) {
+        lockSeen.add(key);
+        const lines = normalizeLines(content);
+        const currentHash = hashLines(c.range ? sliceRange(lines, c.range) : lines);
+        const entry = lockEntryFor(rel, key);
+        let recordKey = key;
+        let recordHash = currentHash;
+        if (entry?.hash && entry.hash !== currentHash) {
+          const matches = c.range
+            ? findContentMatches(lines, entry.hash, c.range.end - c.range.start + 1)
+            : [];
+          if (matches.length === 1) {
+            const newRange = matches[0];
+            if (fixMoved) {
+              moveFixes.push({
+                rel, absPage: file, authority: c.authority, citedFile: c.file,
+                oldKey: key, oldRange: c.range, newRange, hash: entry.hash,
+                sha: authorityStateFor(authority).resolved_sha,
+              });
+              // --update-lock in the same run records the post-fix state
+              recordKey = `code:${c.authority}/${c.file}${rangeAnchor(newRange)}`;
+              recordHash = entry.hash;
+            } else {
+              issues.push({
+                page: rel, issue: 'cite_moved', cite: key, file: c.file,
+                old_range: rangeLabel(c.range), new_range: rangeLabel(newRange),
+              });
+            }
+          } else if (matches.length > 1) {
+            issues.push({
+              page: rel, issue: 'cite_moved_ambiguous', cite: key, file: c.file,
+              candidate_ranges: matches.map(rangeLabel),
+            });
+          } else {
+            issues.push({
+              page: rel, issue: 'cite_content_changed', cite: key, file: c.file,
+              range: c.range ? rangeLabel(c.range) : null,
+              locked_sha: entry.hash, current_sha: currentHash,
+            });
+          }
+        } else if (lockActive && !entry) {
+          // info-level: lockfile exists but this cite was never locked
+          issues.push({ page: rel, issue: 'cite_unlocked', cite: key });
+        }
+        const st = authorityStateFor(authority);  // touched -> authorities block refresh
+        if (updateLock) {
+          const newEntry = { hash: recordHash };
+          if (st.resolved_sha) newEntry.hashed_at_sha = st.resolved_sha;
+          (newCitations[rel] ??= {})[recordKey] = newEntry;
+        }
+      }
+
+      // 6. staleness (ref-only): page `updated` predates the file's last commit
+      //    at ref. Suppressed for locked cites — cite_content_changed is the
+      //    surgical replacement; this stays as the fallback for unlocked cites.
+      if (useRef && updated && !(lockActive && lockEntryFor(rel, key))) {
         const commitDate = fileCommitDateAtRef(repoAbs, authority.ref, c.file);
         if (commitDate && commitDate.getTime() > updated.getTime()) {
           issues.push({
@@ -631,7 +754,75 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
     if (headerIssue) issues.push(headerIssue);
   }
 
-  return { scanned: targets.length, issues, warnings };
+  // --fix-moved: rewrite each shifted #L anchor in the page to the new range.
+  // This is the only safe auto-fix — the content is identical (the locked hash
+  // matched at exactly one other location); only line numbers shifted.
+  // cite_content_changed is never auto-fixed; it feeds the Layer-2 human workflow.
+  const fixed = [];
+  if (moveFixes.length > 0) {
+    const byPage = new Map();
+    for (const f of moveFixes) {
+      if (!byPage.has(f.absPage)) byPage.set(f.absPage, []);
+      byPage.get(f.absPage).push(f);
+      fixed.push({ page: f.rel, cite: f.oldKey, old_range: rangeLabel(f.oldRange), new_range: rangeLabel(f.newRange) });
+    }
+    for (const [absPage, fixes] of byPage) {
+      let pageContent = readFileSync(absPage, 'utf8');
+      for (const f of fixes) {
+        const escaped = `code:${f.authority}/${f.citedFile}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // a single-line lock key (#L42) may appear in the page as #L42 or #L42-L42
+        const oldAnchor = f.oldRange.start === f.oldRange.end
+          ? `#L${f.oldRange.start}(?:-L${f.oldRange.start})?`
+          : `#L${f.oldRange.start}-L${f.oldRange.end}`;
+        const re = new RegExp(`\\[\\^${escaped}${oldAnchor}\\]`, 'g');
+        pageContent = pageContent.replace(re, `[^code:${f.authority}/${f.citedFile}${rangeAnchor(f.newRange)}]`);
+      }
+      writeFileSync(absPage, pageContent);
+    }
+  }
+
+  // Lockfile write-back.
+  // - --update-lock rebuilds the citation entries (page-scoped runs merge into
+  //   the existing map so other pages' locks survive).
+  // - Otherwise an existing lockfile still gets its `authorities` block refreshed
+  //   on any run that touches code cites, and --fix-moved entry moves persist.
+  // Never creates a lockfile implicitly.
+  const lockResult = { exists: lockActive };
+  if (updateLock) {
+    let citations;
+    if (page) {
+      citations = { ...(lock?.citations ?? {}) };
+      for (const t of targets) {
+        const trel = relative(wikiPath, t);
+        if (newCitations[trel]) citations[trel] = newCitations[trel];
+        else delete citations[trel];
+      }
+    } else {
+      citations = newCitations;
+    }
+    const authorities = { ...(lock?.authorities ?? {}), ...Object.fromEntries(authorityState) };
+    lockResult.written = writeLock(wikiPath, { authorities, citations });
+    lockResult.exists = lockResult.exists || lockResult.written;
+    lockResult.citations_locked = Object.values(citations).reduce((n, m) => n + Object.keys(m).length, 0);
+    lockResult.authorities = authorities;
+  } else if (lockActive && (authorityState.size > 0 || moveFixes.length > 0)) {
+    const citations = lock.citations;
+    for (const f of moveFixes) {
+      const pageCites = citations[f.rel];
+      if (!pageCites) continue;
+      delete pageCites[f.oldKey];
+      const entry = { hash: f.hash };
+      if (f.sha) entry.hashed_at_sha = f.sha;
+      pageCites[`code:${f.authority}/${f.citedFile}${rangeAnchor(f.newRange)}`] = entry;
+    }
+    const authorities = { ...lock.authorities, ...Object.fromEntries(authorityState) };
+    lockResult.written = writeLock(wikiPath, { authorities, citations });
+    lockResult.authorities = authorities;
+  }
+
+  const result = { scanned: targets.length, issues, warnings, lock: lockResult };
+  if (fixMoved) result.fixed = fixed;
+  return result;
 }
 
 // ---- Pattern-matching lint verbs (for Phase 1C) ----

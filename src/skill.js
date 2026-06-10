@@ -51,7 +51,7 @@ If the user wants a *new* wiki, or to adopt the current project into one, scaffo
 - **\`tng-wiki sources [--uncompiled] [--wiki <slug>]\`** — lists \`raw/\` files. Use \`--uncompiled\` to find sources the wiki hasn't ingested yet.
 - **\`tng-wiki stale [--wiki <slug>]\`** — lint: pages with \`⚠️ STALE?\` markers.
 - **\`tng-wiki orphans [--wiki <slug>]\`** — lint: pages with no inbound \`[[wikilinks]]\`.
-- **\`tng-wiki ground [--wiki <slug>] [--page <path>]\`** — structural ground-check. Finds pages missing source attribution, inline citations pointing at non-existent raw files, declaration/citation mismatches, raw sources modified after the page's \`updated\` date, index-header drift, and warn-level convention findings (stale frontmatter \`updated\`, prose internal refs). Zero-LLM — a work queue for you to drive Layer 2 semantic re-verification.
+- **\`tng-wiki ground [--wiki <slug>] [--page <path>] [--update-lock] [--fix-moved]\`** — structural ground-check. Finds pages missing source attribution, inline citations pointing at non-existent raw files, declaration/citation mismatches, raw sources modified after the page's \`updated\` date, index-header drift, and warn-level convention findings (stale frontmatter \`updated\`, prose internal refs). When the wiki has a citation lockfile (\`wiki/.tng-wiki.lock.json\`), also reports per-citation churn: \`cite_content_changed\` (cited content edited since last verified — the surgical re-verification queue), \`cite_moved\` (content identical, line anchor shifted — fix with \`--fix-moved\`), and \`cite_unlocked\`. Run \`ground --update-lock\` after verifying/reconciling to bless current state — never run it on unverified content. Zero-LLM — a work queue for you to drive Layer 2 semantic re-verification.
 - **\`tng-wiki cite show <page> [--wiki <slug>] [--at-ref] [--cite <n|key>] [--context <lines>]\`** — claim-next-to-evidence review: prints every citation in a page with the claim sentence that carries it and the exact source lines it cites (raw and code-authority cites alike). Use it instead of hand-running \`sed -n 'X,Yp'\` against authority files.
 - **\`tng-wiki drift [--wiki <slug>]\`** — pages carrying \`⚠️ DRIFT?\` markers (semantic or external grounding output).
 - **\`tng-wiki unsourced [--wiki <slug>]\`** — pages carrying \`⚠️ UNSOURCED?\` markers.
@@ -125,9 +125,11 @@ When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "h
 
 1. Ingest anything pending in \`raw/\` (\`tng-wiki sources --uncompiled\`).
 2. Run \`tng-wiki rounds\` for the lint counts at a glance, then \`ground\` / \`orphans\` / \`unsourced\` / \`unverified\` / \`stale\` / \`drift\` for detail.
-3. Reconcile what's safely reconcilable; surface the \`⚠️\` markers that need the user.
-4. Update \`wiki/index.md\` and append a \`wiki/log.md\` entry.
-5. Report what changed and what still needs human judgment.
+3. Review \`cite_content_changed\` findings — that is the per-citation re-verification queue; re-check each against the authority. Run \`tng-wiki ground --fix-moved\` to repair shifted \`#L\` anchors (safe: content unchanged).
+4. Reconcile what's safely reconcilable; surface the \`⚠️\` markers that need the user.
+5. After reconcile, finish with \`tng-wiki ground --update-lock\` to record the newly verified state in the lockfile.
+6. Update \`wiki/index.md\` and append a \`wiki/log.md\` entry.
+7. Report what changed and what still needs human judgment.
 
 Each wiki's \`AGENTS.md\` defines rounds precisely — \`cd\` into the wiki dir (from \`tng-wiki list\`) and follow it for the maintenance steps.
 
