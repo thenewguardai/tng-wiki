@@ -345,6 +345,22 @@ test('listOrphanPages applies ground exemptions — fresh SE scaffold templates/
   }
 });
 
+test('roundsReport reads clean on a fresh code-archaeology scaffold (seeded meta exempt)', () => {
+  const dir = makeWiki({ domain: 'code-archaeology', wikiName: 'Dig' });
+  try {
+    const r = roundsReport(dir);
+    assert.equal(r.uncompiled, 0); // no seed source — leads arrive via _inbox/
+    assert.equal(r.ground, 0);
+    assert.equal(r.orphans, 0);
+    assert.equal(r.unsourced, 0);
+    assert.equal(r.unverified, 0);
+    assert.equal(r.stale, 0);
+    assert.equal(r.drift, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('roundsReport returns counts and skips template/meta example markers', () => {
   const dir = makeWiki({ domain: 'software-engineering', wikiName: 'Eng' });
   try {

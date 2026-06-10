@@ -7,6 +7,7 @@ const DOMAIN_SECTIONS = {
   'business-ops': businessOpsSchema,
   'learning': learningSchema,
   'software-engineering': softwareEngineeringSchema,
+  'code-archaeology': codeArchaeologySchema,
   'blank': blankSchema,
 };
 
@@ -610,6 +611,76 @@ Never delete an ADR. Deprecation and supersession preserve the historical contex
 - **Cite the evidence.** Every ADR claim gets a \`[^raw/rfcs/...]\` or \`[^raw/prs/...]\` citation so grounding catches drift when the evidence moves.
 - **Incidents always produce tech-debt entries** for latent issues exposed, even when the immediate fix is landed — future-you needs the trail.
 - **Runbooks age fast.** Add \`⚠️ STALE?\` proactively if a runbook hasn't been exercised in two quarters.`;
+}
+
+function codeArchaeologySchema() {
+  return `## Domain: Code Archaeology / Reverse Engineering
+
+This wiki distills an unfamiliar, under-documented, or inherited codebase into verified knowledge. The code authorities in \`.tng-wiki.json → code_authorities\` are the point of the entire exercise — every claim worth keeping is verified against an implementation. If no authorities are configured yet, stop and ask the human to register them before distilling anything.
+
+### Layout (beyond the standard three layers)
+
+\`\`\`
+_inbox/        ← new leads land here: AI-generated overviews, briefs, prior write-ups
+raw/samples/   ← captured runtime artifacts: I/O dumps, fixtures, traces
+raw/specs/     ← external specs and protocol docs the code is supposed to satisfy
+raw/scripts/   ← probe scripts written during verification (rerunnable evidence)
+templates/     ← deliverable skeletons: DISCOVERY / ANALYSIS / DESIGN / NOTES
+deliverables/  ← dated, frozen documents — the audit trail
+\`\`\`
+
+### Wiki vs Deliverables
+
+Two output surfaces with opposite lifecycles. Never conflate them:
+
+- **\`wiki/\`** — evergreen, code-verified pages. Updated forever, grounded by \`tng-wiki ground\`, every claim cited. This is the compounding artifact.
+- **\`deliverables/\`** — dated, frozen documents. Built from the skeletons in \`templates/\`, named \`YYYYMMDD_Topic_TYPE_vX.Y.md\` (e.g. \`20260415_AuthFlow_ANALYSIS_v1.0.md\`). \`deliverables/\` and \`raw/\` are grounding-exempt — they record what was known at a moment, not living claims.
+
+**Versioning rule:** git covers working revisions — do not mint versions for ordinary edits. Create a new \`_vX.Y\` file only when a deliverable is shared externally (a milestone). A shipped deliverable is never retro-edited: corrections happen in the wiki and in the next version.
+
+### Zones
+
+Zone subdirectories under \`wiki/\` are created per system or area *as the territory becomes known* — the scaffold ships only the standard \`wiki/entities/\` and \`wiki/meta/\`, deliberately no per-system zones. When a system earns its first pages, create \`wiki/<zone>/\` and register the zone in \`wiki/meta/ecosystem.md\`. Don't pre-build structure for systems you haven't verified exist.
+
+### Leads, Never Sources
+
+AI-generated documents — anything in \`_inbox/\`, prior AI write-ups archived in \`raw/\`, vendor-generated docs, your own earlier deliverables, and any configured lead archives — are **leads, never sources**. A lead tells you *where to look*; it never tells you *what's true*. Every claim carried from a lead into a wiki page is re-grounded against a code authority before it is written. A lead claim that can't be verified doesn't get a weaker confidence tag — it stays out of the wiki and goes to the rejection log or \`wiki/meta/open-threads.md\`.
+
+### Provenance Block
+
+Every distilled wiki page carries a provenance block recording its verification trail:
+
+\`\`\`markdown
+> **Provenance**
+> - Lead: _inbox/auth-overview.md (AI-generated, consulted as lead only)
+> - Verified against: code:legacy-app @ v2.1.0
+> - Corrections vs lead: 2 — token TTL is 15m not 60m; refresh path retries once, not "until success"
+\`\`\`
+
+Three lines, always: the lead consulted, the authority (+ ref) verified against, and the corrections made versus the lead (\`none\` is a valid — and suspicious — answer). The provenance block complements, never replaces, per-claim \`[^code:...]\` citations.
+
+### Verification-First Flow
+
+For each claim a lead suggests:
+
+1. **Premise-refute.** Take the claim as a premise and actively try to disprove it against the authority (\`Read\` / \`Grep\` the implementation; honor the scope filter — comments and docstrings are leads too).
+2. **Validate.** If refutation fails, collect positive evidence: the exact file and line range that makes the claim true.
+3. **Distill.** Only \`[confirmed]\` claims enter the wiki — confirmed here means *the implementation itself supports it* — each with a \`[^code:<authority>/<path>#L..]\` citation and the page's provenance block updated.
+4. **Log rejections.** Every claim that died in step 1 gets a row in the campaign's rejection-log NOTES deliverable (skeleton: \`templates/NOTES.md\`): the claim, the lead it came from, the authority checked, why it died. The rejection log is the audit artifact proving verification happened — an empty one means the leads were perfect (unlikely) or you weren't verifying.
+
+Anything you can neither confirm nor refute is registered in \`wiki/meta/open-threads.md\` — and closed there, with a one-line resolution, when settled. Registering and closing threads is a standing librarian duty, not an optional nicety.
+
+### Precedence
+
+Code wins. At distillation time, when a lead and the implementation disagree, the implementation's version is the only one that may enter the wiki — record the disagreement in the rejection log. The Layer 3B scope filter and procedure in Operations apply unchanged: implementation only, comments/docstrings/docs disregarded, and for claims *already in the wiki* a code disagreement surfaces as \`⚠️ DRIFT?\` with evidence for human reconcile — never auto-applied.
+
+### Meta Pages (\`wiki/meta/\`, grounding-exempt)
+
+- **\`glossary.md\`** — terms as the *code* uses them; code-derived meaning beats document-derived.
+- **\`ecosystem.md\`** — the system/repo map; every system encountered gets a row, every zone gets registered.
+- **\`project-status.md\`** — phase context. It lives there and not in this schema because it rots; update it every working session.
+- **\`open-threads.md\`** — the open-findings ledger (see the librarian duty above). Review at the start of every rounds pass.
+- **\`patterns.md\`** — verification lessons learned: what a lead claimed, what the code showed, the generalizable heuristic. Read it before each verification pass; append when a verification surprises you.`;
 }
 
 function learningSchema() {

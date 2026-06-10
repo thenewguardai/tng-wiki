@@ -18,7 +18,7 @@ export const COMMANDS = [
     flags: [
       { name: '--yes', alias: '-y', desc: 'run headless with no prompts (requires --dir) — the agent path' },
       { name: '--dir', value: '<path>', desc: 'where to create the wiki' },
-      { name: '--domain', value: '<d>', desc: 'ai-research | competitive-intel | publication | business-ops | learning | software-engineering | blank (default: blank)' },
+      { name: '--domain', value: '<d>', desc: 'ai-research | competitive-intel | publication | business-ops | learning | software-engineering | code-archaeology | blank (default: blank)' },
       { name: '--agent', value: '<a>', desc: 'claude-code | codex | cursor | all (default: claude-code)' },
       { name: '--name', value: '<n>', desc: 'wiki name (default: derived from domain)' },
       { name: '--code-authority', value: '<path>', desc: 'repeatable: code tree to ground against (Layer 3B) — prefer wiki-relative paths; absolute paths warn' },

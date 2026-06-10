@@ -38,7 +38,7 @@ The user may have several wikis (research, competitive intel, learning, etc.). S
 If the user wants a *new* wiki, or to adopt the current project into one, scaffold it yourself — \`init\` has a non-interactive mode, so you don't need a TTY:
 
 - **See the whole surface in one call:** \`tng-wiki help --json\` lists every command, flag, and example. \`tng-wiki doctor\` reports this directory's state and the recommended next command. Reach for these instead of probing each verb with \`--help\`.
-- **Create a new wiki:** \`tng-wiki init --yes --dir <path> --domain <d> --agent claude-code --name "<name>"\` (domains: ai-research, competitive-intel, publication, business-ops, learning, software-engineering, blank).
+- **Create a new wiki:** \`tng-wiki init --yes --dir <path> --domain <d> --agent claude-code --name "<name>"\` (domains: ai-research, competitive-intel, publication, business-ops, learning, software-engineering, code-archaeology, blank).
 - **Adopt an existing repo/dir:** \`tng-wiki init --yes --dir . --into-existing --no-integrations\` — never overwrites existing files; merges \`.gitignore\`.
 - **Register a wiki already on disk:** \`tng-wiki register <path>\`.
 - **Make other repos aware of a wiki:** \`tng-wiki connect <repo> --wiki <slug>\` writes a git-excluded \`CLAUDE.local.md\` nudge.

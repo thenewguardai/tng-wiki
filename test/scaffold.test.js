@@ -122,6 +122,31 @@ test('scaffoldWiki adds domain-specific directories on top of the base layout', 
   });
 });
 
+test('scaffoldWiki for code-archaeology lays out the campaign shape with seeded meta + skeletons', () => {
+  inTmp((root) => {
+    scaffoldWiki(root, { domain: 'code-archaeology', agent: 'claude-code', wikiName: 'Dig' });
+
+    for (const d of ['deliverables', '_inbox', 'raw/samples', 'raw/specs', 'raw/scripts', 'templates']) {
+      assert.ok(statSync(join(root, d)).isDirectory(), `missing dir: ${d}`);
+    }
+    for (const f of ['glossary.md', 'ecosystem.md', 'project-status.md', 'open-threads.md', 'patterns.md']) {
+      assert.ok(existsSync(join(root, 'wiki/meta', f)), `missing seeded meta page: ${f}`);
+    }
+    for (const f of ['DISCOVERY.md', 'ANALYSIS.md', 'DESIGN.md', 'NOTES.md']) {
+      assert.ok(existsSync(join(root, 'templates', f)), `missing deliverable skeleton: ${f}`);
+    }
+
+    const meta = JSON.parse(readFileSync(join(root, '.tng-wiki.json'), 'utf8'));
+    assert.equal(meta.domain, 'code-archaeology');
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /Domain: Code Archaeology \/ Reverse Engineering/);
+
+    const index = readFileSync(join(root, 'wiki/index.md'), 'utf8');
+    assert.match(index, /## Deliverables Shelf/);
+  });
+});
+
 test('scaffoldWiki writes the seed source when the template provides one', () => {
   inTmp((root) => {
     scaffoldWiki(root, { domain: 'ai-research', agent: 'claude-code', wikiName: 'AI' });

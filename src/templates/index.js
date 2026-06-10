@@ -4,6 +4,7 @@ import { publicationTemplate } from './publication/template.js';
 import { businessOpsTemplate } from './business-ops/template.js';
 import { learningTemplate } from './learning/template.js';
 import { softwareEngineeringTemplate } from './software-engineering/template.js';
+import { codeArchaeologyTemplate } from './code-archaeology/template.js';
 import { blankTemplate } from './blank/template.js';
 
 const templates = {
@@ -13,6 +14,7 @@ const templates = {
   'business-ops': businessOpsTemplate,
   'learning': learningTemplate,
   'software-engineering': softwareEngineeringTemplate,
+  'code-archaeology': codeArchaeologyTemplate,
   'blank': blankTemplate,
 };
 

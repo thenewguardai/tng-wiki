@@ -126,6 +126,30 @@ test('generateAgentsMd software-engineering domain has ADR + component + inciden
   assert.match(out, /supersedes/);
 });
 
+test('generateAgentsMd code-archaeology domain teaches the verification-first story', () => {
+  const out = generateAgentsMd({ ...ctx, domain: 'code-archaeology' });
+  assert.match(out, /Domain: Code Archaeology \/ Reverse Engineering/);
+  // wiki vs deliverables split + naming/versioning rule
+  assert.match(out, /Wiki vs Deliverables/);
+  assert.match(out, /YYYYMMDD_Topic_TYPE_vX\.Y\.md/);
+  assert.match(out, /never retro-edited/);
+  // leads, never sources + provenance block
+  assert.match(out, /Leads, Never Sources/);
+  assert.match(out, /leads, never sources/i);
+  assert.match(out, /Provenance Block/);
+  assert.match(out, /Corrections vs lead/);
+  // verification-first flow + rejection log
+  assert.match(out, /Verification-First Flow/);
+  assert.match(out, /Premise-refute/);
+  assert.match(out, /\[confirmed\]/);
+  assert.match(out, /rejection log/i);
+  assert.match(out, /open-threads\.md/);
+  // zones created per-system, code-wins precedence, Layer-3B story intact
+  assert.match(out, /deliberately no per-system zones/);
+  assert.match(out, /Code wins/);
+  assert.match(out, /⚠️ DRIFT\?/);
+});
+
 test('CANONICAL_SCHEMA_FILE is AGENTS.md', () => {
   assert.equal(CANONICAL_SCHEMA_FILE, 'AGENTS.md');
 });
