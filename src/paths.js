@@ -1,22 +1,47 @@
 import { homedir } from 'os';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
 
+// Valid config paths are non-empty strings; surrounding whitespace is noise
+// from hand-edited JSON and is trimmed. Anything else (missing key, null,
+// number, blank string) returns null so callers can fail loudly instead of
+// silently resolving to the wiki root.
+function validConfigPath(p) {
+  if (typeof p !== 'string') return null;
+  const str = p.trim();
+  return str === '' ? null : str;
+}
+
+// Human-readable repr of a malformed config value for error messages / doctor
+// rows: `undefined`, `null`, `123`, `""`, `"   "`, `{...}`.
+export function describePathValue(p) {
+  return p === undefined ? 'undefined' : JSON.stringify(p);
+}
+
 // Shared resolver for paths read out of `.tng-wiki.json` (issue #16).
 // A leading `~/` (or bare `~`) expands to the user's home directory — without
 // this, `resolve(wikiRoot, '~/x')` treats `~` as a literal directory name and
 // the failure surfaces as a confusing missing-file error. Everything else
 // resolves against the wiki root, so relative paths stay fully portable.
 // (`~user/x` is NOT expanded — that's shell-only syntax we don't emulate.)
+// Throws on non-string / blank input: coercing a missing path to '' would
+// silently resolve to the wiki root and make grounding/doctor operate on the
+// wiki itself instead of flagging the malformed config.
 export function resolveConfigPath(wikiRoot, p) {
-  const str = String(p ?? '');
+  const str = validConfigPath(p);
+  if (str === null) {
+    throw new TypeError(`Invalid config path: expected a non-empty string, got ${describePathValue(p)}`);
+  }
   if (str === '~') return homedir();
   if (str.startsWith('~/') || str.startsWith('~\\')) return join(homedir(), str.slice(2));
   return resolve(wikiRoot, str);
 }
 
-// Classify how a config path is written: 'relative' | 'home' (~-prefixed) | 'absolute'.
+// Classify how a config path is written: 'relative' | 'home' (~-prefixed) |
+// 'absolute' | 'invalid' (non-string or blank — malformed config must not pass
+// as 'relative', or doctor/init warnings would mask it).
 export function pathForm(p) {
-  const str = String(p ?? '');
+  const str = validConfigPath(p);
+  if (str === null) return 'invalid';
   if (str === '~' || str.startsWith('~/') || str.startsWith('~\\')) return 'home';
   return isAbsolute(str) ? 'absolute' : 'relative';
 }

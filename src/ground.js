@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { join, relative, resolve } from 'path';
 import { matchesAnyGlob } from './glob.js';
-import { resolveConfigPath } from './paths.js';
+import { resolveConfigPath, pathForm, describePathValue } from './paths.js';
 import { refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate } from './git-read.js';
 
 // Lines in a blob, ignoring a single trailing newline so a file with N lines
@@ -141,6 +141,20 @@ export function checkGrounding(wikiPath, { page, atRef = false } = {}) {
     : allFiles.filter((f) => isGroundable(relative(wikiPath, f)));
 
   const codeAuthorities = loadCodeAuthorities(wikiPath);
+
+  // Fail loudly on malformed config before any per-page work: a missing or
+  // non-string authority path would otherwise resolve against the wiki root
+  // and silently ground citations against the wiki itself. The CLI's top-level
+  // catch renders this as a one-line error, not a stack trace.
+  for (const a of codeAuthorities) {
+    if (pathForm(a.path) === 'invalid') {
+      throw new Error(
+        `code authority "${a.name ?? '(unnamed)'}" has a malformed path in .tng-wiki.json `
+        + `(${describePathValue(a.path)}) — expected a non-empty string. Fix it and re-run.`,
+      );
+    }
+  }
+
   const authorityByName = new Map(codeAuthorities.map((a) => [a.name, a]));
 
   // Under --at-ref, resolve each ref'd authority's ref ONCE (the repo+ref pair is

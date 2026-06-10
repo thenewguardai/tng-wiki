@@ -142,6 +142,33 @@ test('runChecks resolves ~ authority paths against the home directory', () => {
   }
 });
 
+test('runChecks renders a malformed-path authority as a required failure and keeps other rows', () => {
+  const wiki = makeWikiDir([
+    { name: 'broken' },                          // path missing entirely
+    { name: 'blank', path: '   ' },              // whitespace-only path
+    { name: 'sibling', path: 'authority-src' },  // valid neighbor must still render
+  ]);
+  try {
+    mkdirSync(join(wiki, 'authority-src'));
+    const checks = runChecks(wiki, fakeDeps());
+
+    const broken = checkByName(checks, 'Code authority "broken"');
+    assert.equal(broken.ok, false);
+    assert.ok(!broken.optional); // malformed config is a real failure, not a soft warning
+    assert.match(broken.detail, /malformed path in \.tng-wiki\.json \(undefined\)/);
+
+    const blank = checkByName(checks, 'Code authority "blank"');
+    assert.equal(blank.ok, false);
+    assert.match(blank.detail, /malformed path/);
+
+    const sibling = checkByName(checks, 'Code authority "sibling"');
+    assert.equal(sibling.ok, true);
+    assert.match(sibling.detail, /relative path, exists/);
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+  }
+});
+
 test('runChecks emits no authority rows without .tng-wiki.json or code_authorities', () => {
   const wiki = makeWikiDir(null);
   try {

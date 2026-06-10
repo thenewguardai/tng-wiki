@@ -7,7 +7,7 @@ import { detectObsidian as realDetectObsidian } from './integrations/obsidian.js
 import { loadRegistry, listWikis } from './registry.js';
 import { skillFile } from './skill.js';
 import { loadCodeAuthorities } from './ground.js';
-import { resolveConfigPath, pathForm } from './paths.js';
+import { resolveConfigPath, pathForm, describePathValue } from './paths.js';
 
 function realCommandExists(cmd) {
   try {
@@ -100,6 +100,17 @@ export function runChecks(root, deps = {}) {
     const FORM_LABEL = { relative: 'relative', home: '~', absolute: 'absolute' };
     for (const a of loadCodeAuthorities(root)) {
       const form = pathForm(a.path);
+      // Malformed path (missing / non-string / blank): a required failure with
+      // its own row — resolving it would throw, and config this broken should
+      // not hide behind an optional warning. Other rows keep rendering.
+      if (form === 'invalid') {
+        checks.push({
+          name: `Code authority "${a.name ?? '(unnamed)'}"`,
+          ok: false,
+          detail: `malformed path in .tng-wiki.json (${describePathValue(a.path)}) — expected a non-empty string`,
+        });
+        continue;
+      }
       const exists = existsSync(resolveConfigPath(root, a.path));
       const travel = form === 'absolute' ? " ⚠ won't travel across machines" : '';
       checks.push({

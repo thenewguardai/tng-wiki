@@ -240,6 +240,22 @@ function setCodeAuthorities(wikiRoot, authorities) {
   writeFileSync(metaPath, JSON.stringify(meta, null, 2));
 }
 
+test('checkGrounding throws a clear error when a code authority path is malformed', () => {
+  const dir = makeWiki();
+  try {
+    setCodeAuthorities(dir, [{ name: 'broken' }]); // path missing entirely
+    assert.throws(
+      () => checkGrounding(dir),
+      /code authority "broken" has a malformed path in \.tng-wiki\.json \(undefined\)/,
+    );
+
+    setCodeAuthorities(dir, [{ name: 'blank', path: '   ' }]); // whitespace-only
+    assert.throws(() => checkGrounding(dir), /malformed path/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkGrounding flags unknown_code_authority when frontmatter names an authority not in .tng-wiki.json', () => {
   const dir = makeWiki();
   try {

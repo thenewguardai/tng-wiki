@@ -48,6 +48,28 @@ test('resolveConfigPath uses the real homedir() by default', () => {
   assert.equal(resolveConfigPath('/w', '~/x'), join(homedir(), 'x'));
 });
 
+test('resolveConfigPath throws a TypeError on missing / non-string config values', () => {
+  for (const bad of [undefined, null, 42, true, {}, ['x']]) {
+    assert.throws(() => resolveConfigPath('/w', bad), TypeError);
+  }
+  // the message names the offending value so a malformed .tng-wiki.json is debuggable
+  assert.throws(() => resolveConfigPath('/w', undefined), /expected a non-empty string, got undefined/);
+  assert.throws(() => resolveConfigPath('/w', null), /got null/);
+  assert.throws(() => resolveConfigPath('/w', 42), /got 42/);
+});
+
+test('resolveConfigPath throws on empty and whitespace-only paths (would resolve to the wiki root)', () => {
+  assert.throws(() => resolveConfigPath('/w', ''), /expected a non-empty string, got ""/);
+  assert.throws(() => resolveConfigPath('/w', '   '), TypeError);
+});
+
+test('resolveConfigPath trims surrounding whitespace before resolving', () => {
+  assert.equal(resolveConfigPath('/w/wiki', '  ../legacy-app  '), resolve('/w/wiki', '../legacy-app'));
+  withFakeHome(join(sep, 'fake', 'home'), () => {
+    assert.equal(resolveConfigPath('/w', ' ~/x '), join(sep, 'fake', 'home', 'x'));
+  });
+});
+
 // --- pathForm ---
 
 test('pathForm classifies relative / home / absolute paths', () => {
@@ -57,6 +79,18 @@ test('pathForm classifies relative / home / absolute paths', () => {
   assert.equal(pathForm('~/code/app'), 'home');
   assert.equal(pathForm('/home/u/code'), 'absolute');
   assert.equal(pathForm('~bob/x'), 'relative'); // not tilde-expansion syntax we support
+});
+
+test('pathForm classifies malformed config values as invalid, never relative', () => {
+  for (const bad of [undefined, null, 42, true, {}, ['x'], '', '   ']) {
+    assert.equal(pathForm(bad), 'invalid');
+  }
+});
+
+test('pathForm trims surrounding whitespace before classifying', () => {
+  assert.equal(pathForm(' ~/code '), 'home');
+  assert.equal(pathForm(' src/app '), 'relative');
+  assert.equal(pathForm(` ${resolve('/abs')} `), 'absolute');
 });
 
 // --- suggestRelative ---
