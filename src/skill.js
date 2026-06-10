@@ -47,7 +47,7 @@ If the user wants a *new* wiki, or to adopt the current project into one, scaffo
 
 - **\`tng-wiki query [--wiki <slug>]\`** — prints \`wiki/index.md\`. Always start here to see what pages exist before searching or reading.
 - **\`tng-wiki search <term> [--wiki <slug>] [--regex] [--include-raw]\`** — case-insensitive search. By default searches compiled \`wiki/\` only. Pass \`--include-raw\` to also search archival \`raw/\` sources — each hit is tagged \`[wiki]\` or \`[raw]\`.
-- **\`tng-wiki read <path> [--wiki <slug>]\`** — fetches a specific page. Path is relative to \`wiki/\` (e.g. \`entities/openai.md\`).
+- **\`tng-wiki read <page> [--wiki <slug>]\`** — fetches a specific page. Accepts a path relative to \`wiki/\` (e.g. \`entities/openai.md\`; \`.md\` optional, a leading \`wiki/\` is tolerated), a \`[[wikilink]]\`, or a unique page stem (e.g. \`openai\`). Ambiguous stems error with the candidate list.
 - **\`tng-wiki sources [--uncompiled] [--wiki <slug>]\`** — lists \`raw/\` files. Use \`--uncompiled\` to find sources the wiki hasn't ingested yet.
 - **\`tng-wiki stale [--wiki <slug>]\`** — lint: pages with \`⚠️ STALE?\` markers.
 - **\`tng-wiki orphans [--wiki <slug>]\`** — lint: pages with no inbound \`[[wikilinks]]\`.

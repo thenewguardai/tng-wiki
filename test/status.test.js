@@ -2,8 +2,9 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
-import { computeStatus } from '../src/status.js';
+import { join, resolve } from 'path';
+import { computeStatus, resolveStatusRoot } from '../src/status.js';
+import { saveRegistry, emptyRegistry, registerWiki } from '../src/registry.js';
 
 let dir;
 
@@ -80,5 +81,89 @@ test('computeStatus flags missing schema and missing index', () => {
     assert.equal(s.wikiPages, 0);
   } finally {
     rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+// --- resolveStatusRoot (registry-aware resolution, same semantics as query) ---
+
+test('resolveStatusRoot resolves --wiki <slug> through the registry from any cwd', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
+  try {
+    const reg = registerWiki(emptyRegistry(), { name: 'Demo', path: '/tmp/demo-wiki', domain: 'blank' });
+    saveRegistry(reg, home);
+    const { root, slug } = resolveStatusRoot(['--wiki', 'demo'], home);
+    assert.equal(root, resolve('/tmp/demo-wiki'));
+    assert.equal(slug, 'demo');
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('resolveStatusRoot with no args uses the registered default', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
+  try {
+    const reg = registerWiki(emptyRegistry(), { name: 'Demo', path: '/tmp/demo-wiki', domain: 'blank' });
+    saveRegistry(reg, home);
+    const { root, slug } = resolveStatusRoot([], home);
+    assert.equal(root, resolve('/tmp/demo-wiki'));
+    assert.equal(slug, 'demo');
+    // flags alone (e.g. --json) still resolve the default
+    assert.equal(resolveStatusRoot(['--json'], home).slug, 'demo');
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('resolveStatusRoot explicit path bypasses the registry', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
+  try {
+    saveRegistry(emptyRegistry(), home); // no registered wikis at all
+    const { root, slug } = resolveStatusRoot(['/tmp/explicit-wiki'], home);
+    assert.equal(root, resolve('/tmp/explicit-wiki'));
+    assert.equal(slug, null);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('resolveStatusRoot matches query semantics: unknown slug and missing default throw', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
+  try {
+    saveRegistry(emptyRegistry(), home);
+    assert.throws(() => resolveStatusRoot(['--wiki', 'nope'], home), /No wiki registered/);
+    assert.throws(() => resolveStatusRoot([], home), /No default wiki/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('resolveStatusRoot rejects an explicit path combined with --wiki', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
+  try {
+    const reg = registerWiki(emptyRegistry(), { name: 'Demo', path: '/tmp/demo-wiki', domain: 'blank' });
+    saveRegistry(reg, home);
+    assert.throws(
+      () => resolveStatusRoot(['/tmp/explicit-wiki', '--wiki', 'demo'], home),
+      /either a path .* or --wiki demo, not both/,
+    );
+    // flag-first ordering is rejected the same way
+    assert.throws(
+      () => resolveStatusRoot(['--wiki', 'demo', '/tmp/explicit-wiki'], home),
+      /not both/,
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('resolveStatusRoot does not mistake the --wiki value for an explicit path', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
+  try {
+    const reg = registerWiki(emptyRegistry(), { name: 'Demo', path: '/tmp/demo-wiki', domain: 'blank' });
+    saveRegistry(reg, home);
+    const { root } = resolveStatusRoot(['--wiki', 'demo', '--json'], home);
+    assert.equal(root, resolve('/tmp/demo-wiki'));
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });

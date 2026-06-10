@@ -7,7 +7,7 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { scaffoldWiki } from '../src/init.js';
 import {
-  resolveWiki, queryIndex, readPage, searchWiki,
+  resolveWiki, queryIndex, readPage, resolvePagePath, pageStemMap, searchWiki,
   listSources, listStalePages, listOrphanPages, listRejectionNotes, roundsReport,
 } from '../src/verbs.js';
 import { saveRegistry, emptyRegistry, registerWiki } from '../src/registry.js';
@@ -77,6 +77,125 @@ test('readPage returns a specific page; rejects ../ escape', () => {
     assert.match(out, /^# Acme/);
     assert.throws(() => readPage(dir, '../etc/passwd'), /escapes the wiki directory/);
     assert.throws(() => readPage(dir, 'missing.md'), /Page not found/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readPage accepts every normalized path form and resolves to the same page', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'wiki/entities/acme.md', '# Acme\nbody');
+    const forms = [
+      'entities/acme.md',     // exact (fast path)
+      'entities/acme',        // .md appended
+      'wiki/entities/acme.md',// leading wiki/ stripped
+      'wiki/entities/acme',   // leading wiki/ stripped + .md appended
+      'acme',                 // unique stem
+      '[[acme]]',             // wikilink wrapping stripped
+      '[[Acme]]',             // stem match is case-insensitive
+      '[[acme|Acme Corp]]',   // wikilink alias stripped
+      '[[acme#History]]',     // wikilink anchor stripped
+    ];
+    for (const form of forms) {
+      assert.match(readPage(dir, form), /^# Acme/, `form failed: ${form}`);
+      assert.equal(resolvePagePath(dir, form), 'entities/acme.md', `form normalized wrong: ${form}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolvePagePath: Windows-style \\ separators normalize like /', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'wiki/entities/acme.md', '# Acme\nbody');
+    const forms = [
+      'entities\\acme.md',      // exact path, backslash separators
+      'entities\\acme',         // + .md appended
+      'wiki\\entities\\acme.md',// leading wiki\ stripped
+      'wiki\\entities\\acme',   // leading wiki\ stripped + .md appended
+    ];
+    for (const form of forms) {
+      assert.equal(resolvePagePath(dir, form), 'entities/acme.md', `form normalized wrong: ${form}`);
+      assert.match(readPage(dir, form), /^# Acme/, `form failed: ${form}`);
+    }
+    // a backslash-pathed input is pathed, not bare — no stem fallback to a
+    // same-named page in a different directory
+    assert.throws(
+      () => resolvePagePath(dir, 'zone-x\\acme'),
+      /Page not found: zone-x\\acme \(tried: zone-x\/acme, zone-x\/acme\.md\)$/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readPage escape guard blocks ..\\ escapes after separator normalization', () => {
+  const dir = makeWiki();
+  try {
+    for (const form of ['..\\..\\etc\\passwd', 'wiki\\..\\..\\etc\\passwd', '..\\etc/passwd', '[[..\\..\\etc\\passwd]]']) {
+      assert.throws(() => readPage(dir, form), /escapes the wiki directory/, `form not blocked: ${form}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolvePagePath: ambiguous stem errors with the candidate list', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'wiki/zone-a/dup.md', '# A');
+    writePage(dir, 'wiki/zone-b/dup.md', '# B');
+    assert.throws(
+      () => readPage(dir, 'dup'),
+      (err) => /Ambiguous page "dup"/.test(err.message)
+        && err.message.includes('wiki/zone-a/dup.md')
+        && err.message.includes('wiki/zone-b/dup.md'),
+    );
+    // a fuller path still disambiguates
+    assert.match(readPage(dir, 'zone-a/dup'), /^# A/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolvePagePath: zero matches errors with the forms tried', () => {
+  const dir = makeWiki();
+  try {
+    // pathed input: lists every normalized form tried, no stem fallback
+    assert.throws(
+      () => readPage(dir, 'wiki/zone/nope'),
+      /Page not found: wiki\/zone\/nope \(tried: wiki\/zone\/nope, wiki\/zone\/nope\.md, zone\/nope, zone\/nope\.md\)/,
+    );
+    // bare input: also reports that no page stem matched
+    assert.throws(
+      () => readPage(dir, 'nope'),
+      /Page not found: nope \(tried: nope, nope\.md; no page stem matches "nope"\)/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readPage escape guard blocks ../ in every normalized form', () => {
+  const dir = makeWiki();
+  try {
+    for (const form of ['../../etc/passwd', 'wiki/../../etc/passwd', '[[../../etc/passwd]]', '../etc/passwd']) {
+      assert.throws(() => readPage(dir, form), /escapes the wiki directory/, `form not blocked: ${form}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('pageStemMap maps lowercase stems to every page sharing them', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'wiki/zone-a/Dup.md', '# A');
+    writePage(dir, 'wiki/zone-b/dup.md', '# B');
+    const map = pageStemMap(dir);
+    assert.deepEqual(map.get('dup').sort(), ['wiki/zone-a/Dup.md', 'wiki/zone-b/dup.md']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

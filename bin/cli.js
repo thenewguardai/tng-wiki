@@ -55,7 +55,7 @@ async function main() {
       break;
     }
     case 'status': {
-      console.log(BANNER);
+      if (!wantsJson) console.log(BANNER);
       const { runStatus } = await import('../src/status.js');
       await runStatus(args);
       break;

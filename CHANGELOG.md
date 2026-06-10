@@ -6,6 +6,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+### Added
+- **`read` accepts every natural page reference**, tried in order: the exact path relative to `wiki/` (fast path), the same with `.md` appended, the input minus a leading `wiki/` prefix (both forms), and finally a unique page-stem match (`[[wikilink]]` wrapping, aliases, and anchors stripped; case-insensitive). Zero matches error with the forms tried; ambiguous stems error with the candidate list. The `../` escape guard applies to every normalized form. The MCP `read` tool inherits the same normalization. (#20)
+- **`status` is registry-aware** — it resolves the registered default like `query` does, accepts `--wiki <slug>` from any cwd, keeps the explicit-path argument as a registry bypass, and gained `--json` for structured output. (#20)
+
+### Changed
+- Bare `tng-wiki status` now reports the registered **default wiki** rather than the current directory; pass a path (`tng-wiki status .`) for the old behavior. (#20)
+
 ## [0.5.0] - 2026-06-05
 
 ### Added

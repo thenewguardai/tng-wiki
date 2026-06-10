@@ -28,6 +28,22 @@ test('COMMANDS names are unique', () => {
   assert.equal(new Set(names).size, names.length);
 });
 
+// Registry-aware parity: every wiki-resolving verb (status included) must
+// document --wiki and --json so the help surface matches the runtime behavior.
+test('status documents the registry flags (--wiki, --json) like the other verbs', () => {
+  const c = commandJson('status');
+  assert.deepEqual(c.flags.map((f) => f.name), ['--wiki', '--json']);
+  assert.match(c.usage, /--wiki <slug>/);
+  assert.match(c.usage, /--json/);
+});
+
+test('read documents the normalized page forms', () => {
+  const c = commandJson('read');
+  assert.deepEqual(c.flags.map((f) => f.name), ['--wiki', '--json']);
+  assert.match(c.args[0].desc, /wikilink/i);
+  assert.match(c.args[0].desc, /stem/i);
+});
+
 // Drift guard: the help spec and the CLI dispatch table must describe the same
 // commands, so `help --json` can never go stale relative to what actually runs.
 test('help spec and bin/cli.js dispatch stay in parity', () => {

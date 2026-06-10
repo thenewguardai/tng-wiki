@@ -68,10 +68,11 @@ export const COMMANDS = [
     examples: ['tng-wiki query', 'tng-wiki query --wiki research'],
   },
   {
-    name: 'read', group: 'Wiki access', summary: 'Print a wiki page by path (relative to wiki/)',
-    usage: 'tng-wiki read <path> [--wiki <slug>] [--json]',
-    args: [{ name: 'path', required: true, desc: 'page path under wiki/, e.g. entities/openai.md' }],
-    flags: [WIKI, JSON_FLAG], examples: ['tng-wiki read entities/openai.md'],
+    name: 'read', group: 'Wiki access', summary: 'Print a wiki page by path, [[wikilink]], or unique page stem',
+    usage: 'tng-wiki read <page> [--wiki <slug>] [--json]',
+    args: [{ name: 'page', required: true, desc: 'path under wiki/ (`.md` optional, leading `wiki/` tolerated), a [[wikilink]], or a unique page stem' }],
+    flags: [WIKI, JSON_FLAG],
+    examples: ['tng-wiki read entities/openai.md', 'tng-wiki read entities/openai', 'tng-wiki read openai', "tng-wiki read '[[openai]]'"],
   },
   {
     name: 'search', group: 'Wiki access', summary: 'Case-insensitive search across wiki pages',
@@ -146,7 +147,10 @@ export const COMMANDS = [
   },
   {
     name: 'status', group: 'Diagnostics', summary: 'Basic wiki health snapshot',
-    usage: 'tng-wiki status [path]', args: [{ name: 'path', required: false, desc: 'wiki directory (default: current)' }], flags: [], examples: ['tng-wiki status'],
+    usage: 'tng-wiki status [path] [--wiki <slug>] [--json]',
+    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (bypasses the registry — mutually exclusive with --wiki; default: the registered default wiki)' }],
+    flags: [WIKI, JSON_FLAG],
+    examples: ['tng-wiki status', 'tng-wiki status --wiki research', 'tng-wiki status --json'],
   },
   {
     name: 'doctor', group: 'Diagnostics',
