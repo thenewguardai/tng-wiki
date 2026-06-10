@@ -7,7 +7,7 @@
 // uses. Errors degrade per-cite (same finding names ground uses), never per-run.
 
 import { readFileSync, existsSync } from 'fs';
-import { join, resolve, sep } from 'path';
+import { resolve, sep } from 'path';
 import pc from 'picocolors';
 import { resolveWiki } from './verbs.js';
 import { splitFrontmatter, extractCitations, loadCodeAuthorities } from './ground.js';
@@ -63,6 +63,14 @@ function readFileSafe(absPath) {
   }
 }
 
+// `..` escape guard (cf. verbs.js): a cite path must resolve strictly inside
+// its root. Returns the absolute path, or null when the cite escapes.
+function resolveWithin(root, relPath) {
+  const rootAbs = resolve(root);
+  const target = resolve(rootAbs, relPath);
+  return target.startsWith(rootAbs + sep) ? target : null;
+}
+
 // Page path resolution — same forms `read` accepts (relative to wiki/), plus a
 // `wiki/`-prefixed form so it composes with ground's --page output.
 function resolvePagePath(wikiPath, page) {
@@ -79,10 +87,11 @@ function resolvePagePath(wikiPath, page) {
 // ---- core (pure data; rendering lives in runCite) ----
 
 // Returns [{ index, cite, kind, authority, file, range, claim, claim_line,
-// lines, truncated, error }] — the documented `--json` shape. `error` is null
-// or a ground finding name (missing_raw, missing_code_file,
-// unknown_code_authority, code_ref_unresolvable, code_line_out_of_range);
-// errors degrade per-cite, never abort the run.
+// lines, truncated, error }] — the documented `--json` shape. `error` is null,
+// a ground finding name (missing_raw, missing_code_file,
+// unknown_code_authority, code_ref_unresolvable, code_line_out_of_range), or
+// path_escapes_root for a `..` cite that resolves outside its root; errors
+// degrade per-cite, never abort the run.
 export function citeShow(wikiPath, page, { atRef = false, context = DEFAULT_CONTEXT, only = null } = {}) {
   const abs = resolvePagePath(wikiPath, page);
   const { body, bodyStartLine } = splitFrontmatter(readFileSync(abs, 'utf8'));
@@ -142,7 +151,9 @@ export function citeShow(wikiPath, page, { atRef = false, context = DEFAULT_CONT
 
 function resolveCitedLines(wikiPath, c, authorityByName, refResolvable, { atRef, context }) {
   if (c.kind === 'raw') {
-    const content = readFileSafe(join(wikiPath, c.path));
+    const rawAbs = resolveWithin(wikiPath, c.path);
+    if (rawAbs == null) return { error: 'path_escapes_root' };
+    const content = readFileSafe(rawAbs);
     if (content == null) return { error: 'missing_raw' };
     const all = linesOf(content);
     return { lines: all.slice(0, context), truncated: all.length > context };
@@ -154,6 +165,10 @@ function resolveCitedLines(wikiPath, c, authorityByName, refResolvable, { atRef,
   if (!authority) return { error: 'unknown_code_authority' };
 
   const repoAbs = resolve(wikiPath, authority.path);
+  // guard before either read route — `git show <ref>:<path>` would follow `..` too
+  const fileAbs = resolveWithin(repoAbs, c.file);
+  if (fileAbs == null) return { error: 'path_escapes_root' };
+
   const useRef = atRef && Boolean(authority.ref);
   if (useRef && refResolvable.get(authority.name) === false) {
     return { error: 'code_ref_unresolvable' };
@@ -161,12 +176,15 @@ function resolveCitedLines(wikiPath, c, authorityByName, refResolvable, { atRef,
 
   const content = useRef
     ? readFileAtRef(repoAbs, authority.ref, c.file)
-    : readFileSafe(resolve(repoAbs, c.file));
+    : readFileSafe(fileAbs);
   if (content == null) return { error: 'missing_code_file' };
 
   const all = linesOf(content);
   if (!c.range) return { lines: all.slice(0, context), truncated: all.length > context };
-  if (c.range.start > all.length) return { error: 'code_line_out_of_range' };
+  // mirror checkGrounding's bounds check — report, don't silently truncate
+  if (c.range.start > c.range.end || c.range.end > all.length) {
+    return { error: 'code_line_out_of_range' };
+  }
   return { lines: all.slice(c.range.start - 1, c.range.end), truncated: false };
 }
 
@@ -177,7 +195,8 @@ const ERROR_LABEL = {
   missing_code_file: 'cited code file does not exist in the authority tree',
   unknown_code_authority: '`code:<name>` authority not registered in `.tng-wiki.json`',
   code_ref_unresolvable: 'authority `ref` is not a resolvable git ref',
-  code_line_out_of_range: 'cited line range starts past the end of the file',
+  code_line_out_of_range: 'cited line range is inverted or extends past the end of the file',
+  path_escapes_root: 'cite path resolves outside its root via `..` — refusing to read it',
 };
 
 const VALUE_FLAGS = new Set(['--wiki', '--cite', '--context']);

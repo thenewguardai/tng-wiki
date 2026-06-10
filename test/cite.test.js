@@ -239,6 +239,83 @@ test('citeShow degrades per-cite: missing targets carry ground finding names, go
   }
 });
 
+test('citeShow flags code_line_out_of_range like checkGrounding: end past EOF and inverted ranges, never silent truncation', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'authority-src/src/small.ts', 'line 1\nline 2\nline 3\nline 4\nline 5\n');
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src' }]);
+    writeFile(dir, 'wiki/entities/range.md', [
+      '---',
+      'sources:',
+      '  - code:app',
+      '---',
+      'End past EOF.[^code:app/src/small.ts#L2-L999]',
+      'Inverted range.[^code:app/src/small.ts#L4-L2]',
+      'Exactly at EOF.[^code:app/src/small.ts#L3-L5]',
+    ].join('\n'));
+
+    const entries = citeShow(dir, 'entities/range.md');
+    // valid start but end past EOF: per-cite error, no truncated slice
+    assert.equal(entries[0].error, 'code_line_out_of_range');
+    assert.deepEqual(entries[0].lines, []);
+    assert.equal(entries[0].truncated, false);
+    // start > end is out of range too (matches checkGrounding)
+    assert.equal(entries[1].error, 'code_line_out_of_range');
+    // a range ending exactly at EOF is fine
+    assert.equal(entries[2].error, null);
+    assert.deepEqual(entries[2].lines, ['line 3', 'line 4', 'line 5']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('citeShow refuses raw cites that escape the wiki root via ..', () => {
+  const dir = makeWiki();
+  try {
+    // a real file just outside the wiki root that the cite tries to reach
+    writeFileSync(join(dir, '..', 'cite-escape-secret.txt'), 'top secret\n');
+    writeFile(dir, 'wiki/entities/esc.md', [
+      '---',
+      'title: Esc',
+      '---',
+      'Sneaky claim.[^raw/../../cite-escape-secret.txt]',
+    ].join('\n'));
+
+    const [e] = citeShow(dir, 'entities/esc.md');
+    assert.equal(e.error, 'path_escapes_root');
+    assert.deepEqual(e.lines, []);
+  } finally {
+    rmSync(join(dir, '..', 'cite-escape-secret.txt'), { force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('citeShow refuses code cites that escape the authority root via .. (working tree and --at-ref)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'authority-src/src/a.ts', 'x\n');
+    writeFile(dir, 'outside-authority/secrets.txt', 'hunter2\n'); // inside wiki, outside the authority
+    setCodeAuthorities(dir, [{ name: 'app', path: 'authority-src', ref: 'v1' }]);
+    writeFile(dir, 'wiki/entities/esc.md', [
+      '---',
+      'sources:',
+      '  - code:app',
+      '---',
+      'Sneaky claim.[^code:app/../outside-authority/secrets.txt]',
+    ].join('\n'));
+
+    const [tree] = citeShow(dir, 'entities/esc.md');
+    assert.equal(tree.error, 'path_escapes_root');
+    assert.deepEqual(tree.lines, []);
+
+    // the guard fires before the ref route too
+    const [atRef] = citeShow(dir, 'entities/esc.md', { atRef: true });
+    assert.equal(atRef.error, 'path_escapes_root');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('citeShow handles a whole-authority cite (no file) without lines or error', () => {
   const dir = makeWiki();
   try {
