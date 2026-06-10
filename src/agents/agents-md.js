@@ -638,7 +638,7 @@ Two output surfaces with opposite lifecycles. Never conflate them:
 
 ### Zones
 
-Zone subdirectories under \`wiki/\` are created per system or area *as the territory becomes known* — the scaffold deliberately ships none. When a system earns its first pages, create \`wiki/<zone>/\` and register the zone in \`wiki/meta/ecosystem.md\`. Don't pre-build structure for systems you haven't verified exist.
+Zone subdirectories under \`wiki/\` are created per system or area *as the territory becomes known* — the scaffold ships only the standard \`wiki/entities/\` and \`wiki/meta/\`, deliberately no per-system zones. When a system earns its first pages, create \`wiki/<zone>/\` and register the zone in \`wiki/meta/ecosystem.md\`. Don't pre-build structure for systems you haven't verified exist.
 
 ### Leads, Never Sources
 

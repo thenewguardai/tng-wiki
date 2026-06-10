@@ -125,7 +125,7 @@ test('generateAgentsMd code-archaeology domain teaches the verification-first st
   assert.match(out, /rejection log/i);
   assert.match(out, /open-threads\.md/);
   // zones created per-system, code-wins precedence, Layer-3B story intact
-  assert.match(out, /scaffold deliberately ships none/);
+  assert.match(out, /deliberately no per-system zones/);
   assert.match(out, /Code wins/);
   assert.match(out, /⚠️ DRIFT\?/);
 });
