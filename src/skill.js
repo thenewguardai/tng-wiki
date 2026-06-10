@@ -1,6 +1,7 @@
-import { writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync, rmSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
+import { installedVersion } from './version.js';
 
 export const SKILL_NAME = 'tng-wiki';
 
@@ -123,7 +124,23 @@ Each wiki's \`AGENTS.md\` defines rounds precisely — \`cd\` into the wiki dir 
 - **Never modify files directly via the filesystem.** The wiki is maintained inside a specific workflow (ingest / lint / ground) defined by each wiki's \`AGENTS.md\`. If the user asks you to update the wiki, \`cd\` into the wiki directory (from \`tng-wiki list\`) and follow the \`AGENTS.md\` instructions there.
 - **Don't confuse \`raw/\` with \`wiki/\`.** \`tng-wiki search\` only searches \`wiki/\` (the compiled knowledge). Uncompiled sources live in \`raw/\` — use \`tng-wiki sources\` to enumerate them.
 - **Prefer CLI over MCP for this skill.** If the user has both the \`tng-wiki\` CLI and the \`tng-wiki-mcp\` server configured, use the CLI — the MCP form exists only for shell-less environments.
+
+<!-- tng-wiki-skill-version: ${installedVersion()} — doctor compares this file against the installed CLI; refresh with: tng-wiki install-skill -->
 `;
+
+// Freshness check for doctor: is the installed SKILL.md byte-identical to what
+// this version of the CLI would generate? The version stamp embedded in
+// SKILL_CONTENT guarantees a mismatch after any version bump until
+// `tng-wiki install-skill` is re-run.
+export function skillStatus(claudeHome) {
+  const file = skillFile(claudeHome);
+  if (!existsSync(file)) return { installed: false, fresh: false };
+  try {
+    return { installed: true, fresh: readFileSync(file, 'utf8') === SKILL_CONTENT };
+  } catch {
+    return { installed: true, fresh: false };
+  }
+}
 
 export function installSkill(claudeHome, { force = false } = {}) {
   const dir = skillDir(claudeHome);
