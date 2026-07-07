@@ -57,6 +57,7 @@ test('computeStatus counts markdown files, ops, stale markers, and uncompiled so
   assert.equal(s.isWiki, true);
   assert.equal(s.rawFiles, 3);
   assert.equal(s.wikiPages, 5); // index.md + log.md + 3 entities
+  assert.equal(s.groundablePages, 3); // ground exemptions drop index.md + log.md
   assert.equal(s.outputFiles, 1);
   assert.equal(s.opCount, 3);
   assert.deepEqual(s.lastOp, { date: '2026-04-03T10:00:00', desc: 'query | Answered a question' });

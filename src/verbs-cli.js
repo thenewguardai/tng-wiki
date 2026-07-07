@@ -234,7 +234,7 @@ export async function runRounds(args) {
   const wiki = wikiFromArgs(args);
   const r = roundsReport(wiki.path);
   maybeJson(args, { wiki: wiki.slug, ...r }, () => {
-    process.stdout.write(`${pc.bold('Wiki rounds')} ${pc.dim(`— ${wiki.slug} · ${r.scanned} pages`)}\n\n`);
+    process.stdout.write(`${pc.bold('Wiki rounds')} ${pc.dim(`— ${wiki.slug} · ${r.scanned} groundable pages`)}\n\n`);
     const row = (label, n, hint) => {
       const count = n > 0 ? pc.yellow(String(n).padStart(3)) : pc.green('  0');
       process.stdout.write(`  ${count}  ${label}${n > 0 ? pc.dim(`  ${hint}`) : ''}\n`);

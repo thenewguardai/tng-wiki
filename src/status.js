@@ -1,8 +1,10 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { existsSync, readFileSync, readdirSync } from 'fs';
-import { join, resolve } from 'path';
+import { join, relative, resolve } from 'path';
 import { resolveWiki, listInboxItems, ritualReport } from './verbs.js';
+import { walkMd } from './paths.js';
+import { isGroundable } from './ground.js';
 
 export function computeStatus(root) {
   const hasWiki = existsSync(join(root, 'wiki'));
@@ -17,6 +19,13 @@ export function computeStatus(root) {
 
   const rawFiles = countMdFiles(join(root, 'raw'));
   const wikiPages = countMdFiles(join(root, 'wiki'));
+  // The number rounds/ground scan: wikiPages minus ground's structural
+  // exemptions (index.md, log.md, _-prefixed templates, wiki/meta/*). Reported
+  // alongside the raw file count so the two surfaces stop looking contradictory
+  // (status said 32 while rounds said 25, with no explanation of either).
+  const groundablePages = walkMd(join(root, 'wiki'))
+    .filter((f) => isGroundable(relative(root, f)))
+    .length;
   const outputFiles = existsSync(join(root, 'output')) ? countMdFiles(join(root, 'output')) : 0;
 
   const hasIndex = existsSync(join(root, 'wiki', 'index.md'));
@@ -46,6 +55,7 @@ export function computeStatus(root) {
     root,
     rawFiles,
     wikiPages,
+    groundablePages,
     outputFiles,
     opCount,
     lastOp,
@@ -112,7 +122,7 @@ export async function runStatus(args) {
   console.log(`  ${pc.bold('Wiki Health')}  ${pc.dim(slug ? `${slug} · ${status.root}` : status.root)}`);
   console.log('');
   console.log(`  ${pc.cyan('Sources (raw/):')}      ${status.rawFiles} markdown files`);
-  console.log(`  ${pc.cyan('Wiki pages:')}          ${status.wikiPages} pages`);
+  console.log(`  ${pc.cyan('Wiki pages:')}          ${status.wikiPages} ${pc.dim(`(${status.groundablePages} groundable, the count rounds/ground scan)`)}`);
   console.log(`  ${pc.cyan('Outputs:')}             ${status.outputFiles} files`);
   console.log(`  ${pc.cyan('Operations logged:')}   ${status.opCount}`);
   console.log('');
