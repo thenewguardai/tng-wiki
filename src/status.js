@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
-import { resolveWiki, listInboxItems } from './verbs.js';
+import { resolveWiki, listInboxItems, ritualReport } from './verbs.js';
 
 export function computeStatus(root) {
   const hasWiki = existsSync(join(root, 'wiki'));
@@ -38,6 +38,8 @@ export function computeStatus(root) {
   // Pending capture-dir triage (null = wiki has no _inbox/); mirrors rounds
   const inboxItems = listInboxItems(root);
   const inboxCount = inboxItems === null ? null : inboxItems.length;
+  // Ritual meta-health (log age + git churn); mirrors rounds
+  const ritual = ritualReport(root);
 
   return {
     isWiki: true,
@@ -52,6 +54,7 @@ export function computeStatus(root) {
     staleCount,
     uncompiledCount,
     inboxCount,
+    ritual,
   };
 }
 
@@ -129,9 +132,20 @@ export async function runStatus(args) {
   if (!status.hasIndex) {
     console.log(`  ${pc.yellow('⚠')} Missing wiki/index.md`);
   }
+  // Ritual meta-health: same yellow rule as rounds - both signals must agree
+  // (stale log AND uncommitted churn) before it reads as a lapse.
+  const rit = status.ritual;
+  const churn = rit?.git ? rit.git.changed + rit.git.untracked : 0;
+  if (churn > 0) {
+    const lapsed = rit.last_log_days !== null && rit.last_log_days >= 14;
+    const line = `  ${lapsed ? pc.yellow('⚠') : pc.dim('○')} uncommitted changes: ${rit.git.changed} changed + ${rit.git.untracked} untracked`;
+    console.log(line);
+  }
   if (status.lastOp) {
     console.log('');
-    console.log(`  ${pc.dim('Last operation:')} ${status.lastOp.date} — ${status.lastOp.desc}`);
+    const age = rit?.last_log_days !== null && rit?.last_log_days > 0
+      ? pc.dim(` (${rit.last_log_days}d ago)`) : '';
+    console.log(`  ${pc.dim('Last operation:')} ${status.lastOp.date}${age} — ${status.lastOp.desc}`);
   }
 
   console.log('');

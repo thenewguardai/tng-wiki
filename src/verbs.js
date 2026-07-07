@@ -3,6 +3,7 @@ import { basename, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
 import { insideRoot, walkMd } from './paths.js';
 import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
+import { workingTreeCounts } from './git-read.js';
 
 export function resolveWiki(slug, home) {
   const registry = loadRegistry(home);
@@ -254,6 +255,34 @@ export function listRejectionNotes(wikiPath) {
     .map(f => ({ path: relative(wikiPath, f) }));
 }
 
+// Ritual meta-health - the maintenance loop itself can lapse invisibly: every
+// marker reads clean while log.md stalls and edits pile up uncommitted (the
+// dogfood wiki went four weeks like this before anything surfaced it). Two
+// zero-LLM signals: the date of the last log.md operation, and the wiki repo's
+// own working-tree churn. Informational only - never changes exit codes.
+export function ritualReport(wikiPath) {
+  let lastLogDate = null;
+  let lastLogDays = null;
+  const logPath = join(wikiPath, 'wiki', 'log.md');
+  if (existsSync(logPath)) {
+    const ops = [...readFileSync(logPath, 'utf8').matchAll(/^## \[([^\]]+)\]/gm)];
+    const last = ops.at(-1);
+    if (last) {
+      lastLogDate = last[1];
+      const d = new Date(last[1]);
+      if (!isNaN(d.getTime())) {
+        lastLogDays = Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000));
+      }
+    }
+  }
+  return {
+    last_log_date: lastLogDate,
+    last_log_days: lastLogDays,
+    // { changed, untracked } for the wiki's own repo, or null when not git-tracked
+    git: workingTreeCounts(wikiPath),
+  };
+}
+
 // "Rounds" maintenance dashboard — zero-LLM counts the named bundle anchors on:
 // pending ingest + structural lint surfaces. Gives `tng-wiki rounds` (and cron/
 // scripts) a single number per category and the agent something to drive.
@@ -278,5 +307,7 @@ export function roundsReport(wikiPath) {
     drift: listDriftPages(wikiPath).length,
     // informational, not a to-do count — audit artifact of verification-first flows
     rejection_notes: listRejectionNotes(wikiPath).length,
+    // informational meta-health of the maintenance loop itself (log age, git churn)
+    ritual: ritualReport(wikiPath),
   };
 }

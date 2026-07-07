@@ -254,6 +254,25 @@ export async function runRounds(args) {
       const label = r.rejection_notes === 1 ? 'rejection log' : 'rejection logs';
       process.stdout.write(`  ${pc.cyan(String(r.rejection_notes).padStart(3))}  ${label} ${pc.dim('(verification-first audit trail — deliverables/*_NOTES_*.md)')}\n`);
     }
+    // Ritual meta-health: the loop itself can lapse while every marker reads
+    // clean. Yellow only when both signals agree (stale log AND pending churn) -
+    // an old log on an idle wiki, or churn mid-session, is normal.
+    const rit = r.ritual;
+    if (rit && (rit.last_log_days !== null || rit.git)) {
+      const churn = rit.git ? rit.git.changed + rit.git.untracked : 0;
+      const parts = [];
+      if (rit.last_log_days !== null) {
+        parts.push(`last log entry ${rit.last_log_days === 0 ? 'today' : `${rit.last_log_days}d ago`}`);
+      }
+      if (churn > 0) {
+        parts.push(`uncommitted: ${rit.git.changed} changed + ${rit.git.untracked} untracked`);
+      }
+      if (parts.length > 0) {
+        const lapsed = rit.last_log_days !== null && rit.last_log_days >= 14 && churn > 0;
+        const line = `  Ritual: ${parts.join(' · ')}`;
+        process.stdout.write(`\n${lapsed ? pc.yellow(line) : pc.dim(line)}\n`);
+      }
+    }
     const total = r.uncompiled + (r.inbox ?? 0) + r.ground + r.convention + r.orphans + r.unsourced + r.unverified + r.stale + r.drift;
     process.stdout.write('\n');
     process.stdout.write(total === 0

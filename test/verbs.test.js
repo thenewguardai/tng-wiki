@@ -8,7 +8,8 @@ import { fileURLToPath } from 'url';
 import { scaffoldWiki } from '../src/init.js';
 import {
   resolveWiki, queryIndex, readPage, resolvePagePath, pageStemMap, searchWiki,
-  listSources, listStalePages, listOrphanPages, listRejectionNotes, listInboxItems, roundsReport,
+  listSources, listStalePages, listOrphanPages, listRejectionNotes, listInboxItems,
+  ritualReport, roundsReport,
 } from '../src/verbs.js';
 import { saveRegistry, emptyRegistry, registerWiki } from '../src/registry.js';
 import { checkGrounding } from '../src/ground.js';
@@ -374,6 +375,43 @@ test('roundsReport returns counts and skips template/meta example markers', () =
     // a real groundable page with a marker IS counted
     writePage(dir, 'wiki/entities/old.md', 'x ⚠️ STALE?');
     assert.equal(roundsReport(dir).stale, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- ritual meta-health ---
+
+test('ritualReport reads last log entry age; git is null (unknown) outside a repo', () => {
+  const dir = makeWiki();
+  try {
+    const r = ritualReport(dir);
+    // scaffold log carries a today-dated init entry
+    assert.equal(r.last_log_days, 0);
+    // no git repo: unknown, not "clean"
+    assert.equal(r.git, null);
+    // stalled log: last entry years old
+    writePage(dir, 'wiki/log.md', '# Operations Log\n\n## [2020-01-01T00:00:00] init | Wiki initialized\n');
+    const stalled = ritualReport(dir);
+    assert.equal(stalled.last_log_date, '2020-01-01T00:00:00');
+    assert.ok(stalled.last_log_days > 2000, `expected years of lapse, got ${stalled.last_log_days}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ritualReport counts working-tree churn in a git-tracked wiki', () => {
+  const dir = makeWiki();
+  try {
+    execFileSync('git', ['-C', dir, 'init', '-q']);
+    execFileSync('git', ['-C', dir, 'add', '-A']);
+    execFileSync('git', ['-C', dir, '-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '-m', 'init']);
+    assert.deepEqual(ritualReport(dir).git, { changed: 0, untracked: 0 });
+    writePage(dir, 'wiki/dropped-capture.md', '# untracked page');
+    writeFileSync(join(dir, 'wiki', 'index.md'), '# modified index', 'utf8');
+    assert.deepEqual(ritualReport(dir).git, { changed: 1, untracked: 1 });
+    // roundsReport carries the same object
+    assert.deepEqual(roundsReport(dir).ritual.git, { changed: 1, untracked: 1 });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -53,6 +53,23 @@ export function repoIsDirty(repoDir) {
   }
 }
 
+// Working-tree churn for the wiki's own repo: entries `git status` sees as
+// modified/staged (changed) vs untracked. Null when `repoDir` is not a git
+// repo - callers render nothing rather than "0", since the absence of git is
+// not cleanliness. Feeds the ritual meta-health line in rounds/status: a wiki
+// whose pages read clean can still be weeks behind on its commit discipline.
+export function workingTreeCounts(repoDir) {
+  try {
+    const lines = git(repoDir, ['status', '--porcelain'], { capture: true })
+      .split('\n')
+      .filter(Boolean);
+    const untracked = lines.filter((l) => l.startsWith('??')).length;
+    return { changed: lines.length - untracked, untracked };
+  } catch {
+    return null;
+  }
+}
+
 // Does `file` exist in the tree at `ref`?
 export function fileExistsAtRef(repoDir, ref, file) {
   try {
