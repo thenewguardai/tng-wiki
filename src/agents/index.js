@@ -1,6 +1,12 @@
-import { generateAgentsMd, generateDoctrine, DOCTRINE_DIR } from './agents-md.js';
+import {
+  generateAgentsMd, generateDoctrine, DOCTRINE_DIR,
+  SCHEMA_FENCE_CLOSE, SCHEMA_FENCE_OPEN_RE, schemaFenceOpen,
+} from './agents-md.js';
 
-export { generateAgentsMd, generateDoctrine, DOCTRINE_DIR };
+export {
+  generateAgentsMd, generateDoctrine, DOCTRINE_DIR,
+  SCHEMA_FENCE_CLOSE, SCHEMA_FENCE_OPEN_RE, schemaFenceOpen,
+};
 
 const AGENT_ALIASES = {
   'claude-code': ['CLAUDE.md'],

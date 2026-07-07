@@ -18,6 +18,11 @@ const templates = {
   'blank': blankTemplate,
 };
 
+// Canonical list of domain keys - the single source callers validate against
+// (getTemplate falls back to blank silently, which is right for internal reads
+// but wrong for user-typed --domain flags).
+export const DOMAIN_KEYS = Object.keys(templates);
+
 export function getTemplate(domain) {
   return templates[domain] || templates['blank'];
 }

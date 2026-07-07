@@ -141,6 +141,19 @@ export const COMMANDS = [
     examples: ['tng-wiki rounds', 'tng-wiki rounds --json'],
   },
   {
+    name: 'upgrade', group: 'Scaffolding',
+    summary: 'Regenerate a wiki\'s schema + doctrine after a CLI update, preserving hand-authored sections',
+    usage: 'tng-wiki upgrade [path] [--wiki <slug>] [--domain <d>] [--dry-run] [--json]',
+    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (default: the cwd when it is a wiki, else the registered default)' }],
+    flags: [
+      WIKI,
+      { name: '--domain', value: '<d>', desc: 're-domain the wiki while upgrading (e.g. software-engineering → code-archaeology); updates .tng-wiki.json and the registry' },
+      { name: '--dry-run', desc: 'report what would change without writing anything' },
+      JSON_FLAG,
+    ],
+    examples: ['tng-wiki upgrade --dry-run', 'tng-wiki upgrade', 'tng-wiki upgrade --wiki research --domain code-archaeology'],
+  },
+  {
     name: 'install-skill', group: 'Agent integration',
     summary: 'Install the Claude Code skill (teaches every session the verbs)',
     usage: 'tng-wiki install-skill [--force] [--uninstall]',

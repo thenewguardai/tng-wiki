@@ -107,6 +107,10 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
       version: 1,
       name: wikiName,
       domain,
+      // Version of the tng-wiki generator that last wrote this wiki's schema
+      // (AGENTS.md fenced block + .tng-wiki/doctrine/). `tng-wiki upgrade`
+      // re-stamps it; `tng-wiki doctor` compares it against the installed CLI.
+      schema_version: installedVersion(),
       // One-line summary of what this wiki covers. Surfaced by `tng-wiki connect`
       // into other repos' agent files. Empty by default — fill it in.
       description: '',

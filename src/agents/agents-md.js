@@ -1,4 +1,5 @@
 import { today } from '../templates/shared.js';
+import { installedVersion } from '../version.js';
 
 const DOMAIN_SECTIONS = {
   'ai-research': aiResearchSchema,
@@ -222,9 +223,30 @@ When the user asks you to reconcile, walk \`tng-wiki drift\` (and \`unsourced\` 
 
 After walking all markers, produce a summary: N accepted / N edited / N rejected / N deferred. If more than a handful were deferred, ask whether to schedule a follow-up.`;
 
+// Managed-region fences around the generated schema, mirroring connect.js's
+// managed block. Everything between the markers is generator-owned: `tng-wiki
+// upgrade` rewrites it verbatim on every run. Anything a user adds OUTSIDE the
+// markers (wiki-specific contracts, house rules, filing conventions) survives
+// upgrades untouched. The opening marker records the generator version and
+// domain so upgrade and doctor can report what a wiki is running without
+// guessing. HTML comments are invisible in rendered markdown and inert to
+// agents reading the schema.
+export const SCHEMA_FENCE_CLOSE = '<!-- /tng-wiki:schema -->';
+
+export function schemaFenceOpen(domain) {
+  return `<!-- tng-wiki:schema v${installedVersion()} domain=${domain} | generated block - \`tng-wiki upgrade\` rewrites everything between these markers; wiki-specific additions belong below the closing marker -->`;
+}
+
+// Matches any generation of the opening marker, whatever version/domain it
+// recorded. Anchored to a full line so a prose mention of the marker cannot
+// false-positive.
+export const SCHEMA_FENCE_OPEN_RE = /^<!-- tng-wiki:schema\b[^\n]*-->[ \t]*$/m;
+
 export function generateAgentsMd({ domain, wikiName, template, leadArchives = [] }) {
   const domainSchema = (DOMAIN_SECTIONS[domain] || blankSchema)();
-  return `# ${wikiName}
+  return `${schemaFenceOpen(domain)}
+
+# ${wikiName}
 
 ${PREAMBLE}
 
@@ -245,6 +267,8 @@ ${LOGGING}
 ${GUARDRAILS}
 
 ${EVOLUTION}
+
+${SCHEMA_FENCE_CLOSE}
 `;
 }
 

@@ -125,6 +125,11 @@ async function main() {
       await runConnect(args);
       break;
     }
+    case 'upgrade': {
+      const { runUpgrade } = await import('../src/upgrade.js');
+      await runUpgrade(args);
+      break;
+    }
     case 'install-skill': {
       const { runInstallSkill } = await import('../src/skill-cli.js');
       await runInstallSkill(args);

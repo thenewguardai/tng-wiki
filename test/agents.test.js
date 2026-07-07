@@ -1,14 +1,31 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateAgentsMd, generateDoctrine, schemaLayout, CANONICAL_SCHEMA_FILE } from '../src/agents/index.js';
+import {
+  generateAgentsMd, generateDoctrine, schemaLayout, CANONICAL_SCHEMA_FILE,
+  SCHEMA_FENCE_CLOSE, SCHEMA_FENCE_OPEN_RE,
+} from '../src/agents/index.js';
+import { installedVersion } from '../src/version.js';
 
 const ctx = { domain: 'ai-research', wikiName: 'Test Wiki', template: {} };
 
 test('generateAgentsMd produces an agent-neutral schema with no per-agent header', () => {
   const out = generateAgentsMd(ctx);
-  assert.match(out, /^# Test Wiki\n\n## What This Is/);
+  assert.match(out, /^<!-- tng-wiki:schema /);
+  assert.match(out, /# Test Wiki\n\n## What This Is/);
   assert.ok(!out.includes('designed for OpenAI Codex'));
   assert.ok(!out.includes('designed for Cursor'));
+});
+
+test('generateAgentsMd fences the whole schema as a managed region', () => {
+  const out = generateAgentsMd(ctx);
+  // opening marker: first line, carries generator version + domain
+  const openMatch = out.match(SCHEMA_FENCE_OPEN_RE);
+  assert.ok(openMatch, 'missing opening schema fence');
+  assert.equal(out.indexOf(openMatch[0]), 0, 'opening fence must be the first line');
+  assert.ok(openMatch[0].includes(`v${installedVersion()}`), 'fence must record the generator version');
+  assert.ok(openMatch[0].includes('domain=ai-research'), 'fence must record the domain');
+  // closing marker: last non-blank line, nothing generated after it
+  assert.ok(out.trimEnd().endsWith(SCHEMA_FENCE_CLOSE), 'schema must end at the closing fence');
 });
 
 test('generateAgentsMd embeds domain-specific schema sections', () => {
