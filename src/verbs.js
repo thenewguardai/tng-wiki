@@ -1,6 +1,7 @@
-import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
+import { readFileSync, existsSync, statSync } from 'fs';
 import { basename, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
+import { insideRoot, walkMd } from './paths.js';
 import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
 
 export function resolveWiki(slug, home) {
@@ -50,7 +51,7 @@ export function resolvePagePath(wikiPath, input) {
   // prevent ../ escape — applied to every normalized form
   const guard = (form) => {
     const target = resolve(wikiDir, form);
-    if (!target.startsWith(wikiDir + sep) && target !== wikiDir) {
+    if (!insideRoot(wikiDir, target)) {
       throw new Error(`Page path "${input}" escapes the wiki directory`);
     }
     return target;
@@ -83,18 +84,6 @@ export function resolvePagePath(wikiPath, input) {
 export function readPage(wikiPath, relPath) {
   const form = resolvePagePath(wikiPath, relPath);
   return readFileSync(resolve(join(wikiPath, 'wiki'), form), 'utf8');
-}
-
-function walkMd(dir) {
-  if (!existsSync(dir)) return [];
-  const out = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.')) continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...walkMd(full));
-    else if (entry.isFile() && entry.name.endsWith('.md')) out.push(full);
-  }
-  return out;
 }
 
 export function searchWiki(wikiPath, query, { regex = false, includeRaw = false, includeLeads = false } = {}) {

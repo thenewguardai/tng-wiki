@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { join } from 'path';
 
 export function slugifyWikiName(wikiName) {
@@ -6,20 +6,23 @@ export function slugifyWikiName(wikiName) {
 }
 
 export async function setupQmd(root, wikiName, deps = {}) {
-  const { exec = (cmd) => execSync(cmd, { stdio: 'pipe' }) } = deps;
+  // execFileSync with an argument array, never a shell string: wikiDir and
+  // wikiName are user-controlled at init time and may contain spaces, quotes,
+  // or shell metacharacters. Same discipline as git-read.js.
+  const { exec = (file, args) => execFileSync(file, args, { stdio: 'pipe' }) } = deps;
 
   const slug = slugifyWikiName(wikiName);
   const wikiDir = join(root, 'wiki');
 
   try {
-    exec('qmd --version');
+    exec('qmd', ['--version']);
   } catch {
     return { installed: false, configured: false, slug, wikiDir };
   }
 
   try {
-    exec(`qmd collection add "${wikiDir}" --name "${slug}" --mask "**/*.md"`);
-    exec(`qmd context add qmd://${slug} "LLM-maintained wiki: ${wikiName}"`);
+    exec('qmd', ['collection', 'add', wikiDir, '--name', slug, '--mask', '**/*.md']);
+    exec('qmd', ['context', 'add', `qmd://${slug}`, `LLM-maintained wiki: ${wikiName}`]);
     return { installed: true, configured: true, slug, wikiDir };
   } catch (err) {
     return {

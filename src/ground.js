@@ -1,7 +1,7 @@
-import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'fs';
-import { join, relative, resolve, dirname, sep, isAbsolute } from 'path';
+import { readFileSync, writeFileSync, existsSync, statSync } from 'fs';
+import { join, relative, resolve, dirname } from 'path';
 import { matchesAnyGlob } from './glob.js';
-import { resolveConfigPath, pathForm, describePathValue } from './paths.js';
+import { resolveConfigPath, pathForm, describePathValue, insideRoot, walkMd } from './paths.js';
 import {
   refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate,
   filesAtHead, newestCommitDate, resolveRefSha, repoIsDirty,
@@ -62,17 +62,6 @@ export function loadLeadArchives(wikiPath) {
   return Array.isArray(meta.lead_archives) ? meta.lead_archives : [];
 }
 
-function walkMd(dir) {
-  if (!existsSync(dir)) return [];
-  const out = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name.startsWith('.')) continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...walkMd(full));
-    else if (entry.isFile() && entry.name.endsWith('.md')) out.push(full);
-  }
-  return out;
-}
 
 export function splitFrontmatter(content) {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?/);
@@ -332,13 +321,6 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
   const leadArchives = loadLeadArchives(wikiPath);
   const archiveByName = new Map(leadArchives.map((a) => [a.name, a]));
   const archiveRoots = leadArchives.map((a) => ({ name: a.name, root: resolve(wikiPath, a.path) }));
-  // Containment via relative() rather than startsWith(root + sep): a root that
-  // already ends with the separator (e.g. `/` or `C:\`) would make `root + sep`
-  // unmatchable and silently disarm the guardrail (false negatives).
-  const insideRoot = (root, absPath) => {
-    const rel = relative(root, absPath);
-    return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-  };
   const leadArchiveOf = (absPath) =>
     archiveRoots.find(({ root }) => insideRoot(root, absPath))?.name ?? null;
 

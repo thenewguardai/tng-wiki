@@ -22,24 +22,46 @@ const AGENT_FILES = {
   'all': ['CLAUDE.local.md', 'AGENTS.local.md'],
 };
 
-export function buildConnectBlock({ slug, name, domain, description, path }) {
-  const desc = description && description.trim() ? ` — ${description.trim()}` : '';
+// Normalize a wiki description for embedding mid-sentence in the connect block:
+// fold em/en dashes to hyphens (the block is written verbatim into other repos'
+// agent files, where em-dashes read as machine-generated, even when the dash came
+// from the user's own .tng-wiki.json), collapse whitespace, and trim trailing
+// sentence punctuation so a description ending in "." does not collide with the
+// text that follows (avoids "...sm_120 quirks. is registered at ...").
+function cleanScope(description) {
+  return description.trim()
+    .replace(/[—–]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[.;,\s]+$/, '');
+}
+
+export function buildConnectBlock({ slug, name, domain, description, path, inbox = false }) {
+  const scope = description && description.trim() ? ` It covers ${cleanScope(description)}.` : '';
+  // "blank" is the catch-all domain slug, not a meaningful label; omit the domain
+  // clause for it so the sentence reads as prose instead of leaking a placeholder.
+  const domainClause = domain && domain !== 'blank' ? ` for **${domain}**` : '';
+  // When the wiki has an _inbox/ (code-archaeology and other librarian-style
+  // wikis), offer the cheap capture path first: dropping a file in costs nothing,
+  // and a later librarian session does the careful grounding and filing.
+  const handoff = inbox
+    ? `When a session produces durable, keepable research or decisions, hand them off rather than letting them evaporate. Cheapest path: drop the file into \`${path}/_inbox/\` and a later librarian session there grounds and files it (capture is cheap, filing is careful). Heavier path: \`cd ${path}\`, follow its \`AGENTS.md\` to ingest, or tell the maintaining agent to "do wiki rounds".`
+    : `When a session produces durable, keepable research or decisions, hand them off to the wiki rather than letting them evaporate: \`cd ${path}\`, follow its \`AGENTS.md\` to ingest, or tell the maintaining agent to "do wiki rounds".`;
   return [
     START,
     `## Knowledge wiki: ${name} (\`${slug}\`)`,
     '',
-    `A tng-wiki knowledge base for **${domain}**${desc} is registered on this machine at \`${path}\`.`,
+    `A tng-wiki knowledge base${domainClause} is registered on this machine at \`${path}\`.${scope}`,
     '',
-    'Before re-deriving domain knowledge, search it first — the registry makes these work from any directory:',
+    'Before re-deriving domain knowledge, search it first; the registry makes these work from any directory:',
     '',
     '```bash',
     `tng-wiki query  --wiki ${slug}            # index / table of contents`,
     `tng-wiki search "<topic>" --wiki ${slug}  # find compiled knowledge`,
     '```',
     '',
-    `When a session produces durable, keepable research or decisions, hand them off to the wiki rather than letting them evaporate: \`cd ${path}\` and follow its \`AGENTS.md\` to ingest, or tell the maintaining agent to "do wiki rounds".`,
+    handoff,
     '',
-    '_Managed by `tng-wiki connect` — edits inside this block are overwritten. Remove with `tng-wiki connect <this-repo> --remove`._',
+    '_Managed by `tng-wiki connect`. Edits inside this block are overwritten; remove with `tng-wiki connect <this-repo> --remove`._',
     END,
   ].join('\n');
 }
@@ -175,7 +197,8 @@ export async function runConnect(args) {
   // entries so the description lookup and the written block point at a real path.
   const wikiPath = resolveConfigPath(process.cwd(), wiki.path);
   const description = readWikiDescription(wikiPath);
-  const block = buildConnectBlock({ slug: wiki.slug, name: wiki.name, domain: wiki.domain, description, path: wikiPath });
+  const inbox = existsSync(join(wikiPath, '_inbox'));
+  const block = buildConnectBlock({ slug: wiki.slug, name: wiki.name, domain: wiki.domain, description, path: wikiPath, inbox });
 
   for (const f of files) {
     const full = join(repoRoot, f);

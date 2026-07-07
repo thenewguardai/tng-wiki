@@ -5,7 +5,7 @@ export function makeIndexMd(wikiName, sections = []) {
 | _No pages compiled yet_ |${s.columns.map(() => ' ').join('|')}|
 `).join('\n');
 
-  return `# ${wikiName} — Index
+  return `# ${wikiName} - Index
 
 _Last updated: ${today()} | Total pages: 0 | Total sources: 0_
 

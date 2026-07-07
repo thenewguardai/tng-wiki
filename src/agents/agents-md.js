@@ -11,6 +11,217 @@ const DOMAIN_SECTIONS = {
   'blank': blankSchema,
 };
 
+// Full grounding + reconcile doctrine. Written on-demand to
+// .tng-wiki/doctrine/grounding.md; AGENTS.md carries only a compact summary + pointer.
+const GROUNDING_DOCTRINE = `Ground-truth the wiki against its source material. Three layers, escalating in cost and thoroughness. Run them in order - Layer 1 before Layer 2, Layer 2 before Layer 3 - so cheap structural checks catch the easy problems before you pay for semantic re-reading.
+
+**Verification-first option.** The default flow is ingest-first: compile raw sources, then ground later, with the \`⚠️\` markers as the health surface. When the leads themselves are fallible - AI-generated PRDs, premises worth refuting, claims that must be validated against authorities before they're worth keeping - invert it: verify each lead claim first, distill only what survives (typically \`[confirmed]\`), and record every rejected, corrected, or downgraded claim with its disposition in a **rejection log** - a NOTES deliverable (\`deliverables/*_NOTES_*.md\`, surfaced by \`tng-wiki rounds\`). A verification-first wiki carries near-zero markers by construction, so the rejection log is the audit surface instead: "we verified it" without a list of what failed verification is evidence nothing was looked for.
+
+#### Layer 1 - Structural (cheap, always safe)
+
+Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catches:
+
+- Pages with empty or missing \`sources:\` frontmatter (→ apply \`⚠️ UNSOURCED?\`)
+- Inline \`[^raw/...]\` citations pointing at raw files that don't exist (→ fix the path, or remove the claim)
+- Inline citations not registered in frontmatter \`sources:\` (undeclared cites - applies to both raw and \`code:<name>\` entries)
+- Frontmatter \`sources:\` entries not cited inline (orphan declarations - the page added a source it never used)
+- Pages whose \`updated\` (by date) is older than a cited raw source's last git commit-date - or mtime when the wiki isn't a git repo (source changed after distillation - candidate for Layer 2)
+- Inline \`[^code:<name>/...]\` citations where \`<name>\` is not a registered code authority in \`.tng-wiki.json\` (\`unknown_code_authority\`) or where the file path resolves to nothing on disk (\`missing_code_file\`)
+- Inline \`[^code:<name>/file]\` citations targeting a file the authority's \`exclude\` globs skip (\`excluded_code_file\`), or whose \`#L<start>-L<end>\` anchor exceeds the cited file (\`code_line_out_of_range\`)
+- With \`--at-ref\`: code citations are resolved at each authority's pinned \`ref\` instead of the working tree - adds \`missing_code_file\` at the ref, \`code_updated_after_page\` (the page's \`updated\` predates the file's last commit at the ref), and \`code_ref_unresolvable\` (the ref or repo can't be resolved)
+- \`wiki/index.md\` scaffold header out of sync with the actual page set (\`index_header_drift\` - fix the header to the stated page-count formula and the newest page date)
+- Warn-level hygiene findings: pages whose file changed (git commit-date, mtime fallback) after their frontmatter \`updated\` (\`frontmatter_updated_stale\` - bump \`updated\`), and internal pages referenced in prose instead of \`[[wikilinks]]\` (\`prose_internal_ref\` - apply the suggested wikilink)
+- With a citation lockfile (\`wiki/.tng-wiki.lock.json\`, committed - see below): per-citation churn instead of per-file churn - \`cite_content_changed\` (the cited lines changed since last verified; the surgical re-verification queue), \`cite_moved\` (content identical, \`#L\` anchor shifted - repair with \`ground --fix-moved\`, the only safe auto-fix), \`cite_moved_ambiguous\` (locked content now appears in several places - fix the anchor by hand), and \`cite_unlocked\` (cite never locked)
+Apply the appropriate markers inline. Log the pass with issue counts.
+
+**The citation lockfile.** \`tng-wiki ground --update-lock\` writes \`wiki/.tng-wiki.lock.json\`: per citation, a normalized content hash of the cited range (whitespace-only changes are invisible), and per code authority, the SHA its ref resolved to. Commit it - it is verification state that travels with the wiki. With the lock in place, Layer 1 answers "**which citations** changed since they were last verified" rather than "which files were touched", so re-verification against an active branch stays affordable. \`--update-lock\` records *human-verified* state and never runs implicitly: run it at the end of an ingest or after a reconcile, never on content you haven't checked. \`cite_content_changed\` findings are never auto-fixed - they feed the Layer-2 \`⚠️ DRIFT?\` workflow below.
+
+#### Layer 2 - Semantic re-verification (agent-driven)
+
+You re-read each raw source and compare it against the wiki claims it's supposed to support. Where they diverge, you write a \`⚠️ DRIFT?\` marker that carries its own evidence so a human can reconcile without re-reading the source. This layer also owns confidence-tier judgment: where a claim's tag outruns the tier of its cited sources (e.g. \`[confirmed]\` backed only by Tier 3/4), mark it \`⚠️ UNVERIFIED?\` and either add a stronger source or downgrade the tag.
+
+**Triage order when scope is a whole wiki:**
+
+1. Pages flagged \`source_updated_after_page\` by Layer 1 (strongest signal of drift).
+2. Pages with recent \`updated\` dates that changed without a new ingest log entry (possible manual edit without citation update).
+3. Oldest pages with the most citations (long-tail decay).
+4. Pages tagged \`[confirmed]\` extensively (highest stakes if drift exists).
+
+Prefer per-page (\`--page <path>\`) runs when the user asks to verify something specific. Reserve whole-wiki passes for explicit ground-check requests or scheduled maintenance.
+
+**Per-claim verification procedure:**
+
+1. Read every raw source in frontmatter \`sources:\`.
+2. For each claim in the wiki page, identify which cited source supports it (inline \`[^raw/...]\` is the mapping).
+3. Does the source still say what the wiki says? Apply one of four outcomes:
+   - **Supported** - no action.
+   - **Partially supported** - the source supports a weaker claim than the wiki states. Either downgrade the wiki's confidence tag (\`[confirmed]\` → \`[reported]\`, etc.) or narrow the claim. Log.
+   - **Drifted** - source and wiki disagree. Write \`⚠️ DRIFT?\` with source quote, current claim, and suggested fix (see below). Never auto-apply.
+   - **Unsourceable** - the cited source does not support this claim at all. Write \`⚠️ UNSOURCED?\` inline and flag for human review - something was distilled incorrectly.
+
+**\`⚠️ DRIFT?\` marker format (self-contained evidence):**
+
+\`\`\`
+⚠️ DRIFT? [source: raw/<path> says "<1-3 sentence quote, or a paraphrase if quoting is impractical>";
+           wiki says "<current wiki claim>";
+           suggested: "<your proposed fix - the exact replacement text>"]
+\`\`\`
+
+Keep quotes tight. Paraphrase long-form material. The marker should be readable in isolation - a human reviewing six months from now shouldn't need to re-open the source to understand the evidence.
+
+**Dependency chains:** If wiki page A cites wiki page B which cites raw source C, treat as two separate links. Verify A→B (B supports A) and B→C (C supports B) as independent checks. Never shortcut A→C by assuming transitivity - intermediate distillations are where most drift hides.
+
+**Batching:** A whole-wiki semantic pass on a 100-page wiki is expensive. Announce the scope before starting. Check in with the user every 10-20 pages with a running total ("12 pages verified, 3 drift markers applied so far - continue?").
+
+#### Layer 3 - Authority validation (opt-in, scoped)
+
+Cross-check wiki claims against external authority. Two kinds of authority exist; they're orthogonal and can both be configured per-wiki in \`.tng-wiki.json\`.
+
+##### 3A. Web authorities
+
+When the user asks you to verify against live external web sources, use \`WebFetch\` / \`WebSearch\` under strict rules:
+
+**Authorized sources, in priority order:**
+
+1. **URLs cited in the raw source itself** - the primary trust chain. If the raw source links to the vendor docs, fetch those docs.
+2. **Per-wiki trusted authorities** - if the wiki's \`.tng-wiki.json\` lists a \`trusted_authorities\` array (e.g. \`["docs.python.org", "spec.commonmark.org"]\`), those domains are always authorized.
+3. **Explicit user permission** - the user names a specific source in the ground-check request.
+
+**Never:**
+- Free-range \`WebSearch\` without specific authority targets. Unconstrained search latches onto the wrong voice and produces confident-wrong results.
+- Trust a single external source to override a raw source without human review. External disagrees with raw = \`⚠️ DRIFT?\` for reconcile, not auto-rewrite.
+- Refetch the same URL multiple times per ground run - cache per-URL within a single run.
+
+**Procedure:**
+
+1. For each claim in scope, identify the authority URL(s) it should be checked against.
+2. Fetch each URL once. Summarize what it says about the claim.
+3. Three possible outcomes per claim:
+   - **External confirms wiki + raw:** note the concurrence in the log; no marker.
+   - **External confirms wiki but contradicts raw:** the raw source is out of date. Apply \`⚠️ STALE?\` to the raw-file-level reference in the wiki's frontmatter comment, and flag for human review - may want to re-ingest from the current authority.
+   - **External contradicts wiki:** apply \`⚠️ DRIFT?\` with both the raw-source quote and the external-source quote in the evidence. Reconcile interactively.
+
+**Failure modes to handle gracefully:**
+
+- **Unreachable / 404:** the authority URL moved. Mark the source with \`⚠️ STALE?\` and log - do not delete the citation.
+- **Rate-limited:** back off and surface to the user rather than retrying blindly.
+- **Two external authorities disagree:** record both, do not pick one silently, escalate to human.
+
+##### 3B. Code authorities (local filesystem)
+
+Use when the wiki is built around a real codebase - typical in reverse-engineering, porting, or M&A / IP-acquisition workflows where \`raw/\` holds AI-generated PRDs, overview docs, and implementation guides that may hallucinate, and the actual implementation is the ground truth the wiki needs to validate against.
+
+**Configuration.** \`.tng-wiki.json\` lists each authoritative codebase in \`code_authorities\`:
+
+\`\`\`json
+"code_authorities": [
+  {
+    "name": "legacy-app",
+    "path": "../customer-portal-v1",
+    "description": "Source implementation being ported.",
+    "exclude": ["**/*.md", "docs/**", "**/*.test.*", "**/node_modules/**", "**/dist/**"],
+    "language": "typescript"
+  }
+]
+\`\`\`
+
+- \`name\` - short handle used in citations (\`[^code:legacy-app/...]\`).
+- \`path\` - tree root, resolved relative to the wiki root.
+- \`exclude\` - gitignore-style globs; skip these when traversing the authority.
+- \`language\` - optional hint; helps you pick appropriate comment/doc syntax to ignore.
+- \`ref\` - optional git ref (branch, tag, commit SHA). When set, read the authority *at that ref* instead of the working tree. Tags/SHAs are true pins; branch refs track and rely on the lockfile for determinism. See **Ref pinning** below.
+
+**Tools.** \`Read\`, \`Grep\`, \`Glob\`. Not \`WebFetch\`. Code authorities are local filesystem; fetching is free and instant.
+
+**Ref pinning.** When an authority has a \`ref\` field set, the user wants grounding decoupled from their working tree - typically because the source repo is actively evolving. Two kinds of ref behave differently:
+
+- **Tag or commit-SHA refs** are true pins: frozen to a specific point in history, deterministic by construction.
+- **Branch refs** (\`main\`, \`origin/develop\`) are *tracks*, not pins - they move on every fetch. Determinism comes from the citation lockfile instead: each \`ground\` run records which SHA the branch resolved to in \`wiki/.tng-wiki.lock.json\`'s \`authorities\` block (\`resolved_sha\`, plus a \`dirty\` flag on working-tree runs), so the wiki can always say "verified against \`develop@5e36f17\`" without forcing the cite refs onto SHAs.
+
+In either case, when reading at a ref:
+
+- Read individual files via \`git -C <path> show <ref>:<file>\` instead of \`Read\`. The output goes to stdout; pipe through your normal scope filter (ignore comments/docstrings/JSDoc/etc).
+- Enumerate files via \`git -C <path> ls-tree -r --name-only <ref>\` instead of \`Glob\`.
+- For text search, use \`git -C <path> grep <pattern> <ref>\` instead of \`Grep\`.
+- The user's working-tree state is irrelevant under ref pinning - they may have switched branches, stashed work, or have uncommitted changes; none of it contaminates grounding.
+- \`git show <ref>:<file>\` returning \`fatal: path '...' exists on disk, but not in '<ref>'\` means the cited file existed in the working tree (so Layer 1 \`tng-wiki ground\` passed) but does not exist at the pinned ref. Treat the cite as \`missing_code_file\` for the purposes of this Layer 3B run, surface to the user, and recommend either updating \`ref\` or removing the cite.
+- Layer 1 (\`tng-wiki ground\`) does not honor \`ref\` **by default** - it checks the working tree, the cheap snapshot that answers "does this path exist anywhere I can read it." Run \`tng-wiki ground --at-ref\` to opt into ref-pinned structural checks: it resolves cited files at each authority's \`ref\` and reports \`missing_code_file\` (absent at the ref), \`code_updated_after_page\`, and \`code_ref_unresolvable\`. With a citation lockfile, \`--at-ref\` also hashes each cited range at the ref (per-citation churn) and records the resolved ref SHA in the lock's \`authorities\` block. That mechanically catches the existence half of the procedure below; the semantic Layer 3B work still applies on top. A plain (non \`--at-ref\`) run that consults the working tree of a ref'd authority emits a one-line warning per authority - \`working_tree_of_ref_authority\` in the \`--json\` \`warnings\` array - so the working-tree/ref mismatch is never silent. Heed it: it means the pin the user configured was not checked on that run.
+
+When \`ref\` is unset (the default), read the working tree directly with \`Read\` / \`Grep\` / \`Glob\` as normal.
+
+**Scope filter - implementation only.** The user has chosen a code authority because documentation is fallible. Return the favor: when treating a code file as authoritative, disregard its comments, docstrings, JSDoc, type-annotation descriptions, and any markdown/text files even if \`exclude\` did not catch them. Concretely, ignore:
+
+- Single-line comments: \`// ...\`, \`# ...\`, \`-- ...\`.
+- Block comments: \`/* ... */\`, \`""" ... """\`, \`''' ... '''\`, \`<!-- ... -->\`.
+- Doc blocks: JSDoc (\`/** ... */\`), Python docstrings, rustdoc (\`/// ...\`), Javadoc, XML doc comments.
+- Whole files: \`*.md\`, \`*.rst\`, \`*.txt\`, \`README\`, \`CHANGELOG\` - even if not excluded by config.
+
+The implementation is authority. The comments may be stale or aspirational; the PRDs in \`raw/\` *already are*. You are not hunting for what the code *claims*, you are deriving what it *does*.
+
+**Citation form.** When Discovery- or Ingest-phase work grounds a claim in code, emit an inline citation:
+
+\`\`\`markdown
+[^code:<authority-name>/<path-within-tree>[#L<start>[-L<end>]]]
+\`\`\`
+
+- \`<authority-name>\` matches a \`code_authorities\` entry.
+- \`<path-within-tree>\` is the file path inside the authority's \`path\`.
+- \`#L<start>-L<end>\` - GitHub-style line range anchor. Optional (omit for whole-file claims). Single line: \`#L42\`.
+
+Frontmatter \`sources:\` must list \`code:<name>\` for every code authority the page cites - same invariant raw sources follow. Pair raw + code cites when both apply:
+
+\`\`\`markdown
+The login flow uses OAuth2 implicit grant - no PKCE.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
+\`\`\`
+
+Engineers and future agents clicking the code citation in a capable editor (VS Code, GitHub preview) jump straight to the cited lines. Cite specifically - aim for ranges of 1-30 lines, not whole files, so the human following the cite lands on the evidence without re-hunting.
+
+**Precedence - advisory.** Code is advisory authority, not absolute. Disagreement between code and raw or code and wiki produces a \`⚠️ DRIFT?\` marker with evidence; the human reconciles. Never auto-apply a code-derived correction.
+
+**Procedure.**
+
+1. For each claim in scope, identify which code authority (if any) could verify it. Not every claim has a code authority - e.g. "why" claims, strategic-context claims, and claims about external systems.
+2. \`Read\` / \`Grep\` the authority for the cited or plausibly-relevant file. Honor \`exclude\` globs; ignore comments/docs per the scope filter.
+3. Four possible outcomes:
+   - **Code confirms wiki + raw:** log the concurrence. No marker. Add a \`[^code:...]\` citation alongside the existing \`[^raw/...]\` so the evidence chain is explicit.
+   - **Code confirms wiki, contradicts raw:** the raw doc is a hallucination or out-of-date. Write \`⚠️ DRIFT?\` naming the raw source, with both raw and code quotes, and propose updating the wiki claim to match code (which it already matches - the marker flags the raw source as suspect so it gets re-ingested or retired).
+   - **Code contradicts wiki:** the wiki propagated a raw-doc hallucination or distilled incorrectly. Write \`⚠️ DRIFT?\` with \`code:\` evidence line; the suggested fix reflects the code's behavior.
+   - **Code silent on the claim:** the authority doesn't cover this. No marker; this is the boundary of what code can verify.
+
+**DRIFT marker format - extended for code authority:**
+
+\`\`\`
+⚠️ DRIFT? [source: raw/prd-auth.md says "OAuth2 with PKCE";
+           code: legacy-app/src/auth/oauth.ts#L42-L58 shows "implicit flow, no code_challenge parameter sent";
+           wiki says "OAuth2 with PKCE";
+           suggested: "OAuth2 implicit flow - legacy-app does not implement PKCE"]
+\`\`\`
+
+Keep code paraphrase tight - summarize what the implementation *does*, quote sparingly. The \`#L\` anchor gives the reader the exact landing spot.
+
+**Failure modes to handle gracefully:**
+
+- **Authority \`path\` missing or unreadable:** log; surface to the user as a configuration issue (the authority moved, permissions, git submodule not initialized). Do not mark pages - you can't verify.
+- **\`exclude\` filters out every candidate file:** likely misconfigured globs. Report to the user.
+- **Cited file moved or was deleted:** \`tng-wiki ground\` already flags this as \`missing_code_file\`. Resolve per structural lint - update the cite or mark \`⚠️ STALE?\` on the page pending human decision.
+- **Two authorities disagree:** rare, but possible (e.g. a forked codebase and its upstream). Record both, escalate; do not silently prefer one.
+
+### Reconcile Drifts
+
+When the user asks you to reconcile, walk \`tng-wiki drift\` (and \`unsourced\` / \`unverified\`) output. For each marker:
+
+1. \`tng-wiki read <page>\` to fetch the current page.
+2. Extract the marker's evidence (source quote, current claim, suggested fix).
+3. Present all three to the user in a compact form.
+4. Ask: **accept / edit / reject / defer**. Support natural-language variations ("yes", "fix it", "no, the wiki is right", "skip this one").
+5. Apply the chosen action:
+   - **accept:** replace the claim with the suggested fix, remove the marker, bump \`updated\`, log.
+   - **edit:** take the user's edited claim, replace, remove the marker, bump \`updated\`, log.
+   - **reject:** remove the marker without changing the claim. Capture the user's reasoning in the log (the wiki was right; the external source was wrong; etc.). Optionally add a counter-citation.
+   - **defer:** leave the marker in place. Log the defer with the user's reason.
+
+After walking all markers, produce a summary: N accepted / N edited / N rejected / N deferred. If more than a handful were deferred, ask whether to schedule a follow-up.`;
+
 export function generateAgentsMd({ domain, wikiName, template, leadArchives = [] }) {
   const domainSchema = (DOMAIN_SECTIONS[domain] || blankSchema)();
   return `# ${wikiName}
@@ -21,7 +232,7 @@ ${ARCHITECTURE(domain)}
 
 ${PAGE_CONVENTIONS}
 
-${MARKER_TAXONOMY}
+${MARKER_LEGEND}
 
 ${domainSchema}
 
@@ -37,13 +248,40 @@ ${EVOLUTION}
 `;
 }
 
+// On-demand doctrine written into <wiki>/.tng-wiki/doctrine/. AGENTS.md carries
+// lean summaries and points here; any agent (Claude Code, Codex, Cursor) loads
+// these via its own file tools only when it is actually grounding or
+// reconciling. Kept out of the always-on schema to cut per-session token cost.
+// The dir is a dotfile, so tng-wiki search / ground skip it (walkMd ignores
+// dot-directories) - doctrine is operating instructions, not wiki content.
+export const DOCTRINE_DIR = '.tng-wiki/doctrine';
+
+export function generateDoctrine({ wikiName }) {
+  return {
+    'grounding.md': `# Grounding & Reconcile Doctrine - ${wikiName}
+
+_On-demand doctrine referenced from \`AGENTS.md\`. Read this before a Layer 2 (semantic) or Layer 3 (authority) grounding pass, or an interactive reconcile. Layer 1 (\`tng-wiki ground\`) needs nothing here._
+
+## Grounding
+
+${GROUNDING_DOCTRINE}
+`,
+    'markers.md': `# Marker Taxonomy - ${wikiName}
+
+_On-demand doctrine referenced from \`AGENTS.md\`, which carries the compact legend. This is the full reference: each marker's exact meaning, its producer, and its resolution protocol._
+
+${MARKER_TAXONOMY}
+`,
+  };
+}
+
 // --- Shared sections ---
 
 const PREAMBLE = `## What This Is
 
-This is an LLM-maintained knowledge base. You — the LLM agent — maintain the wiki. The human curates sources, directs analysis, and asks questions. You do everything else: summarizing, cross-referencing, filing, linting, flagging contradictions, maintaining indexes, and keeping the knowledge base healthy.
+This is an LLM-maintained knowledge base. You - the LLM agent - maintain the wiki. The human curates sources, directs analysis, and asks questions. You do everything else: summarizing, cross-referencing, filing, linting, flagging contradictions, maintaining indexes, and keeping the knowledge base healthy.
 
-**The wiki is a persistent, compounding artifact.** Every source ingested and every query answered makes it richer. You never write from scratch — you build on what's already compiled.
+**The wiki is a persistent, compounding artifact.** Every source ingested and every query answered makes it richer. You never write from scratch - you build on what's already compiled.
 
 Obsidian is the IDE. You are the programmer. The wiki is the codebase.`;
 
@@ -51,18 +289,19 @@ function ARCHITECTURE(domain) {
   return `## Architecture
 
 \`\`\`
-raw/          ← Immutable source material — you read, never modify
-wiki/         ← LLM-compiled, LLM-maintained — you own this entirely
+raw/          ← Immutable source material - you read, never modify
+wiki/         ← LLM-compiled, LLM-maintained - you own this entirely
   index.md    ← Master table of contents (read first for every query)
   log.md      ← Append-only operation log
   meta/       ← Wiki health, coverage gaps, source stats
 output/       ← Query results, drafts, visualizations
+.tng-wiki/doctrine/  ← On-demand grounding + marker doctrine (read when you ground or reconcile)
 \`\`\`
 
 **Three layers:**
-- **Raw sources** — immutable. Articles, papers, transcripts, images. Your source of truth.
-- **The wiki** — your domain. Summaries, entity pages, concept pages, cross-references. You create, update, and maintain everything here.
-- **This schema** — operating instructions. Co-evolved by you and the human over time.`;
+- **Raw sources** - immutable. Articles, papers, transcripts, images. Your source of truth.
+- **The wiki** - your domain. Summaries, entity pages, concept pages, cross-references. You create, update, and maintain everything here.
+- **This schema** - operating instructions. Co-evolved by you and the human over time.`;
 }
 
 const PAGE_CONVENTIONS = `## Page Conventions
@@ -74,10 +313,10 @@ Every wiki page uses YAML frontmatter:
 \`\`\`yaml
 ---
 title: "Page Title"
-type: entity              # varies by domain — see domain-specific section
+type: entity              # varies by domain - see domain-specific section
 created: ${today()}
 updated: ${today()}
-sources:                  # trust anchors for this page — raw paths or code authorities
+sources:                  # trust anchors for this page - raw paths or code authorities
   - raw/papers/foo.md
   - raw/announcements/bar.md
   - code:legacy-app         # optional, when the page cites a code authority (see .tng-wiki.json)
@@ -86,52 +325,63 @@ confidence: medium        # high | medium | low
 ---
 \`\`\`
 
-\`sources\` is the **trust anchor** of the page. Grounding workflows re-open every raw file and re-read every code authority listed here to verify the page's claims. An empty \`sources:\` list means the page has no verifiable attribution — that's an \`⚠️ UNSOURCED?\` state, not normal.
+\`sources\` is the **trust anchor** of the page. Grounding workflows re-open every raw file and re-read every code authority listed here to verify the page's claims. An empty \`sources:\` list means the page has no verifiable attribution - that's an \`⚠️ UNSOURCED?\` state, not normal.
 
 ### Per-Claim Citations
 
 Every factual claim must cite at least one authority inline using footnote-style syntax. Two citation forms are supported:
 
-**Raw-source citation** — the primary trust chain for \`raw/\`-derived claims:
+**Raw-source citation** - the primary trust chain for \`raw/\`-derived claims:
 
 \`\`\`markdown
 Anthropic raised $8B in Series F.[^raw/announcements/2026-anthropic-series-f.md]
 \`\`\`
 
-**Code-authority citation** — for claims derived from or verified against a local code authority (see \`.tng-wiki.json → code_authorities\` and Layer 3B grounding):
+**Code-authority citation** - for claims derived from or verified against a local code authority (see \`.tng-wiki.json → code_authorities\` and Layer 3B grounding):
 
 \`\`\`markdown
-The login flow uses OAuth2 implicit grant — no PKCE.[^code:legacy-app/src/auth/oauth.ts#L42-L58]
+The login flow uses OAuth2 implicit grant - no PKCE.[^code:legacy-app/src/auth/oauth.ts#L42-L58]
 \`\`\`
 
 - \`code:<authority>\` names a registered code authority.
 - \`<path>\` is the file within that authority's tree.
 - \`#L<start>-L<end>\` is a GitHub-style line anchor (optional; omit for whole-file claims, single-line: \`#L42\`). VS Code jumps to the line when the cite is a real link.
 
-Multiple citations stack: \`[^raw/a.md][^code:legacy-app/src/x.ts#L10-L20]\`. Pair raw + code when both apply — raw is where the page *learned* the claim, code is the ground truth that *verifies* it.
+Multiple citations stack: \`[^raw/a.md][^code:legacy-app/src/x.ts#L10-L20]\`. Pair raw + code when both apply - raw is where the page *learned* the claim, code is the ground truth that *verifies* it.
 
-Every path or authority cited inline must also appear in the frontmatter \`sources:\` list (raw as \`raw/<path>\`, code as \`code:<authority>\`) — that's the invariant \`tng-wiki ground\` checks. Claims without a citation are subject to \`⚠️ UNSOURCED?\` marking.
+Every path or authority cited inline must also appear in the frontmatter \`sources:\` list (raw as \`raw/<path>\`, code as \`code:<authority>\`) - that's the invariant \`tng-wiki ground\` checks. Claims without a citation are subject to \`⚠️ UNSOURCED?\` marking.
 
 ### Writing Style
 
 - **Dense and scannable.** Use headers. Use tables. No fluff.
 - **Show your work.** Every claim cites at least one source or is marked as inference.
 - **Confidence markers** (inline, paired with the claim):
-  - \`[confirmed]\` — multiple Tier 1–2 sources agree
-  - \`[reported]\` — single Tier 1–2 source, or multiple Tier 3 sources
-  - \`[inference]\` — logical deduction from cited evidence
-  - \`[rumor]\` — Tier 4 only, treat with extreme caution
+  - \`[confirmed]\` - multiple Tier 1-2 sources agree
+  - \`[reported]\` - single Tier 1-2 source, or multiple Tier 3 sources
+  - \`[inference]\` - logical deduction from cited evidence
+  - \`[rumor]\` - Tier 4 only, treat with extreme caution
 - **Numbers always have sources.** Never state a figure without attribution.
-- Use Obsidian-style \`[[wikilinks]]\` for all internal cross-references. Lint-enforced: \`tng-wiki ground\` flags prose references to wiki pages — \`page.md\` inline-code tokens or markdown links — as \`prose_internal_ref\` with the wikilink to use instead.
+- Use Obsidian-style \`[[wikilinks]]\` for all internal cross-references. Lint-enforced: \`tng-wiki ground\` flags prose references to wiki pages - \`page.md\` inline-code tokens or markdown links - as \`prose_internal_ref\` with the wikilink to use instead.
 
 ### Source Quality Tiers
 
-- **Tier 1 — Primary:** Official announcements, filings, court docs, peer-reviewed papers
-- **Tier 2 — Quality reporting:** Established press with named sources, detailed expert analysis
-- **Tier 3 — Commentary:** Newsletters, substacks, credible practitioner social media
-- **Tier 4 — Aggregation/rumor:** Forums, anonymous sources, unverified claims
+- **Tier 1 - Primary:** Official announcements, filings, court docs, peer-reviewed papers
+- **Tier 2 - Quality reporting:** Established press with named sources, detailed expert analysis
+- **Tier 3 - Commentary:** Newsletters, substacks, credible practitioner social media
+- **Tier 4 - Aggregation/rumor:** Forums, anonymous sources, unverified claims
 
-Prefer Tier 1-2 for factual claims. Tier 3-4 inform narrative and sentiment — mark them as such. A \`[confirmed]\` tag on a claim whose only cited source is Tier 3/4 will be flagged \`⚠️ UNVERIFIED?\` by grounding.`;
+Prefer Tier 1-2 for factual claims. Tier 3-4 inform narrative and sentiment - mark them as such. A \`[confirmed]\` tag on a claim whose only cited source is Tier 3/4 is confidence inflation - mark it \`⚠️ UNVERIFIED?\` during your Layer 2 grounding pass. (Judging a source's tier is a semantic call, so the structural \`tng-wiki ground\` command cannot flag this for you.)`;
+
+const MARKER_LEGEND = `## Markers
+
+Inline \`⚠️\` markers make wiki health visible without running tools; the lint verbs (\`tng-wiki stale\` / \`unsourced\` / \`unverified\` / \`drift\`, bundled by \`rounds\`) just grep for them. Four markers, each with a producer and a resolution path:
+
+- **\`⚠️ STALE?\`** - claim may be out of date (time-based, not evidence-based). Re-verify against a current source, then update or clear.
+- **\`⚠️ UNSOURCED?\`** - no inline citation, or a cite missing from frontmatter \`sources:\`. Produced by \`tng-wiki ground\` (Layer 1). Add the citation, downgrade to \`[inference]\`, or remove the claim.
+- **\`⚠️ UNVERIFIED?\`** - confidence tag is stronger than the cited source tier warrants. A Layer 2 (agent) judgment - \`tng-wiki ground\` cannot detect it. Add a Tier 1-2 source or downgrade the tag.
+- **\`⚠️ DRIFT?\`** - claim has diverged from what its cited source says. A Layer 2/3 judgment; the marker carries its own evidence. Never auto-resolve - it feeds the interactive reconcile.
+
+Never remove a marker without completing its resolution action and logging it. **Full taxonomy** - exact meanings, producers, per-marker resolution protocols, and the \`⚠️ DRIFT?\` evidence format - lives in \`.tng-wiki/doctrine/markers.md\`.`;
 
 const MARKER_TAXONOMY = `## Marker Taxonomy
 
@@ -151,18 +401,18 @@ Inline markers make wiki health visible without running tools. Each has a specif
 
 ### \`⚠️ UNVERIFIED?\`
 
-- **Meaning:** Confidence tag is stronger than the cited source tier warrants — e.g. \`[confirmed]\` backed only by Tier 3/4.
-- **Produced by:** \`tng-wiki ground\` (Layer 1, structural).
-- **Resolution action:** Either (a) find a Tier 1–2 source and add the citation, or (b) downgrade the confidence tag to match the evidence. Log.
+- **Meaning:** Confidence tag is stronger than the cited source tier warrants - e.g. \`[confirmed]\` backed only by Tier 3/4.
+- **Produced by:** You, during Layer 2 grounding (semantic) - matching a confidence tag against the tier of its cited sources is a judgment the structural \`tng-wiki ground\` pass cannot make. (\`tng-wiki unverified\` only *lists* pages already carrying this marker; it does not detect inflation.)
+- **Resolution action:** Either (a) find a Tier 1-2 source and add the citation, or (b) downgrade the confidence tag to match the evidence. Log.
 
 ### \`⚠️ DRIFT?\`
 
 - **Meaning:** The claim has diverged from what its cited raw source actually says. The marker includes evidence: \`⚠️ DRIFT? [source: <path> says "<what the source says>"; wiki says "<current claim>"; suggested: "<agent's proposed fix>"]\`
 - **Produced by:** Layer 2 grounding (semantic re-verification) or Layer 3 grounding (external validation).
-- **Resolution action — interactive reconcile:** For each marker, present the source evidence + current claim + suggested fix to the human. The human chooses \`accept\` / \`edit\` / \`reject\` / \`defer\`:
+- **Resolution action - interactive reconcile:** For each marker, present the source evidence + current claim + suggested fix to the human. The human chooses \`accept\` / \`edit\` / \`reject\` / \`defer\`:
   - **accept:** Apply the suggested fix verbatim, remove the marker, bump \`updated\`, log.
   - **edit:** Apply a human-edited claim, remove the marker, bump \`updated\`, log.
-  - **reject:** Remove the marker without changing the claim (the human has evidence the wiki is right and the marker is wrong — log the reasoning), optionally add a counter-citation.
+  - **reject:** Remove the marker without changing the claim (the human has evidence the wiki is right and the marker is wrong - log the reasoning), optionally add a counter-citation.
   - **defer:** Leave the marker in place; log the defer with a reason.
 
 Never auto-apply a \`⚠️ DRIFT?\` resolution without human approval. The marker exists precisely because the agent is uncertain which side is correct.`;
@@ -179,7 +429,7 @@ _The full CLI surface is one call away: \`tng-wiki help --json\` (every command,
 
 "Rounds" is the named maintenance bundle. When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping", run it end to end and report a short summary:
 
-1. **Ingest** anything pending in \`raw/\` (uncompiled sources — \`tng-wiki sources --uncompiled\`).
+1. **Ingest** anything pending in \`raw/\` (uncompiled sources - \`tng-wiki sources --uncompiled\`).
 2. **Lint + ground**: run \`tng-wiki ground\`, \`orphans\`, \`unsourced\`, \`unverified\`, \`stale\`, \`drift\` (or \`tng-wiki rounds\` for every count at a glance).
 3. **Reconcile** what's safely reconcilable; leave the \`⚠️\` markers that need human judgment and surface them.
 4. **Update** \`wiki/index.md\` and append a \`wiki/log.md\` entry summarizing what changed.
@@ -193,12 +443,12 @@ When the human drops a new source into \`raw/\` and asks you to process it:
 
 1. **Read the source fully.** If it has images, read text first, then view images separately.
 2. **Discuss key takeaways** with the human. What's new? What does it confirm or contradict?
-3. **Integrate into existing wiki pages** — don't create a separate summary-per-source. A single source typically touches 5-15 pages.
+3. **Integrate into existing wiki pages** - don't create a separate summary-per-source. A single source typically touches 5-15 pages.
 4. **Cite every claim.** Every new or updated claim gets a \`[^raw/<path>]\` inline citation to the source it came from. Add the raw path to the page's frontmatter \`sources:\` list if not already present.
-5. **Check for contradictions** — if new data conflicts with existing claims, flag with \`⚠️ DRIFT?\` and include both sides in the marker so the human can reconcile.
-6. **Update \`wiki/index.md\`** — add or revise entries for changed pages.
-7. **Append to \`wiki/log.md\`** — record what you did.
-8. **Update frontmatter** — refresh \`updated\` date, adjust \`confidence\` based on evidence tier.
+5. **Check for contradictions** - if new data conflicts with existing claims, flag with \`⚠️ DRIFT?\` and include both sides in the marker so the human can reconcile.
+6. **Update \`wiki/index.md\`** - add or revise entries for changed pages.
+7. **Append to \`wiki/log.md\`** - record what you did.
+8. **Update frontmatter** - refresh \`updated\` date, adjust \`confidence\` based on evidence tier.
 
 The human prefers to ingest one source at a time and stay involved unless they say otherwise.
 
@@ -216,228 +466,25 @@ When the human asks a question:
 
 When asked to health-check the wiki:
 
-1. Contradictions — claims that conflict across pages
-2. Stale claims — \`⚠️ STALE?\` markers or claims older than 2 weeks without fresh sourcing
-3. Orphan pages — \`tng-wiki orphans\` — no inbound wikilinks
-4. Missing pages — concepts mentioned but lacking their own page
-5. Missing cross-references — pages that should link but don't
-6. Thin pages — fewer than 3 sources or missing key sections
-7. Coverage gaps — areas with few or no pages
+1. Contradictions - claims that conflict across pages
+2. Stale claims - \`⚠️ STALE?\` markers or claims older than 2 weeks without fresh sourcing
+3. Orphan pages - \`tng-wiki orphans\` - no inbound wikilinks
+4. Missing pages - concepts mentioned but lacking their own page
+5. Missing cross-references - pages that should link but don't
+6. Thin pages - fewer than 3 sources or missing key sections
+7. Coverage gaps - areas with few or no pages
 
 Output a lint report. Suggest specific actions.
 
 ### Grounding
 
-Ground-truth the wiki against its source material. Three layers, escalating in cost and thoroughness. Run them in order — Layer 1 before Layer 2, Layer 2 before Layer 3 — so cheap structural checks catch the easy problems before you pay for semantic re-reading.
+Ground-truth the wiki against its sources. Three layers, escalating in cost - run them in order so cheap structural checks catch the easy problems before you pay for semantic re-reading:
 
-**Verification-first option.** The default flow is ingest-first: compile raw sources, then ground later, with the \`⚠️\` markers as the health surface. When the leads themselves are fallible — AI-generated PRDs, premises worth refuting, claims that must be validated against authorities before they're worth keeping — invert it: verify each lead claim first, distill only what survives (typically \`[confirmed]\`), and record every rejected, corrected, or downgraded claim with its disposition in a **rejection log** — a NOTES deliverable (\`deliverables/*_NOTES_*.md\`, surfaced by \`tng-wiki rounds\`). A verification-first wiki carries near-zero markers by construction, so the rejection log is the audit surface instead: "we verified it" without a list of what failed verification is evidence nothing was looked for.
+1. **Layer 1 - Structural (cheap, zero-LLM):** \`tng-wiki ground [--page <path>] [--at-ref] [--update-lock] [--fix-moved]\`. Catches missing/empty \`sources:\`, inline cites pointing at nonexistent raw files, declaration/citation mismatches, raw sources changed after a page's \`updated\` date, unknown/missing/excluded code authorities, out-of-range code anchors, \`index_header_drift\`, and - with a committed citation lockfile - per-citation churn (\`cite_content_changed\`, \`cite_moved\`, \`cite_moved_ambiguous\`, \`cite_unlocked\`). Apply the markers it implies and log the pass.
+2. **Layer 2 - Semantic (agent-driven):** you re-read each cited source and compare it against the claim; where they diverge, write a \`⚠️ DRIFT?\` marker that carries its own evidence. This layer also owns confidence-tier judgment (\`⚠️ UNVERIFIED?\`) - the structural pass cannot make it.
+3. **Layer 3 - Authority validation (opt-in, scoped):** 3A web authorities (only URLs cited in the raw source, or a per-wiki \`trusted_authorities\` allow-list - never free-range \`WebSearch\`) and 3B code authorities (a local codebase as advisory ground truth for reverse-engineering / porting / M&A wikis, cited \`[^code:<name>/<path>#L<start>-L<end>]\`).
 
-#### Layer 1 — Structural (cheap, always safe)
-
-Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catches:
-
-- Pages with empty or missing \`sources:\` frontmatter (→ apply \`⚠️ UNSOURCED?\`)
-- Inline \`[^raw/...]\` citations pointing at raw files that don't exist (→ fix the path, or remove the claim)
-- Inline citations not registered in frontmatter \`sources:\` (undeclared cites — applies to both raw and \`code:<name>\` entries)
-- Frontmatter \`sources:\` entries not cited inline (orphan declarations — the page added a source it never used)
-- Pages whose \`updated\` (by date) is older than a cited raw source's last git commit-date — or mtime when the wiki isn't a git repo (source changed after distillation — candidate for Layer 2)
-- Inline \`[^code:<name>/...]\` citations where \`<name>\` is not a registered code authority in \`.tng-wiki.json\` (\`unknown_code_authority\`) or where the file path resolves to nothing on disk (\`missing_code_file\`)
-- Inline \`[^code:<name>/file]\` citations targeting a file the authority's \`exclude\` globs skip (\`excluded_code_file\`), or whose \`#L<start>-L<end>\` anchor exceeds the cited file (\`code_line_out_of_range\`)
-- With \`--at-ref\`: code citations are resolved at each authority's pinned \`ref\` instead of the working tree — adds \`missing_code_file\` at the ref, \`code_updated_after_page\` (the page's \`updated\` predates the file's last commit at the ref), and \`code_ref_unresolvable\` (the ref or repo can't be resolved)
-- \`wiki/index.md\` scaffold header out of sync with the actual page set (\`index_header_drift\` — fix the header to the stated page-count formula and the newest page date)
-- Warn-level hygiene findings: pages whose file changed (git commit-date, mtime fallback) after their frontmatter \`updated\` (\`frontmatter_updated_stale\` — bump \`updated\`), and internal pages referenced in prose instead of \`[[wikilinks]]\` (\`prose_internal_ref\` — apply the suggested wikilink)
-- With a citation lockfile (\`wiki/.tng-wiki.lock.json\`, committed — see below): per-citation churn instead of per-file churn — \`cite_content_changed\` (the cited lines changed since last verified; the surgical re-verification queue), \`cite_moved\` (content identical, \`#L\` anchor shifted — repair with \`ground --fix-moved\`, the only safe auto-fix), \`cite_moved_ambiguous\` (locked content now appears in several places — fix the anchor by hand), and \`cite_unlocked\` (cite never locked)
-- Confidence tag inflation: \`[confirmed]\` claims with only Tier 3/4 citations (→ apply \`⚠️ UNVERIFIED?\`)
-
-Apply the appropriate markers inline. Log the pass with issue counts.
-
-**The citation lockfile.** \`tng-wiki ground --update-lock\` writes \`wiki/.tng-wiki.lock.json\`: per citation, a normalized content hash of the cited range (whitespace-only changes are invisible), and per code authority, the SHA its ref resolved to. Commit it — it is verification state that travels with the wiki. With the lock in place, Layer 1 answers "**which citations** changed since they were last verified" rather than "which files were touched", so re-verification against an active branch stays affordable. \`--update-lock\` records *human-verified* state and never runs implicitly: run it at the end of an ingest or after a reconcile, never on content you haven't checked. \`cite_content_changed\` findings are never auto-fixed — they feed the Layer-2 \`⚠️ DRIFT?\` workflow below.
-
-#### Layer 2 — Semantic re-verification (agent-driven)
-
-You re-read each raw source and compare it against the wiki claims it's supposed to support. Where they diverge, you write a \`⚠️ DRIFT?\` marker that carries its own evidence so a human can reconcile without re-reading the source.
-
-**Triage order when scope is a whole wiki:**
-
-1. Pages flagged \`source_updated_after_page\` by Layer 1 (strongest signal of drift).
-2. Pages with recent \`updated\` dates that changed without a new ingest log entry (possible manual edit without citation update).
-3. Oldest pages with the most citations (long-tail decay).
-4. Pages tagged \`[confirmed]\` extensively (highest stakes if drift exists).
-
-Prefer per-page (\`--page <path>\`) runs when the user asks to verify something specific. Reserve whole-wiki passes for explicit ground-check requests or scheduled maintenance.
-
-**Per-claim verification procedure:**
-
-1. Read every raw source in frontmatter \`sources:\`.
-2. For each claim in the wiki page, identify which cited source supports it (inline \`[^raw/...]\` is the mapping).
-3. Does the source still say what the wiki says? Apply one of four outcomes:
-   - **Supported** — no action.
-   - **Partially supported** — the source supports a weaker claim than the wiki states. Either downgrade the wiki's confidence tag (\`[confirmed]\` → \`[reported]\`, etc.) or narrow the claim. Log.
-   - **Drifted** — source and wiki disagree. Write \`⚠️ DRIFT?\` with source quote, current claim, and suggested fix (see below). Never auto-apply.
-   - **Unsourceable** — the cited source does not support this claim at all. Write \`⚠️ UNSOURCED?\` inline and flag for human review — something was distilled incorrectly.
-
-**\`⚠️ DRIFT?\` marker format (self-contained evidence):**
-
-\`\`\`
-⚠️ DRIFT? [source: raw/<path> says "<1–3 sentence quote, or a paraphrase if quoting is impractical>";
-           wiki says "<current wiki claim>";
-           suggested: "<your proposed fix — the exact replacement text>"]
-\`\`\`
-
-Keep quotes tight. Paraphrase long-form material. The marker should be readable in isolation — a human reviewing six months from now shouldn't need to re-open the source to understand the evidence.
-
-**Dependency chains:** If wiki page A cites wiki page B which cites raw source C, treat as two separate links. Verify A→B (B supports A) and B→C (C supports B) as independent checks. Never shortcut A→C by assuming transitivity — intermediate distillations are where most drift hides.
-
-**Batching:** A whole-wiki semantic pass on a 100-page wiki is expensive. Announce the scope before starting. Check in with the user every 10–20 pages with a running total ("12 pages verified, 3 drift markers applied so far — continue?").
-
-#### Layer 3 — Authority validation (opt-in, scoped)
-
-Cross-check wiki claims against external authority. Two kinds of authority exist; they're orthogonal and can both be configured per-wiki in \`.tng-wiki.json\`.
-
-##### 3A. Web authorities
-
-When the user asks you to verify against live external web sources, use \`WebFetch\` / \`WebSearch\` under strict rules:
-
-**Authorized sources, in priority order:**
-
-1. **URLs cited in the raw source itself** — the primary trust chain. If the raw source links to the vendor docs, fetch those docs.
-2. **Per-wiki trusted authorities** — if the wiki's \`.tng-wiki.json\` lists a \`trusted_authorities\` array (e.g. \`["docs.python.org", "spec.commonmark.org"]\`), those domains are always authorized.
-3. **Explicit user permission** — the user names a specific source in the ground-check request.
-
-**Never:**
-- Free-range \`WebSearch\` without specific authority targets. Unconstrained search latches onto the wrong voice and produces confident-wrong results.
-- Trust a single external source to override a raw source without human review. External disagrees with raw = \`⚠️ DRIFT?\` for reconcile, not auto-rewrite.
-- Refetch the same URL multiple times per ground run — cache per-URL within a single run.
-
-**Procedure:**
-
-1. For each claim in scope, identify the authority URL(s) it should be checked against.
-2. Fetch each URL once. Summarize what it says about the claim.
-3. Three possible outcomes per claim:
-   - **External confirms wiki + raw:** note the concurrence in the log; no marker.
-   - **External confirms wiki but contradicts raw:** the raw source is out of date. Apply \`⚠️ STALE?\` to the raw-file-level reference in the wiki's frontmatter comment, and flag for human review — may want to re-ingest from the current authority.
-   - **External contradicts wiki:** apply \`⚠️ DRIFT?\` with both the raw-source quote and the external-source quote in the evidence. Reconcile interactively.
-
-**Failure modes to handle gracefully:**
-
-- **Unreachable / 404:** the authority URL moved. Mark the source with \`⚠️ STALE?\` and log — do not delete the citation.
-- **Rate-limited:** back off and surface to the user rather than retrying blindly.
-- **Two external authorities disagree:** record both, do not pick one silently, escalate to human.
-
-##### 3B. Code authorities (local filesystem)
-
-Use when the wiki is built around a real codebase — typical in reverse-engineering, porting, or M&A / IP-acquisition workflows where \`raw/\` holds AI-generated PRDs, overview docs, and implementation guides that may hallucinate, and the actual implementation is the ground truth the wiki needs to validate against.
-
-**Configuration.** \`.tng-wiki.json\` lists each authoritative codebase in \`code_authorities\`:
-
-\`\`\`json
-"code_authorities": [
-  {
-    "name": "legacy-app",
-    "path": "../customer-portal-v1",
-    "description": "Source implementation being ported.",
-    "exclude": ["**/*.md", "docs/**", "**/*.test.*", "**/node_modules/**", "**/dist/**"],
-    "language": "typescript"
-  }
-]
-\`\`\`
-
-- \`name\` — short handle used in citations (\`[^code:legacy-app/...]\`).
-- \`path\` — tree root, resolved relative to the wiki root.
-- \`exclude\` — gitignore-style globs; skip these when traversing the authority.
-- \`language\` — optional hint; helps you pick appropriate comment/doc syntax to ignore.
-- \`ref\` — optional git ref (branch, tag, commit SHA). When set, read the authority *at that ref* instead of the working tree. Tags/SHAs are true pins; branch refs track and rely on the lockfile for determinism. See **Ref pinning** below.
-
-**Tools.** \`Read\`, \`Grep\`, \`Glob\`. Not \`WebFetch\`. Code authorities are local filesystem; fetching is free and instant.
-
-**Ref pinning.** When an authority has a \`ref\` field set, the user wants grounding decoupled from their working tree — typically because the source repo is actively evolving. Two kinds of ref behave differently:
-
-- **Tag or commit-SHA refs** are true pins: frozen to a specific point in history, deterministic by construction.
-- **Branch refs** (\`main\`, \`origin/develop\`) are *tracks*, not pins — they move on every fetch. Determinism comes from the citation lockfile instead: each \`ground\` run records which SHA the branch resolved to in \`wiki/.tng-wiki.lock.json\`'s \`authorities\` block (\`resolved_sha\`, plus a \`dirty\` flag on working-tree runs), so the wiki can always say "verified against \`develop@5e36f17\`" without forcing the cite refs onto SHAs.
-
-In either case, when reading at a ref:
-
-- Read individual files via \`git -C <path> show <ref>:<file>\` instead of \`Read\`. The output goes to stdout; pipe through your normal scope filter (ignore comments/docstrings/JSDoc/etc).
-- Enumerate files via \`git -C <path> ls-tree -r --name-only <ref>\` instead of \`Glob\`.
-- For text search, use \`git -C <path> grep <pattern> <ref>\` instead of \`Grep\`.
-- The user's working-tree state is irrelevant under ref pinning — they may have switched branches, stashed work, or have uncommitted changes; none of it contaminates grounding.
-- \`git show <ref>:<file>\` returning \`fatal: path '...' exists on disk, but not in '<ref>'\` means the cited file existed in the working tree (so Layer 1 \`tng-wiki ground\` passed) but does not exist at the pinned ref. Treat the cite as \`missing_code_file\` for the purposes of this Layer 3B run, surface to the user, and recommend either updating \`ref\` or removing the cite.
-- Layer 1 (\`tng-wiki ground\`) does not honor \`ref\` **by default** — it checks the working tree, the cheap snapshot that answers "does this path exist anywhere I can read it." Run \`tng-wiki ground --at-ref\` to opt into ref-pinned structural checks: it resolves cited files at each authority's \`ref\` and reports \`missing_code_file\` (absent at the ref), \`code_updated_after_page\`, and \`code_ref_unresolvable\`. With a citation lockfile, \`--at-ref\` also hashes each cited range at the ref (per-citation churn) and records the resolved ref SHA in the lock's \`authorities\` block. That mechanically catches the existence half of the procedure below; the semantic Layer 3B work still applies on top. A plain (non \`--at-ref\`) run that consults the working tree of a ref'd authority emits a one-line warning per authority — \`working_tree_of_ref_authority\` in the \`--json\` \`warnings\` array — so the working-tree/ref mismatch is never silent. Heed it: it means the pin the user configured was not checked on that run.
-
-When \`ref\` is unset (the default), read the working tree directly with \`Read\` / \`Grep\` / \`Glob\` as normal.
-
-**Scope filter — implementation only.** The user has chosen a code authority because documentation is fallible. Return the favor: when treating a code file as authoritative, disregard its comments, docstrings, JSDoc, type-annotation descriptions, and any markdown/text files even if \`exclude\` did not catch them. Concretely, ignore:
-
-- Single-line comments: \`// ...\`, \`# ...\`, \`-- ...\`.
-- Block comments: \`/* ... */\`, \`""" ... """\`, \`''' ... '''\`, \`<!-- ... -->\`.
-- Doc blocks: JSDoc (\`/** ... */\`), Python docstrings, rustdoc (\`/// ...\`), Javadoc, XML doc comments.
-- Whole files: \`*.md\`, \`*.rst\`, \`*.txt\`, \`README\`, \`CHANGELOG\` — even if not excluded by config.
-
-The implementation is authority. The comments may be stale or aspirational; the PRDs in \`raw/\` *already are*. You are not hunting for what the code *claims*, you are deriving what it *does*.
-
-**Citation form.** When Discovery- or Ingest-phase work grounds a claim in code, emit an inline citation:
-
-\`\`\`markdown
-[^code:<authority-name>/<path-within-tree>[#L<start>[-L<end>]]]
-\`\`\`
-
-- \`<authority-name>\` matches a \`code_authorities\` entry.
-- \`<path-within-tree>\` is the file path inside the authority's \`path\`.
-- \`#L<start>-L<end>\` — GitHub-style line range anchor. Optional (omit for whole-file claims). Single line: \`#L42\`.
-
-Frontmatter \`sources:\` must list \`code:<name>\` for every code authority the page cites — same invariant raw sources follow. Pair raw + code cites when both apply:
-
-\`\`\`markdown
-The login flow uses OAuth2 implicit grant — no PKCE.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
-\`\`\`
-
-Engineers and future agents clicking the code citation in a capable editor (VS Code, GitHub preview) jump straight to the cited lines. Cite specifically — aim for ranges of 1–30 lines, not whole files, so the human following the cite lands on the evidence without re-hunting.
-
-**Precedence — advisory.** Code is advisory authority, not absolute. Disagreement between code and raw or code and wiki produces a \`⚠️ DRIFT?\` marker with evidence; the human reconciles. Never auto-apply a code-derived correction.
-
-**Procedure.**
-
-1. For each claim in scope, identify which code authority (if any) could verify it. Not every claim has a code authority — e.g. "why" claims, strategic-context claims, and claims about external systems.
-2. \`Read\` / \`Grep\` the authority for the cited or plausibly-relevant file. Honor \`exclude\` globs; ignore comments/docs per the scope filter.
-3. Four possible outcomes:
-   - **Code confirms wiki + raw:** log the concurrence. No marker. Add a \`[^code:...]\` citation alongside the existing \`[^raw/...]\` so the evidence chain is explicit.
-   - **Code confirms wiki, contradicts raw:** the raw doc is a hallucination or out-of-date. Write \`⚠️ DRIFT?\` naming the raw source, with both raw and code quotes, and propose updating the wiki claim to match code (which it already matches — the marker flags the raw source as suspect so it gets re-ingested or retired).
-   - **Code contradicts wiki:** the wiki propagated a raw-doc hallucination or distilled incorrectly. Write \`⚠️ DRIFT?\` with \`code:\` evidence line; the suggested fix reflects the code's behavior.
-   - **Code silent on the claim:** the authority doesn't cover this. No marker; this is the boundary of what code can verify.
-
-**DRIFT marker format — extended for code authority:**
-
-\`\`\`
-⚠️ DRIFT? [source: raw/prd-auth.md says "OAuth2 with PKCE";
-           code: legacy-app/src/auth/oauth.ts#L42-L58 shows "implicit flow, no code_challenge parameter sent";
-           wiki says "OAuth2 with PKCE";
-           suggested: "OAuth2 implicit flow — legacy-app does not implement PKCE"]
-\`\`\`
-
-Keep code paraphrase tight — summarize what the implementation *does*, quote sparingly. The \`#L\` anchor gives the reader the exact landing spot.
-
-**Failure modes to handle gracefully:**
-
-- **Authority \`path\` missing or unreadable:** log; surface to the user as a configuration issue (the authority moved, permissions, git submodule not initialized). Do not mark pages — you can't verify.
-- **\`exclude\` filters out every candidate file:** likely misconfigured globs. Report to the user.
-- **Cited file moved or was deleted:** \`tng-wiki ground\` already flags this as \`missing_code_file\`. Resolve per structural lint — update the cite or mark \`⚠️ STALE?\` on the page pending human decision.
-- **Two authorities disagree:** rare, but possible (e.g. a forked codebase and its upstream). Record both, escalate; do not silently prefer one.
-
-### Reconcile Drifts
-
-When the user asks you to reconcile, walk \`tng-wiki drift\` (and \`unsourced\` / \`unverified\`) output. For each marker:
-
-1. \`tng-wiki read <page>\` to fetch the current page.
-2. Extract the marker's evidence (source quote, current claim, suggested fix).
-3. Present all three to the user in a compact form.
-4. Ask: **accept / edit / reject / defer**. Support natural-language variations ("yes", "fix it", "no, the wiki is right", "skip this one").
-5. Apply the chosen action:
-   - **accept:** replace the claim with the suggested fix, remove the marker, bump \`updated\`, log.
-   - **edit:** take the user's edited claim, replace, remove the marker, bump \`updated\`, log.
-   - **reject:** remove the marker without changing the claim. Capture the user's reasoning in the log (the wiki was right; the external source was wrong; etc.). Optionally add a counter-citation.
-   - **defer:** leave the marker in place. Log the defer with the user's reason.
-
-After walking all markers, produce a summary: N accepted / N edited / N rejected / N deferred. If more than a handful were deferred, ask whether to schedule a follow-up.`;
+**Read \`.tng-wiki/doctrine/grounding.md\` before any Layer 2/3 or reconcile pass.** It carries the full protocol Layer 1 does not: the per-claim verification procedure and its four outcomes, the \`⚠️ DRIFT?\` evidence format, ref-pinning (branch-track vs tag/SHA-pin) and the lockfile's \`resolved_sha\`, the verification-first flow and rejection log, dependency-chain rules, the web-authority priority order and failure modes, the code-authority scope filter (implementation only - ignore comments/docstrings/JSDoc), and the interactive accept / edit / reject / defer reconcile loop.`;
 
   if (isPublication) {
     ops += `
@@ -468,11 +515,15 @@ After publishing an issue:
   return ops;
 }
 
-// Emitted only when the wiki registers lead_archives in .tng-wiki.json — the
+// Emitted only when the wiki registers lead_archives in .tng-wiki.json - the
 // config-backed form of the "leads, never sources" guardrail.
 function LEAD_ARCHIVES(archives) {
+  // Fold em/en dashes in the echoed description: this string is written into the
+  // generated AGENTS.md, and user-authored .tng-wiki.json descriptions often carry
+  // em-dashes that would otherwise read as machine-generated in the artifact.
+  const clean = (s) => String(s).replace(/[—–]/g, '-');
   const rows = archives
-    .map((a) => `- **${a.name}** — \`${a.path}\`${a.description ? ` — ${a.description}` : ''}`)
+    .map((a) => `- **${a.name}** - \`${a.path}\`${a.description ? ` - ${clean(a.description)}` : ''}`)
     .join('\n');
   return `## Leads, Never Sources
 
@@ -480,19 +531,19 @@ This wiki registers external, fallible doc archives in \`.tng-wiki.json → lead
 
 ${rows}
 
-A lead archive is **search surface, not trust surface** — typically AI-generated discovery or analysis docs that may hallucinate. Every hit is a lead to investigate, never evidence to cite.
+A lead archive is **search surface, not trust surface** - typically AI-generated discovery or analysis docs that may hallucinate. Every hit is a lead to investigate, never evidence to cite.
 
 - **Search the archives** with \`tng-wiki search <term> --include-leads\`. Hits are tagged \`[lead:<name>]\` in plain output and \`source: "lead", archive: "<name>"\` in \`--json\`. Independent of \`--include-raw\`; pass both when you want the full surface.
-- **Never cite a lead.** No inline citation and no frontmatter \`sources:\` entry may resolve into a lead archive — \`tng-wiki ground\` flags it as \`cited_lead_archive\` (error-level). A lead is explicitly *not* a source.
-- **Re-ground every carried claim.** Anything a lead suggests enters the wiki only after it's verified against a real authority — \`code_authorities\` or \`raw/\` — and cited from there. If you can't ground it, it stays out (or enters as \`[inference]\` with the uncertainty stated).
-- **Record provenance** with the \`leads:\` frontmatter key — the machine-readable replacement for hand-written provenance blockquotes:
+- **Never cite a lead.** No inline citation and no frontmatter \`sources:\` entry may resolve into a lead archive - \`tng-wiki ground\` flags it as \`cited_lead_archive\` (error-level). A lead is explicitly *not* a source.
+- **Re-ground every carried claim.** Anything a lead suggests enters the wiki only after it's verified against a real authority - \`code_authorities\` or \`raw/\` - and cited from there. If you can't ground it, it stays out (or enters as \`[inference]\` with the uncertainty stated).
+- **Record provenance** with the \`leads:\` frontmatter key - the machine-readable replacement for hand-written provenance blockquotes:
 
   \`\`\`yaml
   leads:
     - ${archives[0].name}:20260504_RAPS_Analysis2.md
   \`\`\`
 
-  Form: \`<archive-name>:<relative-path-within-archive>\`. Purely informational ("distilled from lead X"). \`leads:\` entries are exempt from the \`sources:\` invariants — they need no inline citation and never count as attribution. \`tng-wiki ground\` warns (never errors) with \`missing_lead\` when the referenced file no longer exists (archives evolve) and \`unknown_lead_archive\` when the archive name isn't registered.`;
+  Form: \`<archive-name>:<relative-path-within-archive>\`. Purely informational ("distilled from lead X"). \`leads:\` entries are exempt from the \`sources:\` invariants - they need no inline citation and never count as attribution. \`tng-wiki ground\` warns (never errors) with \`missing_lead\` when the referenced file no longer exists (archives evolve) and \`unknown_lead_archive\` when the archive name isn't registered.`;
 }
 
 const INDEXING = `## Indexing
@@ -501,7 +552,7 @@ const INDEXING = `## Indexing
 
 **Always read \`index.md\` first** when answering queries. At moderate scale (~100s of pages), this is sufficient without embedding-based search.
 
-The scaffold header line (\`_Last updated: <date> | Total pages: <N> | Total sources: <M>_\`) is lint-checked: \`tng-wiki ground\` flags \`index_header_drift\` when the date or page count falls behind reality — page count = all \`wiki/**/*.md\` except \`index.md\`, \`log.md\`, and \`_\`-prefixed files (\`wiki/meta/*\` pages count).
+The scaffold header line (\`_Last updated: <date> | Total pages: <N> | Total sources: <M>_\`) is lint-checked: \`tng-wiki ground\` flags \`index_header_drift\` when the date or page count falls behind reality - page count = all \`wiki/**/*.md\` except \`index.md\`, \`log.md\`, and \`_\`-prefixed files (\`wiki/meta/*\` pages count).
 
 If QMD is available, use \`qmd query "..."\` via CLI or MCP for larger wikis.`;
 
@@ -541,19 +592,19 @@ function aiResearchSchema() {
 
 ### Page Types
 
-**Entity pages** (\`wiki/entities/\`) — Companies, people, orgs. Include: overview, key facts, strategic position, recent moves (reverse-chronological), builder implications, contradictions, cross-references.
+**Entity pages** (\`wiki/entities/\`) - Companies, people, orgs. Include: overview, key facts, strategic position, recent moves (reverse-chronological), builder implications, contradictions, cross-references.
 
-**Protocol pages** (\`wiki/protocols/\`) — Standards and specifications. Include: what it does, who's behind it, adoption status, technical summary, builder implications.
+**Protocol pages** (\`wiki/protocols/\`) - Standards and specifications. Include: what it does, who's behind it, adoption status, technical summary, builder implications.
 
-**Stack layer pages** (\`wiki/stack/\`) — Infrastructure layers (compute, models, orchestration, security, identity, tooling, deployment). Include: current state, key players, recent shifts, builder implications.
+**Stack layer pages** (\`wiki/stack/\`) - Infrastructure layers (compute, models, orchestration, security, identity, tooling, deployment). Include: current state, key players, recent shifts, builder implications.
 
-**Opportunity pages** (\`wiki/opportunities/\`) — Builder opportunities, scored per \`_scoring-criteria.md\`. Include: summary, scores, the gap, who's building, revenue model, stack requirements, signal watch.
+**Opportunity pages** (\`wiki/opportunities/\`) - Builder opportunities, scored per \`_scoring-criteria.md\`. Include: summary, scores, the gap, who's building, revenue model, stack requirements, signal watch.
 
-**Narrative pages** (\`wiki/narratives/\`) — Recurring themes spanning multiple sources. Include: thesis, evidence chain, counter-evidence, implications.
+**Narrative pages** (\`wiki/narratives/\`) - Recurring themes spanning multiple sources. Include: thesis, evidence chain, counter-evidence, implications.
 
-**Timeline pages** (\`wiki/timelines/\`) — Chronological tracking of multi-event sagas.
+**Timeline pages** (\`wiki/timelines/\`) - Chronological tracking of multi-event sagas.
 
-**Contradiction pages** (\`wiki/contradictions/\`) — Where sources disagree. Gold for analysis.`;
+**Contradiction pages** (\`wiki/contradictions/\`) - Where sources disagree. Gold for analysis.`;
 }
 
 function competitiveIntelSchema() {
@@ -561,15 +612,15 @@ function competitiveIntelSchema() {
 
 ### Page Types
 
-**Company pages** (\`wiki/companies/\`) — Intelligence profiles. Include: overview, products, funding/revenue, strategic position, recent moves, SWOT summary, signal watch.
+**Company pages** (\`wiki/companies/\`) - Intelligence profiles. Include: overview, products, funding/revenue, strategic position, recent moves, SWOT summary, signal watch.
 
-**Product pages** (\`wiki/products/\`) — Individual product tracking. Include: what it does, pricing, market position, strengths/weaknesses, competitive alternatives.
+**Product pages** (\`wiki/products/\`) - Individual product tracking. Include: what it does, pricing, market position, strengths/weaknesses, competitive alternatives.
 
-**Market pages** (\`wiki/markets/\`) — Market segments. Include: size, growth, key players, dynamics, entry barriers.
+**Market pages** (\`wiki/markets/\`) - Market segments. Include: size, growth, key players, dynamics, entry barriers.
 
-**SWOT pages** (\`wiki/swot/\`) — Deep SWOT analyses per company. Include: strengths, weaknesses, opportunities, threats, signal watch.
+**SWOT pages** (\`wiki/swot/\`) - Deep SWOT analyses per company. Include: strengths, weaknesses, opportunities, threats, signal watch.
 
-**Signal pages** (\`wiki/signals/\`) — Notable events: hiring moves, product launches, funding, partnerships, regulatory actions.`;
+**Signal pages** (\`wiki/signals/\`) - Notable events: hiring moves, product launches, funding, partnerships, regulatory actions.`;
 }
 
 function publicationSchema() {
@@ -577,23 +628,23 @@ function publicationSchema() {
 
 ### Page Types
 
-**Entity pages** (\`wiki/entities/\`) — Companies, people, orgs. Include: overview, key facts, strategic position, recent moves, builder implications, contradictions, cross-references. Track which published issues reference each entity.
+**Entity pages** (\`wiki/entities/\`) - Companies, people, orgs. Include: overview, key facts, strategic position, recent moves, builder implications, contradictions, cross-references. Track which published issues reference each entity.
 
-**Protocol pages** (\`wiki/protocols/\`) — Standards and specs. Include: what, who, adoption, technical summary, builder implications.
+**Protocol pages** (\`wiki/protocols/\`) - Standards and specs. Include: what, who, adoption, technical summary, builder implications.
 
-**Stack layer pages** (\`wiki/stack/\`) — Infrastructure layers. Include: current state, key players, shifts, builder implications.
+**Stack layer pages** (\`wiki/stack/\`) - Infrastructure layers. Include: current state, key players, shifts, builder implications.
 
-**Opportunity pages** (\`wiki/opportunities/\`) — Scored per \`_scoring-criteria.md\`.
+**Opportunity pages** (\`wiki/opportunities/\`) - Scored per \`_scoring-criteria.md\`.
 
-**Narrative pages** (\`wiki/narratives/\`) — Multi-issue themes. Include: thesis, evidence chain, counter-evidence, publication coverage history, unexplored angles.
+**Narrative pages** (\`wiki/narratives/\`) - Multi-issue themes. Include: thesis, evidence chain, counter-evidence, publication coverage history, unexplored angles.
 
-**Timeline pages** (\`wiki/timelines/\`) — Multi-event sagas tracked across issues.
+**Timeline pages** (\`wiki/timelines/\`) - Multi-event sagas tracked across issues.
 
-**Contradiction pages** (\`wiki/contradictions/\`) — Story fuel.
+**Contradiction pages** (\`wiki/contradictions/\`) - Story fuel.
 
 ### Publication-Specific Frontmatter
 
-Entity pages include: \`published_in: [001, 003, 007]\` — tracking which issues reference the entity.
+Entity pages include: \`published_in: [001, 003, 007]\` - tracking which issues reference the entity.
 
 Narrative pages include: \`status: active | stale | resolved\` and \`angles_explored: []\` / \`angles_remaining: []\`.`;
 }
@@ -603,15 +654,15 @@ function businessOpsSchema() {
 
 ### Page Types
 
-**Project pages** (\`wiki/projects/\`) — Active and completed projects. Include: status, owner, timeline, decisions made, open questions, retrospective.
+**Project pages** (\`wiki/projects/\`) - Active and completed projects. Include: status, owner, timeline, decisions made, open questions, retrospective.
 
-**Decision pages** (\`wiki/decisions/\`) — Key decisions and their context. Include: date, participants, options considered, decision made, rationale, outcome (updated later).
+**Decision pages** (\`wiki/decisions/\`) - Key decisions and their context. Include: date, participants, options considered, decision made, rationale, outcome (updated later).
 
-**People pages** (\`wiki/people/\`) — Team members and stakeholders. Include: role, key context, involvement in projects/decisions.
+**People pages** (\`wiki/people/\`) - Team members and stakeholders. Include: role, key context, involvement in projects/decisions.
 
-**Process pages** (\`wiki/processes/\`) — How things work. Include: description, owner, dependencies, known issues.
+**Process pages** (\`wiki/processes/\`) - How things work. Include: description, owner, dependencies, known issues.
 
-**Retrospective pages** (\`wiki/retrospectives/\`) — What we learned. Include: date, context, what went well, what didn't, action items.`;
+**Retrospective pages** (\`wiki/retrospectives/\`) - What we learned. Include: date, context, what went well, what didn't, action items.`;
 }
 
 function softwareEngineeringSchema() {
@@ -619,28 +670,28 @@ function softwareEngineeringSchema() {
 
 ### Page Types
 
-**Decision pages** (\`wiki/decisions/\`) — Architecture Decision Records (ADRs). Each page uses the ADR template (\`wiki/decisions/_adr-template.md\`). Include: **status** (\`proposed\` → \`accepted\` → \`deprecated\` or \`superseded\`), **context** (forces and constraints), **decision** (what was chosen, with citations), **consequences** (positive / negative / neutral), **alternatives considered**, **links**. Track relationships via \`supersedes:\` and \`superseded-by:\` frontmatter fields so the lineage is queryable.
+**Decision pages** (\`wiki/decisions/\`) - Architecture Decision Records (ADRs). Each page uses the ADR template (\`wiki/decisions/_adr-template.md\`). Include: **status** (\`proposed\` → \`accepted\` → \`deprecated\` or \`superseded\`), **context** (forces and constraints), **decision** (what was chosen, with citations), **consequences** (positive / negative / neutral), **alternatives considered**, **links**. Track relationships via \`supersedes:\` and \`superseded-by:\` frontmatter fields so the lineage is queryable.
 
-**Component pages** (\`wiki/components/\`) — Services, libraries, modules. Include: **purpose**, **API surface**, **upstream/downstream dependencies**, **data stores**, **SLOs** (availability / latency / throughput), **linked runbooks**, **known tech debt**, **recent decisions** that shaped the component. Ownership lives in \`wiki/meta/ownership.md\`, not per-page.
+**Component pages** (\`wiki/components/\`) - Services, libraries, modules. Include: **purpose**, **API surface**, **upstream/downstream dependencies**, **data stores**, **SLOs** (availability / latency / throughput), **linked runbooks**, **known tech debt**, **recent decisions** that shaped the component. Ownership lives in \`wiki/meta/ownership.md\`, not per-page.
 
-**System pages** (\`wiki/systems/\`) — Higher-level groupings of components. Include: boundary definitions, data flow, cross-component interactions, failure modes.
+**System pages** (\`wiki/systems/\`) - Higher-level groupings of components. Include: boundary definitions, data flow, cross-component interactions, failure modes.
 
-**Pattern pages** (\`wiki/patterns/\`) — Reusable approaches. Include: description, **when to use** / **when not to use**, **tradeoffs**, example implementations, known instances in the codebase.
+**Pattern pages** (\`wiki/patterns/\`) - Reusable approaches. Include: description, **when to use** / **when not to use**, **tradeoffs**, example implementations, known instances in the codebase.
 
-**Incident pages** (\`wiki/incidents/\`) — Postmortems following the incident template (\`wiki/incidents/_incident-template.md\`). Include: **severity** (P0–P3, see \`wiki/meta/severity-taxonomy.md\`), **timeline**, **root cause**, **contributing factors**, **resolution**, **action items** table with owners and status, links to any tech-debt items the incident exposed.
+**Incident pages** (\`wiki/incidents/\`) - Postmortems following the incident template (\`wiki/incidents/_incident-template.md\`). Include: **severity** (P0-P3, see \`wiki/meta/severity-taxonomy.md\`), **timeline**, **root cause**, **contributing factors**, **resolution**, **action items** table with owners and status, links to any tech-debt items the incident exposed.
 
-**Runbook pages** (\`wiki/runbooks/\`) — Operational procedures for humans or agents. Include: **trigger** (when to run this), **prerequisites**, **steps** (numbered, copy-pastable), **verification**, **rollback**. Link from the owning component.
+**Runbook pages** (\`wiki/runbooks/\`) - Operational procedures for humans or agents. Include: **trigger** (when to run this), **prerequisites**, **steps** (numbered, copy-pastable), **verification**, **rollback**. Link from the owning component.
 
-**Tech debt pages** (\`wiki/tech-debt/\`) — Known compromises scored on the impact × effort grid (\`wiki/tech-debt/_scoring-criteria.md\`). Include: **impact** (Critical/High/Medium/Low), **effort** (S/M/L/XL), **what's blocked**, links to decisions that created or would resolve it.
+**Tech debt pages** (\`wiki/tech-debt/\`) - Known compromises scored on the impact × effort grid (\`wiki/tech-debt/_scoring-criteria.md\`). Include: **impact** (Critical/High/Medium/Low), **effort** (S/M/L/XL), **what's blocked**, links to decisions that created or would resolve it.
 
 ### ADR Status Lifecycle
 
 ADR statuses are intentional, not decorative:
 
-- \`proposed\` — under review. No downstream code/docs should depend on the outcome yet.
-- \`accepted\` — in effect. Record the acceptance date in the Status section.
-- \`deprecated\` — no longer the preferred approach, but not yet replaced. New work should avoid it.
-- \`superseded\` — replaced by a later ADR. Both ADRs get \`supersedes:\` / \`superseded-by:\` entries, and \`tng-wiki ground\` can verify the back-link is bidirectional.
+- \`proposed\` - under review. No downstream code/docs should depend on the outcome yet.
+- \`accepted\` - in effect. Record the acceptance date in the Status section.
+- \`deprecated\` - no longer the preferred approach, but not yet replaced. New work should avoid it.
+- \`superseded\` - replaced by a later ADR. Both ADRs get \`supersedes:\` / \`superseded-by:\` entries, and \`tng-wiki ground\` can verify the back-link is bidirectional.
 
 Never delete an ADR. Deprecation and supersession preserve the historical context that made the original decision reasonable at the time.
 
@@ -648,14 +699,14 @@ Never delete an ADR. Deprecation and supersession preserve the historical contex
 
 - **One decision per ADR.** If a review generates multiple decisions, file multiple ADRs that cross-link.
 - **Cite the evidence.** Every ADR claim gets a \`[^raw/rfcs/...]\` or \`[^raw/prs/...]\` citation so grounding catches drift when the evidence moves.
-- **Incidents always produce tech-debt entries** for latent issues exposed, even when the immediate fix is landed — future-you needs the trail.
+- **Incidents always produce tech-debt entries** for latent issues exposed, even when the immediate fix is landed - future-you needs the trail.
 - **Runbooks age fast.** Add \`⚠️ STALE?\` proactively if a runbook hasn't been exercised in two quarters.`;
 }
 
 function codeArchaeologySchema() {
   return `## Domain: Code Archaeology / Reverse Engineering
 
-This wiki distills an unfamiliar, under-documented, or inherited codebase into verified knowledge. The code authorities in \`.tng-wiki.json → code_authorities\` are the point of the entire exercise — every claim worth keeping is verified against an implementation. If no authorities are configured yet, stop and ask the human to register them before distilling anything.
+This wiki distills an unfamiliar, under-documented, or inherited codebase into verified knowledge. The code authorities in \`.tng-wiki.json → code_authorities\` are the point of the entire exercise - every claim worth keeping is verified against an implementation. If no authorities are configured yet, stop and ask the human to register them before distilling anything.
 
 ### Layout (beyond the standard three layers)
 
@@ -665,25 +716,45 @@ raw/samples/   ← captured runtime artifacts: I/O dumps, fixtures, traces
 raw/specs/     ← external specs and protocol docs the code is supposed to satisfy
 raw/scripts/   ← probe scripts written during verification (rerunnable evidence)
 templates/     ← deliverable skeletons: DISCOVERY / ANALYSIS / DESIGN / NOTES
-deliverables/  ← dated, frozen documents — the audit trail
+deliverables/  ← dated, frozen documents - the audit trail
 \`\`\`
 
 ### Wiki vs Deliverables
 
 Two output surfaces with opposite lifecycles. Never conflate them:
 
-- **\`wiki/\`** — evergreen, code-verified pages. Updated forever, grounded by \`tng-wiki ground\`, every claim cited. This is the compounding artifact.
-- **\`deliverables/\`** — dated, frozen documents. Built from the skeletons in \`templates/\`, named \`YYYYMMDD_Topic_TYPE_vX.Y.md\` (e.g. \`20260415_AuthFlow_ANALYSIS_v1.0.md\`). \`deliverables/\` and \`raw/\` are grounding-exempt — they record what was known at a moment, not living claims.
+- **\`wiki/\`** - evergreen, code-verified pages. Updated forever, grounded by \`tng-wiki ground\`, every claim cited. This is the compounding artifact.
+- **\`deliverables/\`** - dated, frozen documents. Built from the skeletons in \`templates/\`, named \`YYYYMMDD_Topic_TYPE_vX.Y.md\` (e.g. \`20260415_AuthFlow_ANALYSIS_v1.0.md\`). \`deliverables/\` and \`raw/\` are grounding-exempt - they record what was known at a moment, not living claims.
 
-**Versioning rule:** git covers working revisions — do not mint versions for ordinary edits. Create a new \`_vX.Y\` file only when a deliverable is shared externally (a milestone). A shipped deliverable is never retro-edited: corrections happen in the wiki and in the next version.
+**Versioning rule:** git covers working revisions - do not mint versions for ordinary edits. Create a new \`_vX.Y\` file only when a deliverable is shared externally (a milestone). A shipped deliverable is never retro-edited: corrections happen in the wiki and in the next version.
+
+### Librarian Duties (standing, every session)
+
+A session opened *in this wiki* is its librarian. Capture is cheap and happens from anywhere (any session can drop a doc in \`_inbox/\`); filing is careful and happens here. Every session, before you finish:
+
+1. **Triage \`_inbox/\`.** Read what landed there, then file it: distill verifiable claims into grounded \`wiki/\` pages, send dated point-in-time write-ups to \`deliverables/\`, and move immutable captures to \`raw/\`. \`_inbox/\` should be empty when you leave, or carry only items you logged as deferred.
+2. **Keep \`wiki/index.md\` and \`wiki/log.md\` current** via the tng-wiki verbs: every new or changed page earns an index entry and a log line.
+3. **Register and close open threads.** Anything you can neither confirm nor refute goes in \`wiki/meta/open-threads.md\`; when a thread resolves, check it off with a one-line pointer to what resolved it.
+4. **Distill, don't dump.** A new deliverable becomes a grounded wiki page (sources frontmatter + code-authority citations), not a copy.
+5. **Scan staged content for secrets before any commit.** Credentials, tokens, and keys never enter the repo: they live outside it (e.g. \`~/.secrets/*.env\`, \`chmod 600\`) and scripts read them at runtime with fail-fast \`: "\${VAR:?set VAR}"\` guards. A commit that would carry a secret is aborted, not cleaned up afterward.
+6. **Ask before moving or renaming any file you did not create.** Reorganizing another author's filing silently loses provenance; propose the move and let the human confirm.
+
+**Filing rules: where new content goes.**
+
+| Content | Destination |
+|---|---|
+| Evergreen, authority-verified knowledge | \`wiki/<zone>/\` |
+| Dated, point-in-time, or externally shared documents | \`deliverables/<zone>/\` |
+| Immutable inputs: captures, fixtures, specs, probe scripts | \`raw/samples/\`, \`raw/specs/\`, \`raw/scripts/\` |
+| Unsure, or a capture arriving mid-session | \`_inbox/\` (a later librarian session triages it) |
 
 ### Zones
 
-Zone subdirectories under \`wiki/\` are created per system or area *as the territory becomes known* — the scaffold ships only the standard \`wiki/entities/\` and \`wiki/meta/\`, deliberately no per-system zones. When a system earns its first pages, create \`wiki/<zone>/\` and register the zone in \`wiki/meta/ecosystem.md\`. Don't pre-build structure for systems you haven't verified exist.
+Zone subdirectories under \`wiki/\` are created per system or area *as the territory becomes known* - the scaffold ships only the standard \`wiki/entities/\` and \`wiki/meta/\`, deliberately no per-system zones. When a system earns its first pages, create \`wiki/<zone>/\` and register the zone in \`wiki/meta/ecosystem.md\`. Don't pre-build structure for systems you haven't verified exist.
 
 ### Leads, Never Sources
 
-AI-generated documents — anything in \`_inbox/\`, prior AI write-ups archived in \`raw/\`, vendor-generated docs, your own earlier deliverables, and any configured lead archives — are **leads, never sources**. A lead tells you *where to look*; it never tells you *what's true*. Every claim carried from a lead into a wiki page is re-grounded against a code authority before it is written. A lead claim that can't be verified doesn't get a weaker confidence tag — it stays out of the wiki and goes to the rejection log or \`wiki/meta/open-threads.md\`.
+AI-generated documents - anything in \`_inbox/\`, prior AI write-ups archived in \`raw/\`, vendor-generated docs, your own earlier deliverables, and any configured lead archives - are **leads, never sources**. A lead tells you *where to look*; it never tells you *what's true*. Every claim carried from a lead into a wiki page is re-grounded against a code authority before it is written. A lead claim that can't be verified doesn't get a weaker confidence tag - it stays out of the wiki and goes to the rejection log or \`wiki/meta/open-threads.md\`.
 
 ### Provenance Block
 
@@ -693,33 +764,33 @@ Every distilled wiki page carries a provenance block recording its verification 
 > **Provenance**
 > - Lead: _inbox/auth-overview.md (AI-generated, consulted as lead only)
 > - Verified against: code:legacy-app @ v2.1.0
-> - Corrections vs lead: 2 — token TTL is 15m not 60m; refresh path retries once, not "until success"
+> - Corrections vs lead: 2 - token TTL is 15m not 60m; refresh path retries once, not "until success"
 \`\`\`
 
-Three lines, always: the lead consulted, the authority (+ ref) verified against, and the corrections made versus the lead (\`none\` is a valid — and suspicious — answer). The provenance block complements, never replaces, per-claim \`[^code:...]\` citations.
+Three lines, always: the lead consulted, the authority (+ ref) verified against, and the corrections made versus the lead (\`none\` is a valid - and suspicious - answer). The provenance block complements, never replaces, per-claim \`[^code:...]\` citations.
 
 ### Verification-First Flow
 
 For each claim a lead suggests:
 
-1. **Premise-refute.** Take the claim as a premise and actively try to disprove it against the authority (\`Read\` / \`Grep\` the implementation; honor the scope filter — comments and docstrings are leads too).
+1. **Premise-refute.** Take the claim as a premise and actively try to disprove it against the authority (\`Read\` / \`Grep\` the implementation; honor the scope filter - comments and docstrings are leads too).
 2. **Validate.** If refutation fails, collect positive evidence: the exact file and line range that makes the claim true.
-3. **Distill.** Only \`[confirmed]\` claims enter the wiki — confirmed here means *the implementation itself supports it* — each with a \`[^code:<authority>/<path>#L..]\` citation and the page's provenance block updated.
-4. **Log rejections.** Every claim that died in step 1 gets a row in the campaign's rejection-log NOTES deliverable (skeleton: \`templates/NOTES.md\`): the claim, the lead it came from, the authority checked, why it died. The rejection log is the audit artifact proving verification happened — an empty one means the leads were perfect (unlikely) or you weren't verifying.
+3. **Distill.** Only \`[confirmed]\` claims enter the wiki - confirmed here means *the implementation itself supports it* - each with a \`[^code:<authority>/<path>#L..]\` citation and the page's provenance block updated.
+4. **Log rejections.** Every claim that died in step 1 gets a row in the campaign's rejection-log NOTES deliverable (skeleton: \`templates/NOTES.md\`): the claim, the lead it came from, the authority checked, why it died. The rejection log is the audit artifact proving verification happened - an empty one means the leads were perfect (unlikely) or you weren't verifying.
 
-Anything you can neither confirm nor refute is registered in \`wiki/meta/open-threads.md\` — and closed there, with a one-line resolution, when settled. Registering and closing threads is a standing librarian duty, not an optional nicety.
+Anything you can neither confirm nor refute is registered in \`wiki/meta/open-threads.md\` - and closed there, with a one-line resolution, when settled. Registering and closing threads is a standing librarian duty, not an optional nicety.
 
 ### Precedence
 
-Code wins. At distillation time, when a lead and the implementation disagree, the implementation's version is the only one that may enter the wiki — record the disagreement in the rejection log. The Layer 3B scope filter and procedure in Operations apply unchanged: implementation only, comments/docstrings/docs disregarded, and for claims *already in the wiki* a code disagreement surfaces as \`⚠️ DRIFT?\` with evidence for human reconcile — never auto-applied.
+Code wins. At distillation time, when a lead and the implementation disagree, the implementation's version is the only one that may enter the wiki - record the disagreement in the rejection log. The Layer 3B scope filter and procedure in Operations apply unchanged: implementation only, comments/docstrings/docs disregarded, and for claims *already in the wiki* a code disagreement surfaces as \`⚠️ DRIFT?\` with evidence for human reconcile - never auto-applied.
 
 ### Meta Pages (\`wiki/meta/\`, grounding-exempt)
 
-- **\`glossary.md\`** — terms as the *code* uses them; code-derived meaning beats document-derived.
-- **\`ecosystem.md\`** — the system/repo map; every system encountered gets a row, every zone gets registered.
-- **\`project-status.md\`** — phase context. It lives there and not in this schema because it rots; update it every working session.
-- **\`open-threads.md\`** — the open-findings ledger (see the librarian duty above). Review at the start of every rounds pass.
-- **\`patterns.md\`** — verification lessons learned: what a lead claimed, what the code showed, the generalizable heuristic. Read it before each verification pass; append when a verification surprises you.`;
+- **\`glossary.md\`** - terms as the *code* uses them; code-derived meaning beats document-derived.
+- **\`ecosystem.md\`** - the system/repo map; every system encountered gets a row, every zone gets registered.
+- **\`project-status.md\`** - phase context. It lives there and not in this schema because it rots; update it every working session.
+- **\`open-threads.md\`** - the open-findings ledger (see the librarian duty above). Review at the start of every rounds pass.
+- **\`patterns.md\`** - verification lessons learned: what a lead claimed, what the code showed, the generalizable heuristic. Read it before each verification pass; append when a verification surprises you.`;
 }
 
 function learningSchema() {
@@ -727,13 +798,13 @@ function learningSchema() {
 
 ### Page Types
 
-**Concept pages** (\`wiki/concepts/\`) — Core ideas. Include: definition, explanation, examples, connections to other concepts, open questions.
+**Concept pages** (\`wiki/concepts/\`) - Core ideas. Include: definition, explanation, examples, connections to other concepts, open questions.
 
-**People pages** (\`wiki/people/\`) — Thinkers, researchers, authors. Include: field, key contributions, notable works, connections.
+**People pages** (\`wiki/people/\`) - Thinkers, researchers, authors. Include: field, key contributions, notable works, connections.
 
-**Connection pages** (\`wiki/connections/\`) — Non-obvious links between concepts. Include: the two (or more) concepts, the connection, why it matters, sources.
+**Connection pages** (\`wiki/connections/\`) - Non-obvious links between concepts. Include: the two (or more) concepts, the connection, why it matters, sources.
 
-**Question pages** (\`wiki/questions/\`) — Open questions to investigate. Include: the question, current best understanding, what would resolve it, priority.`;
+**Question pages** (\`wiki/questions/\`) - Open questions to investigate. Include: the question, current best understanding, what would resolve it, priority.`;
 }
 
 function blankSchema() {

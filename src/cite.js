@@ -7,11 +7,17 @@
 // uses. Errors degrade per-cite (same finding names ground uses), never per-run.
 
 import { readFileSync, existsSync } from 'fs';
-import { resolve, sep } from 'path';
+import { resolve } from 'path';
 import pc from 'picocolors';
 import { resolveWiki } from './verbs.js';
+import { insideRoot } from './paths.js';
 import { splitFrontmatter, extractCitations, loadCodeAuthorities } from './ground.js';
+import { citeKey } from './lock.js';
 import { refResolves, readFileAtRef } from './git-read.js';
+
+// Re-exported from lock.js (the citation-primitive home) so `--cite <key>`
+// matching, the listing, and the lockfile all key citations identically.
+export { citeKey };
 
 const DEFAULT_CONTEXT = 20;
 
@@ -39,15 +45,6 @@ export function extractClaim(lineText, markerStart) {
   return head.slice(from).trim();
 }
 
-// Canonical cite key — what `--cite <key>` matches and what the listing prints.
-export function citeKey(c) {
-  if (c.kind === 'raw') return c.path;
-  let key = `code:${c.authority}`;
-  if (c.file) key += `/${c.file}`;
-  if (c.range) key += `#L${c.range.start}${c.range.end !== c.range.start ? `-L${c.range.end}` : ''}`;
-  return key;
-}
-
 // Lines of a blob, ignoring a single trailing newline (cf. ground's countLines).
 function linesOf(content) {
   const lines = content.split('\n');
@@ -68,7 +65,7 @@ function readFileSafe(absPath) {
 function resolveWithin(root, relPath) {
   const rootAbs = resolve(root);
   const target = resolve(rootAbs, relPath);
-  return target.startsWith(rootAbs + sep) ? target : null;
+  return insideRoot(rootAbs, target) ? target : null;
 }
 
 // Page path resolution — same forms `read` accepts (relative to wiki/), plus a
@@ -77,7 +74,7 @@ function resolvePagePath(wikiPath, page) {
   const wikiDir = resolve(wikiPath, 'wiki');
   const rel = page.startsWith('wiki/') ? page.slice('wiki/'.length) : page;
   const target = resolve(wikiDir, rel);
-  if (!target.startsWith(wikiDir + sep)) {
+  if (!insideRoot(wikiDir, target)) {
     throw new Error(`Page path "${page}" escapes the wiki directory`);
   }
   if (!existsSync(target)) throw new Error(`Page not found: ${page}`);

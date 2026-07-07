@@ -1,3 +1,4 @@
+import { existsSync, readdirSync } from 'fs';
 import { homedir } from 'os';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
 
@@ -59,4 +60,30 @@ export function suggestRelative(wikiRoot, absPath, maxUp = 4) {
   while (up < segments.length && segments[up] === '..') up++;
   if (up > maxUp) return null;
   return segments.join('/');
+}
+
+// Containment guard via relative() rather than startsWith(root + sep): a root
+// that already ends with the separator (e.g. `/` or `C:\`) would make
+// `root + sep` unmatchable and silently disarm the guard (false negatives).
+// Returns true for absPath === root and anything strictly inside it. Both args
+// must already be absolute/resolved. The one traversal guard the grounding,
+// cite, and verb surfaces share.
+export function insideRoot(root, absPath) {
+  const rel = relative(root, absPath);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+// Recursively collect `.md` files under `dir` (absolute paths), skipping
+// dotfiles and dot-directories. Missing dir -> []. Shared by grounding and the
+// verb search/walk surface so both see exactly the same file set.
+export function walkMd(dir) {
+  if (!existsSync(dir)) return [];
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkMd(full));
+    else if (entry.isFile() && entry.name.endsWith('.md')) out.push(full);
+  }
+  return out;
 }

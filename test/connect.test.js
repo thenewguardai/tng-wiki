@@ -28,6 +28,41 @@ test('buildConnectBlock omits the description clause when there is no descriptio
   assert.ok(!b.includes('**software-engineering** —'));
 });
 
+test('buildConnectBlock omits the domain clause for the blank catch-all domain', () => {
+  const b = buildConnectBlock({ ...wiki, domain: 'blank' });
+  assert.ok(!b.includes('for **blank**'));
+  assert.match(b, /A tng-wiki knowledge base is registered on this machine/);
+  // a real domain still gets its clause
+  assert.match(buildConnectBlock(wiki), /for \*\*software-engineering\*\* is registered/);
+});
+
+test('buildConnectBlock never emits an em-dash (it is written into other repos)', () => {
+  // with and without a description, and with a description that itself contains one
+  assert.ok(!buildConnectBlock(wiki).includes('—'));
+  assert.ok(!buildConnectBlock({ ...wiki, description: '' }).includes('—'));
+  assert.ok(!buildConnectBlock({ ...wiki, description: 'a — b' }).includes('—'));
+});
+
+test('buildConnectBlock does not run a period-terminated description into the next word', () => {
+  // regression: "...Blackwell sm_120 quirks. is registered at ..." (doubled punctuation)
+  const b = buildConnectBlock({ ...wiki, description: 'Blackwell sm_120 quirks.' });
+  assert.ok(!b.includes('quirks. is registered'));
+  assert.match(b, /It covers Blackwell sm_120 quirks\./);
+  // exactly one period after the scope clause, never two
+  assert.ok(!b.includes('quirks..'));
+});
+
+test('buildConnectBlock surfaces the _inbox drop-off only when the wiki has one', () => {
+  const without = buildConnectBlock(wiki);
+  assert.ok(!without.includes('_inbox'));
+  assert.match(without, /follow its `AGENTS\.md`/);
+
+  const withInbox = buildConnectBlock({ ...wiki, inbox: true });
+  assert.match(withInbox, /\/home\/x\/wiki\/_inbox\//);
+  assert.match(withInbox, /capture is cheap, filing is careful/);
+  assert.ok(!withInbox.includes('—'));
+});
+
 test('applyManagedBlock inserts into empty, then updates in place (idempotent)', () => {
   const once = applyManagedBlock('', buildConnectBlock(wiki));
   assert.equal(blockCount(once), 1);

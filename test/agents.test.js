@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateAgentsMd, schemaLayout, CANONICAL_SCHEMA_FILE } from '../src/agents/index.js';
+import { generateAgentsMd, generateDoctrine, schemaLayout, CANONICAL_SCHEMA_FILE } from '../src/agents/index.js';
 
 const ctx = { domain: 'ai-research', wikiName: 'Test Wiki', template: {} };
 
@@ -20,12 +20,25 @@ test('generateAgentsMd embeds domain-specific schema sections', () => {
   assert.ok(!blank.includes('Opportunity pages'));
 });
 
-test('generateAgentsMd teaches the four-marker taxonomy with resolution actions', () => {
+test('generateAgentsMd carries the compact marker legend with all four markers and a doctrine pointer', () => {
   const out = generateAgentsMd(ctx);
-  assert.match(out, /## Marker Taxonomy/);
+  assert.match(out, /## Markers/);
   for (const marker of ['⚠️ STALE?', '⚠️ UNSOURCED?', '⚠️ UNVERIFIED?', '⚠️ DRIFT?']) {
-    assert.ok(out.includes(marker), `missing marker section: ${marker}`);
+    assert.ok(out.includes(marker), `missing marker in legend: ${marker}`);
   }
+  // the full taxonomy is deferred to on-demand doctrine, not the always-on schema
+  assert.ok(!out.includes('## Marker Taxonomy'), 'full taxonomy should not be in AGENTS.md');
+  assert.match(out, /\.tng-wiki\/doctrine\/markers\.md/);
+});
+
+test('generateDoctrine markers.md holds the full four-marker taxonomy with resolution actions', () => {
+  const markers = generateDoctrine(ctx)['markers.md'];
+  assert.match(markers, /## Marker Taxonomy/);
+  for (const marker of ['⚠️ STALE?', '⚠️ UNSOURCED?', '⚠️ UNVERIFIED?', '⚠️ DRIFT?']) {
+    assert.ok(markers.includes(marker), `missing marker section: ${marker}`);
+  }
+  // UNVERIFIED is an agent (Layer 2) judgment, not something `tng-wiki ground` detects
+  assert.match(markers, /Layer 2 grounding \(semantic\)/);
 });
 
 test('generateAgentsMd documents per-claim citations and sources as a path list', () => {
@@ -34,72 +47,84 @@ test('generateAgentsMd documents per-claim citations and sources as a path list'
   assert.match(out, /sources:[ \t]*#[^\n]*\n\s*-\s*raw\//);
 });
 
-test('generateAgentsMd names the verification-first flow and the rejection-log audit pattern', () => {
-  const out = generateAgentsMd(ctx);
-  assert.match(out, /Verification-first option/);
-  assert.match(out, /rejection log/);
-  assert.match(out, /deliverables\/\*_NOTES_\*\.md/);
-  // the core argument, verbatim
-  assert.match(out, /"we verified it" without a list of what failed verification is evidence nothing was looked for/);
-});
-
-test('generateAgentsMd includes Grounding and Reconcile Drifts operations', () => {
+test('generateAgentsMd keeps a compact 3-layer grounding summary and defers the protocol to doctrine', () => {
   const out = generateAgentsMd(ctx);
   assert.match(out, /### Grounding/);
-  assert.match(out, /### Reconcile Drifts/);
-  assert.match(out, /Layer 1 — Structural/);
-  assert.match(out, /Layer 2 — Semantic re-verification/);
-  assert.match(out, /Layer 3 — Authority validation/);
+  assert.match(out, /Layer 1 - Structural/);
+  assert.match(out, /Layer 2 - Semantic/);
+  assert.match(out, /Layer 3 - Authority validation/);
+  assert.match(out, /\.tng-wiki\/doctrine\/grounding\.md/);
+  // the deep protocol is deferred, not always-on
+  assert.ok(!out.includes('### Reconcile Drifts'), 'reconcile detail belongs in doctrine, not AGENTS.md');
+  assert.ok(!out.includes('Triage order when scope is a whole wiki'), 'Layer 2 triage belongs in doctrine');
 });
 
-test('generateAgentsMd Layer 2 documents triage order, per-claim outcomes, and dependency chains', () => {
-  const out = generateAgentsMd(ctx);
-  assert.match(out, /Triage order when scope is a whole wiki/);
-  assert.match(out, /Supported/);
-  assert.match(out, /Partially supported/);
-  assert.match(out, /Drifted/);
-  assert.match(out, /Unsourceable/);
-  assert.match(out, /Dependency chains/);
+test('generateDoctrine grounding.md names the verification-first flow and the rejection-log audit pattern', () => {
+  const g = generateDoctrine(ctx)['grounding.md'];
+  assert.match(g, /Verification-first option/);
+  assert.match(g, /rejection log/);
+  assert.match(g, /deliverables\/\*_NOTES_\*\.md/);
+  // the core argument, verbatim
+  assert.match(g, /"we verified it" without a list of what failed verification is evidence nothing was looked for/);
 });
 
-test('generateAgentsMd Layer 3A documents the web authority priority and forbids free-range search', () => {
-  const out = generateAgentsMd(ctx);
-  assert.match(out, /3A\. Web authorities/);
-  assert.match(out, /URLs cited in the raw source itself/);
-  assert.match(out, /trusted_authorities/);
-  assert.match(out, /Never.*[Ff]ree-range/s);
-  assert.match(out, /Rate-limited/);
+test('generateDoctrine grounding.md includes Grounding and Reconcile Drifts with all three layers', () => {
+  const g = generateDoctrine(ctx)['grounding.md'];
+  assert.match(g, /## Grounding/);
+  assert.match(g, /### Reconcile Drifts/);
+  assert.match(g, /Layer 1 - Structural/);
+  assert.match(g, /Layer 2 - Semantic re-verification/);
+  assert.match(g, /Layer 3 - Authority validation/);
 });
 
-test('generateAgentsMd Layer 3B documents code authorities for reverse-engineering workflows', () => {
-  const out = generateAgentsMd(ctx);
-  assert.match(out, /3B\. Code authorities/);
-  assert.match(out, /code_authorities/);
-  assert.match(out, /\[\^code:legacy-app\/src\/auth\/oauth\.ts#L42-L58\]/);
-  assert.match(out, /disregard its comments, docstrings, JSDoc/);
-  // advisory precedence — never auto-apply
-  assert.match(out, /advisory/i);
-  assert.match(out, /Never auto-apply/);
+test('generateDoctrine grounding.md Layer 2 documents triage order, per-claim outcomes, and dependency chains', () => {
+  const g = generateDoctrine(ctx)['grounding.md'];
+  assert.match(g, /Triage order when scope is a whole wiki/);
+  assert.match(g, /Supported/);
+  assert.match(g, /Partially supported/);
+  assert.match(g, /Drifted/);
+  assert.match(g, /Unsourceable/);
+  assert.match(g, /Dependency chains/);
 });
 
-test('generateAgentsMd Layer 3B documents the optional `ref` field for git-pinned reads', () => {
-  const out = generateAgentsMd(ctx);
-  assert.match(out, /Ref pinning/);
-  assert.match(out, /git -C <path> show <ref>:<file>/);
-  assert.match(out, /git -C <path> ls-tree/);
+test('generateDoctrine grounding.md Layer 3A documents the web authority priority and forbids free-range search', () => {
+  const g = generateDoctrine(ctx)['grounding.md'];
+  assert.match(g, /3A\. Web authorities/);
+  assert.match(g, /URLs cited in the raw source itself/);
+  assert.match(g, /trusted_authorities/);
+  assert.match(g, /Never.*[Ff]ree-range/s);
+  assert.match(g, /Rate-limited/);
+});
+
+test('generateDoctrine grounding.md Layer 3B documents code authorities for reverse-engineering workflows', () => {
+  const g = generateDoctrine(ctx)['grounding.md'];
+  assert.match(g, /3B\. Code authorities/);
+  assert.match(g, /code_authorities/);
+  assert.match(g, /\[\^code:legacy-app\/src\/auth\/oauth\.ts#L42-L58\]/);
+  assert.match(g, /disregard its comments, docstrings, JSDoc/);
+  // advisory precedence - never auto-apply
+  assert.match(g, /advisory/i);
+  assert.match(g, /Never auto-apply/);
+});
+
+test('generateDoctrine grounding.md Layer 3B documents the optional `ref` field for git-pinned reads', () => {
+  const g = generateDoctrine(ctx)['grounding.md'];
+  assert.match(g, /Ref pinning/);
+  assert.match(g, /git -C <path> show <ref>:<file>/);
+  assert.match(g, /git -C <path> ls-tree/);
   // explicit note that Layer 1 ground does not honor ref
-  assert.match(out, /Layer 1.*does not honor `ref`/s);
+  assert.match(g, /Layer 1.*does not honor `ref`/s);
 });
 
-test('generateAgentsMd documents branch-ref (tracking) vs tag/SHA-ref (true pin) semantics', () => {
-  const out = generateAgentsMd(ctx);
+test('generateDoctrine grounding.md documents branch-ref (tracking) vs tag/SHA-ref (true pin) semantics', () => {
+  const g = generateDoctrine(ctx)['grounding.md'];
   // tag/SHA refs are true pins; branch refs track and move
-  assert.match(out, /tag or commit-SHA refs.*true pins/is);
-  assert.match(out, /branch refs.*\*tracks\*, not pins/is);
+  assert.match(g, /tag or commit-SHA refs.*true pins/is);
+  assert.match(g, /branch refs.*\*tracks\*, not pins/is);
   // deterministic grounding against a branch = the lockfile records the resolved SHA
-  assert.match(out, /resolved_sha/);
+  assert.match(g, /resolved_sha/);
   // the plain-run warning is documented so agents know to heed it
-  assert.match(out, /working_tree_of_ref_authority/);
+  assert.match(g, /working_tree_of_ref_authority/);
 });
 
 test('generateAgentsMd teaches both raw and code inline citation forms', () => {
@@ -110,10 +135,10 @@ test('generateAgentsMd teaches both raw and code inline citation forms', () => {
   assert.match(out, /- code:legacy-app/);
 });
 
-test('generateAgentsMd Layer 1 lists unknown_code_authority and missing_code_file checks', () => {
-  const out = generateAgentsMd(ctx);
-  assert.match(out, /unknown_code_authority/);
-  assert.match(out, /missing_code_file/);
+test('generateDoctrine grounding.md Layer 1 lists unknown_code_authority and missing_code_file checks', () => {
+  const g = generateDoctrine(ctx)['grounding.md'];
+  assert.match(g, /unknown_code_authority/);
+  assert.match(g, /missing_code_file/);
 });
 
 test('generateAgentsMd software-engineering domain has ADR + component + incident page types', () => {
@@ -148,6 +173,35 @@ test('generateAgentsMd code-archaeology domain teaches the verification-first st
   assert.match(out, /deliberately no per-system zones/);
   assert.match(out, /Code wins/);
   assert.match(out, /⚠️ DRIFT\?/);
+});
+
+test('generateAgentsMd code-archaeology domain spells out librarian duties and a filing table', () => {
+  const out = generateAgentsMd({ ...ctx, domain: 'code-archaeology' });
+  assert.match(out, /### Librarian Duties \(standing, every session\)/);
+  // the every-session checklist
+  assert.match(out, /Triage `_inbox\/`/);
+  // the two guardrails ported from the dogfooded contract
+  assert.match(out, /Scan staged content for secrets before any commit/);
+  assert.match(out, /Ask before moving or renaming any file you did not create/);
+  // the filing-rules table maps content to a destination surface
+  assert.match(out, /Filing rules: where new content goes/);
+  assert.match(out, /\| Content \| Destination \|/);
+});
+
+test('generated schema and doctrine never contain an em-dash or en-dash (the tool eats its own no-em-dash rule)', () => {
+  for (const domain of ['software-engineering', 'code-archaeology', 'ai-research', 'blank']) {
+    const out = generateAgentsMd({
+      ...ctx,
+      domain,
+      // a user-authored description carrying an em-dash must still come out clean
+      leadArchives: [{ name: 'arch', path: '/a', description: 'predecessor notes — leads only' }],
+    });
+    assert.ok(!/[—–]/.test(out), `em/en-dash leaked into ${domain} schema`);
+  }
+  // the doctrine files carry the moved grounding + marker prose; hold them to the same rule
+  for (const [name, content] of Object.entries(generateDoctrine({ wikiName: 'Test Wiki' }))) {
+    assert.ok(!/[—–]/.test(content), `em/en-dash leaked into doctrine ${name}`);
+  }
 });
 
 test('CANONICAL_SCHEMA_FILE is AGENTS.md', () => {

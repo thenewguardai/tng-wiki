@@ -83,5 +83,25 @@ Split to `docs/` once README crosses ~250 lines.
 - Remove dead imports and other small code smells as part of regular maintenance.
 - Add fixture-based regression tests for each template so template changes are intentional and reviewable.
 - Standardize integration result objects so command summaries do not need to infer success from partial state. Git returns `{attempted, success, error?}`; qmd returns `{installed, configured, slug, wikiDir, error?}` — the two shapes should converge.
-- Trim the repo-root `CLAUDE.md` — the Architecture and Commands sections carry nice-to-know prose (lazy-import rationale, `npm start` / `--version` mentions) that a contributor can derive from `bin/cli.js` and `package.json`. Keep the load-bearing guidance.
-- Tighten `CLAUDE.md` scope around obvious commands: drop `npm start` and `--version` from the Commands section and keep only the non-obvious bits (throwaway-path testing loop, "no build/tests/linter").
+- ~~Trim and correct the repo-root `CLAUDE.md`: it had drifted (claimed "no test suite"; pointed at the removed `claude-code.js` / `codex.js` / `cursor.js` generators; described a three-command CLI).~~ **Resynced 2026-07-06** to the single `agents-md.js` generator + `schemaLayout` aliasing, the doctrine split, and the real verb / registry / grounding / MCP surface; `npm test` / `npm run smoke` added to Commands. Trimming remaining nice-to-know prose is still fair game.
+
+## Positioning (open decision, raised 2026-07-06)
+
+Three independent external reviews of v0.6.0, cross-checked against the code, converged on one diagnosis: **tng-wiki is a verification layer packaged as a scaffolder.** The engineering value, and the one feature no competitor has - the per-claim citation lockfile (move-aware, ref-pinned churn detection that answers "which *claims* changed since a human verified them") - lives in `ground` / `lock` / `cite`. But the name, tagline ("Scaffold an LLM-maintained knowledge base in under 10 minutes"), keywords, and domain templates all foreground `init`, the run-once scaffolder - the commoditized part (a gist paste plus any agent does it).
+
+Consequences, not aesthetics:
+
+- **Discovery mismatch.** Someone whose problem is "my AI wiki silently goes stale" - exactly what the lockfile solves - never finds the tool, because it does not describe itself that way.
+- **Adoption gate.** `ground` / `lock` / `cite` only run on tng-wiki-scaffolded wikis (they need the `[^raw/...]` / `[^code:...]` citation syntax). The moat is locked behind the commodity on-ramp.
+- **Evaluation frame.** Labeled a "Karpathy wiki," it gets dinged for thin ingest/search vs claude-obsidian; labeled a verification layer, those gaps stop counting (you do not fault a linter for not being an editor).
+
+Caveat: the reviews disagree on the competitive landscape (star counts, who "won" scaffolding) and none was verifiable, so hold the "scaffolding race is lost" claim loosely. The strategic logic holds regardless.
+
+Options (escalating cost):
+
+1. **Reframe only** (~1 hr): rewrite the README intro + `package.json` description + keywords to lead with citation-integrity / grounding; scaffolding becomes the on-ramp. The lean schema (doctrine split, 2026-07-06) now makes "hardens a wiki you already have" more true.
+2. **Make verification adoptable into any wiki** (weeks): `adopt` / stronger `--into-existing` so `ground` / `lock` / `cite` run on wikis tng-wiki did not scaffold (including claude-obsidian vaults). The barrier is the citation syntax, so the missing piece is a migration / annotation assist. Biggest strategic upside: converts the moat into reach.
+3. **Split the package**: extract `ground` / `lock` / `cite` as a standalone tool; the scaffolder becomes a thin front. Cleanest separation, likely premature.
+4. **Do nothing**: fine if tng-wiki is mainly for the maintainer's own code-archaeology use.
+
+Recommendation: 1 now, 2 as the real bet, led by the code-archaeology wedge (fallible AI-generated `raw/` + codebase-as-truth + verification-first) - the novel inversion all three reviews flagged and the maintainer's actual use case. 3 and 4 depend on the crux question: **is tng-wiki mainly for the maintainer, or for outside adopters?** That answer decides whether positioning matters at all.

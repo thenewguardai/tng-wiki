@@ -1,6 +1,6 @@
-import { generateAgentsMd } from './agents-md.js';
+import { generateAgentsMd, generateDoctrine, DOCTRINE_DIR } from './agents-md.js';
 
-export { generateAgentsMd };
+export { generateAgentsMd, generateDoctrine, DOCTRINE_DIR };
 
 const AGENT_ALIASES = {
   'claude-code': ['CLAUDE.md'],

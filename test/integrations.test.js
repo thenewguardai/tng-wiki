@@ -41,8 +41,8 @@ test('slugifyWikiName lowercases and dash-separates', () => {
 
 test('setupQmd reports installed:false when qmd --version fails', async () => {
   const result = await setupQmd('/tmp/fake', 'Demo Wiki', {
-    exec: (cmd) => {
-      if (cmd.startsWith('qmd --version')) throw new Error('not found');
+    exec: (file, args) => {
+      if (file === 'qmd' && args[0] === '--version') throw new Error('not found');
       throw new Error('should not reach');
     },
   });
@@ -57,20 +57,40 @@ test('setupQmd reports installed:false when qmd --version fails', async () => {
 test('setupQmd configures collection + context when qmd is available', async () => {
   const calls = [];
   const result = await setupQmd('/tmp/fake', 'Demo Wiki', {
-    exec: (cmd) => { calls.push(cmd); },
+    exec: (file, args) => { calls.push({ file, args }); },
   });
   assert.equal(result.installed, true);
   assert.equal(result.configured, true);
   assert.equal(result.slug, 'demo-wiki');
   assert.equal(calls.length, 3);
-  assert.match(calls[1], /qmd collection add "\/tmp\/fake\/wiki" --name "demo-wiki"/);
-  assert.match(calls[2], /qmd context add qmd:\/\/demo-wiki/);
+  assert.deepEqual(calls[0], { file: 'qmd', args: ['--version'] });
+  assert.deepEqual(calls[1], {
+    file: 'qmd',
+    args: ['collection', 'add', '/tmp/fake/wiki', '--name', 'demo-wiki', '--mask', '**/*.md'],
+  });
+  assert.deepEqual(calls[2], {
+    file: 'qmd',
+    args: ['context', 'add', 'qmd://demo-wiki', 'LLM-maintained wiki: Demo Wiki'],
+  });
+});
+
+test('setupQmd passes shell metacharacters as single args (no injection)', async () => {
+  // Regression: wikiDir / wikiName are user-controlled and must reach qmd as
+  // verbatim argv elements, never interpolated into a shell string.
+  const calls = [];
+  await setupQmd('/tmp/ev"il; touch pwned', 'Weird "$(name)" Wiki', {
+    exec: (file, args) => { calls.push({ file, args }); },
+  });
+  // The dangerous path is one argument, untouched.
+  assert.ok(calls[1].args.includes('/tmp/ev"il; touch pwned/wiki'));
+  // The raw wiki name is one argument in the context call, untouched.
+  assert.ok(calls[2].args.some((a) => a === 'LLM-maintained wiki: Weird "$(name)" Wiki'));
 });
 
 test('setupQmd reports configured:false with error when collection setup fails', async () => {
   const result = await setupQmd('/tmp/fake', 'Demo Wiki', {
-    exec: (cmd) => {
-      if (cmd.startsWith('qmd --version')) return;
+    exec: (file, args) => {
+      if (file === 'qmd' && args[0] === '--version') return;
       throw new Error('collection failed');
     },
   });

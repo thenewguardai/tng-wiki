@@ -43,9 +43,9 @@ export const publicationTemplate = {
       compiled: false,
       tags: ['knowledge-management', 'llm-tooling', 'karpathy'],
     })}
-# LLM Knowledge Bases — Andrej Karpathy
+# LLM Knowledge Bases - Andrej Karpathy
 
-Karpathy describes a system where LLMs incrementally compile raw sources into a structured markdown wiki — summaries, backlinks, concept articles, cross-links — replacing traditional RAG for personal-scale knowledge bases (~100 articles, ~400K words). Outputs filed back into the wiki create a compounding knowledge base. He calls it "an incredible new product waiting to be built."
+Karpathy describes a system where LLMs incrementally compile raw sources into a structured markdown wiki - summaries, backlinks, concept articles, cross-links - replacing traditional RAG for personal-scale knowledge bases (~100 articles, ~400K words). Outputs filed back into the wiki create a compounding knowledge base. He calls it "an incredible new product waiting to be built."
 
 Key tools: Obsidian (frontend), Web Clipper (ingest), Marp (slides), QMD (search at scale).
 Follow-up gist: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f

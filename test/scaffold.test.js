@@ -38,6 +38,26 @@ test('scaffoldWiki creates the full base layout and writes AGENTS.md as canonica
   });
 });
 
+test('scaffoldWiki writes on-demand doctrine into .tng-wiki/doctrine/ and AGENTS.md points to it', () => {
+  inTmp((root) => {
+    scaffoldWiki(root, { domain: 'ai-research', agent: 'claude-code', wikiName: 'Demo' });
+
+    for (const name of ['grounding.md', 'markers.md']) {
+      assert.ok(existsSync(join(root, '.tng-wiki', 'doctrine', name)), `missing doctrine file: ${name}`);
+    }
+
+    // the deep protocol lives in doctrine, not in the always-on schema
+    const grounding = readFileSync(join(root, '.tng-wiki', 'doctrine', 'grounding.md'), 'utf8');
+    assert.match(grounding, /### Reconcile Drifts/);
+    assert.match(grounding, /Layer 3 - Authority validation/);
+
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+    assert.match(agents, /\.tng-wiki\/doctrine\/grounding\.md/);
+    assert.match(agents, /\.tng-wiki\/doctrine\/markers\.md/);
+    assert.ok(!agents.includes('### Reconcile Drifts'), 'reconcile detail should not be in AGENTS.md');
+  });
+});
+
 test('scaffoldWiki writes provided codeAuthorities (with optional ref) into .tng-wiki.json', () => {
   inTmp((root) => {
     const codeAuthorities = [

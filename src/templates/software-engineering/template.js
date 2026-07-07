@@ -46,11 +46,11 @@ export const softwareEngineeringTemplate = {
 
 ## Status
 
-Accepted — 2026-04-15
+Accepted - 2026-04-15
 
 ## Context
 
-The \`tng-wiki\` CLI originally generated three parallel schema files (CLAUDE.md, AGENTS.md, .cursorrules), each a near-copy of the same content with a different per-agent header. Every schema change had to touch all three generators. String-matching header injection in codex.js/cursor.js was fragile — renaming the target heading silently broke the injection.
+The \`tng-wiki\` CLI originally generated three parallel schema files (CLAUDE.md, AGENTS.md, .cursorrules), each a near-copy of the same content with a different per-agent header. Every schema change had to touch all three generators. String-matching header injection in codex.js/cursor.js was fragile - renaming the target heading silently broke the injection.
 
 Meanwhile the [agents.md convention](https://agents.md/) has consolidated as the portable schema across Claude Code, Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and others. Claude Code falls back to AGENTS.md when no CLAUDE.md is present and follows symlinks transparently.
 
@@ -96,19 +96,19 @@ tags: [adr, grounding, example]
 
 # ADR-example: Code as advisory authority during Discovery
 
-> This is a scaffolded example — delete or rewrite when you start a real ADR.
+> This is a scaffolded example - delete or rewrite when you start a real ADR.
 > It exists to show what a wiki that uses \`code_authorities\` looks like in practice,
 > especially for reverse-engineering / porting / M&A-integration workflows.
 
 ## Status
 
-Accepted — ${today()}
+Accepted - ${today()}
 
 ## Context
 
 This wiki is being built from AI-generated Discovery artifacts: PRDs, component overviews, implementation guides produced by prompting an LLM against a source codebase. Those artifacts live in \`raw/\` and inform every wiki page we distill. They are *fallible*. LLM-generated docs hallucinate APIs, miss edge cases, invert precedence, and invent plausibility. Treating them as ground truth compounds the error as the wiki grows.
 
-The real ground truth is the codebase itself — the exact control flow, the exact parameter names, the exact error paths. Comments and docstrings in that codebase are not authoritative; they rot the same way the AI docs rot. **The implementation is truth; everything else is hypothesis.**
+The real ground truth is the codebase itself - the exact control flow, the exact parameter names, the exact error paths. Comments and docstrings in that codebase are not authoritative; they rot the same way the AI docs rot. **The implementation is truth; everything else is hypothesis.**
 
 ## Decision
 
@@ -129,34 +129,34 @@ Register the source codebase as a \`code_authority\` in \`.tng-wiki.json\`, and 
 }
 \`\`\`
 
-The optional \`ref\` field pins reads to a specific git ref (branch, tag, or commit SHA). Set it when the source repo is actively evolving and you want grounding to be deterministic — the agent reads via \`git show <ref>:<file>\` rather than the working tree, so a teammate's stashed work or branch switch can't contaminate the wiki. Leave it unset (or remove the field) to read the working tree directly.
+The optional \`ref\` field pins reads to a specific git ref (branch, tag, or commit SHA). Set it when the source repo is actively evolving and you want grounding to be deterministic - the agent reads via \`git show <ref>:<file>\` rather than the working tree, so a teammate's stashed work or branch switch can't contaminate the wiki. Leave it unset (or remove the field) to read the working tree directly.
 
 Every factual claim that can be verified against the implementation gets a \`[^code:...]\` citation alongside its \`[^raw/...]\` citation. Example:
 
 \`\`\`markdown
-The login flow uses OAuth2 implicit grant — no PKCE parameters are sent.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
+The login flow uses OAuth2 implicit grant - no PKCE parameters are sent.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
 \`\`\`
 
-Cite specific line ranges (\`#L42-L58\`), not whole files. GitHub-style \`#L\` anchors mean the citation is clickable in VS Code and GitHub — future-you lands on the evidence instead of re-hunting.
+Cite specific line ranges (\`#L42-L58\`), not whole files. GitHub-style \`#L\` anchors mean the citation is clickable in VS Code and GitHub - future-you lands on the evidence instead of re-hunting.
 
 ## Consequences
 
 **Positive:**
-- AI hallucinations in \`raw/\` docs get caught at grounding time — code disagreement surfaces as \`⚠️ DRIFT?\` with both raw and code quotes side by side.
+- AI hallucinations in \`raw/\` docs get caught at grounding time - code disagreement surfaces as \`⚠️ DRIFT?\` with both raw and code quotes side by side.
 - Wiki pages accumulate direct, clickable jumps into the authoritative implementation. A reviewer six months later doesn't have to trust the PRD; they can see the code.
-- Claims cited against code are more durable than claims cited against prose — code is versioned, comments are not.
+- Claims cited against code are more durable than claims cited against prose - code is versioned, comments are not.
 
 **Negative:**
 - Citing code takes slightly longer than citing a doc. Discovery agents must \`Grep\` or \`Read\` the authority to produce a precise \`#L\` range.
 - Path drift: if the authority repo refactors, \`tng-wiki ground\` flags \`missing_code_file\`. Fix the cite or mark the page \`⚠️ STALE?\` pending re-verification. Budget the toil.
-- Code authorities are *advisory*, not absolute. Disagreements still need human reconcile. This is deliberate — auto-applying code-derived corrections risks propagating equally-wrong inferences about the code's behavior.
+- Code authorities are *advisory*, not absolute. Disagreements still need human reconcile. This is deliberate - auto-applying code-derived corrections risks propagating equally-wrong inferences about the code's behavior.
 - If the source repo evolves while you're distilling against it, citations drift even without your touching them. Mitigation: set the optional \`ref\` field on the authority to pin reads to a known commit/tag, then bump it deliberately when you're ready to re-ground.
 
 ## Alternatives considered
 
 - **Trust the AI-generated Discovery docs alone.** Simplest, but compounds hallucinations as the wiki grows.
 - **Treat code as *absolute* authority.** Tempting, but the agent can still misread code (async/await timing, implicit type coercion, framework magic). Keeping code *advisory* preserves the human-in-the-loop reconcile step.
-- **Re-generate the PRDs from code periodically.** Possible, but the AI that reads the code is the same AI that wrote the PRDs — the drift risk doesn't diminish.
+- **Re-generate the PRDs from code periodically.** Possible, but the AI that reads the code is the same AI that wrote the PRDs - the drift risk doesn't diminish.
 
 ## Links
 
@@ -182,7 +182,7 @@ tags: [adr]
 
 ## Status
 
-<proposed | accepted — DATE | deprecated — DATE | superseded by [[ADR-NNNN]] — DATE>
+<proposed | accepted - DATE | deprecated - DATE | superseded by [[ADR-NNNN]] - DATE>
 
 ## Context
 
@@ -273,7 +273,7 @@ Databases, caches, message queues, filesystems.
     'wiki/incidents/_incident-template.md': `---
 title: "INC-YYYY-MM-DD-<slug>: <one-line summary>"
 type: incident
-severity: P2      # P0 | P1 | P2 | P3 — see meta/severity-taxonomy.md
+severity: P2      # P0 | P1 | P2 | P3 - see meta/severity-taxonomy.md
 date: ${today()}
 duration_minutes: null
 components: []
@@ -330,21 +330,21 @@ updated: ${today()}
 
 # Tech Debt Scoring
 
-Score every tech-debt entry on two axes. Keep the grid in mind when prioritizing — \`high impact × low effort\` is the "do it now" quadrant.
+Score every tech-debt entry on two axes. Keep the grid in mind when prioritizing - \`high impact × low effort\` is the "do it now" quadrant.
 
 ## Impact (what does this cost us?)
 
-- **Critical** — blocking a shipping workstream, causing incidents, or legally/compliance-exposed.
-- **High** — regularly slows multiple teams; active source of on-call toil.
-- **Medium** — occasional friction; slows one team.
-- **Low** — cosmetic or rarely encountered.
+- **Critical** - blocking a shipping workstream, causing incidents, or legally/compliance-exposed.
+- **High** - regularly slows multiple teams; active source of on-call toil.
+- **Medium** - occasional friction; slows one team.
+- **Low** - cosmetic or rarely encountered.
 
 ## Effort (what would it cost to fix?)
 
-- **S** — under a day, one person.
-- **M** — under a week, one person, or under a day with two.
-- **L** — multi-week, coordination needed.
-- **XL** — quarter-scale, significant refactor or migration.
+- **S** - under a day, one person.
+- **M** - under a week, one person, or under a day with two.
+- **L** - multi-week, coordination needed.
+- **XL** - quarter-scale, significant refactor or migration.
 
 ## Format in tech-debt pages
 
@@ -383,7 +383,7 @@ updated: ${today()}
 
 # Component Ownership
 
-Authoritative mapping of components to owning teams/people. Update whenever ownership transfers — and always log the transfer in [[log]].
+Authoritative mapping of components to owning teams/people. Update whenever ownership transfers - and always log the transfer in [[log]].
 
 | Component | Team / Owner | Escalation | Last Reviewed |
 |---|---|---|---|

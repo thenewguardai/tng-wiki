@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { resolve, join, isAbsolute } from 'path';
 import { mkdirSync, existsSync, writeFileSync, readFileSync, readdirSync, symlinkSync } from 'fs';
-import { generateAgentsMd, schemaLayout, CANONICAL_SCHEMA_FILE } from './agents/index.js';
+import { generateAgentsMd, generateDoctrine, schemaLayout, CANONICAL_SCHEMA_FILE } from './agents/index.js';
 import { getTemplate } from './templates/index.js';
 import { setupGit } from './integrations/git.js';
 import { setupQmd } from './integrations/qmd.js';
@@ -71,6 +71,13 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
 
   putFile(canonical, schemaContent);
   const aliasResults = aliases.map(a => writeSchemaAlias(root, a, canonical, schemaContent));
+
+  // On-demand doctrine (grounding + markers) lives under .tng-wiki/doctrine/ so
+  // the always-on AGENTS.md stays lean and just points here. Committed and cloned
+  // with the wiki (not gitignored); skipped by search/ground (dot-directory).
+  for (const [name, content] of Object.entries(generateDoctrine({ wikiName }))) {
+    putFile(join('.tng-wiki', 'doctrine', name), content);
+  }
 
   // The index header's `Total pages:` is lint-checked (`index_header_drift`)
   // against the count of all wiki/**/*.md except index.md, log.md, and

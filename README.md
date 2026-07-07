@@ -1,6 +1,6 @@
 # tng-wiki
 
-**Scaffold an LLM-maintained knowledge base in under 10 minutes.**
+**Keep your LLM wiki honest.** A per-claim citation lockfile, drift detection, and code-grounding for Karpathy-style knowledge bases, so an agent-maintained wiki stays trustworthy as it grows instead of silently rotting.
 
 Built by [The New Guard](https://thenewguard.ai). Inspired by [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
@@ -8,30 +8,33 @@ Built by [The New Guard](https://thenewguard.ai). Inspired by [Karpathy's LLM Wi
 npx @thenewguard/tng-wiki init
 ```
 
+## The Problem It Solves
+
+An LLM-maintained wiki compounds in value, and in risk. Sources update, the agent under-updates on ingest, confidence inflates, and pages quietly drift from what their sources actually say. A wiki you can't trust is worse than no wiki. tng-wiki is the layer that keeps attribution honest as the wiki grows:
+
+- **A per-claim citation lockfile** (`wiki/.tng-wiki.lock.json`) that answers *"which claims changed since a human last verified them?"* - not "which files were touched." Content-hashed and move-aware: it tells a citation that merely shifted line numbers (a safe auto-fix) apart from one whose cited content actually changed (re-verify).
+- **A three-layer grounding pipeline** - structural lint (`ground`, zero-LLM), agent-driven semantic re-verification (`⚠️ DRIFT?`), and opt-in authority validation against web sources *or* a local codebase. That last one is built for reverse-engineering / porting / M&A work, where the code is ground truth and the AI-generated PRDs in `raw/` are just hypotheses.
+- **Claim-next-to-evidence review** (`cite show`) - every citation printed beside the exact source lines it points at, so a human can verify without hunting.
+
+It scaffolds a fresh wiki in one command, or adopts an existing repo as one. **The CLI makes zero LLM calls** - it verifies structure and configures tools; your agent is the intelligence.
+
 ## What You Get Out of the Box
 
-- **7 domain templates** — AI Research, Competitive Intel, Publication, Business Ops, Learning, Software Engineering & Architecture, or Blank. Each ships a tailored schema, directory layout, and page types.
-- **Agent-agnostic schema** — one canonical `AGENTS.md` with per-agent aliases (`CLAUDE.md`, `.cursorrules`) for Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and anything else that reads the [agents.md](https://agents.md/) convention.
-- **Multi-wiki registry** — one user, many wikis. Reach any registered wiki from any directory by slug.
-- **Wiki access verbs** — `query`, `read`, `search` (with `--include-raw` deep search), `sources` — plain-text by default, `--json` for scripts and MCP.
-- **Three-layer grounding pipeline** — structural lint (`ground`), agent-driven semantic re-verification (`⚠️ DRIFT?`), and opt-in authority validation against web sources *or* local code authorities (for reverse-engineering / porting workflows where the codebase is truth and the AI-generated PRDs are hypotheses). Marker lint verbs: `drift`, `stale`, `unsourced`, `unverified`, `orphans`.
-- **Claude Code skill** — `tng-wiki install-skill` teaches every Claude Code session the verbs and when to use them. Zero token cost until invoked.
-- **MCP server** — `tng-wiki-mcp` ships alongside the CLI for shell-less agents (Claude Desktop, ChatGPT Desktop, web UIs).
-- **QMD hybrid search** — optional BM25 + vector + LLM re-rank integration for wikis past ~100 pages.
-- **Git + Obsidian ready** — `git init` with initial commit on scaffold; suggests a default path from common Obsidian vault locations.
-- **Zero LLM calls in the CLI** — it scaffolds files and configures tools. Your agent is the intelligence.
-
-## What This Does
-
-You pick a domain. You pick an agent. You get a structured wiki scaffold — directory layout, agent operating instructions, index, log, scoring frameworks, and a seed source ready for your first compile. Open it in Obsidian, point your agent at it, and go.
-
-**The CLI makes zero LLM calls.** It scaffolds files and configures tools. Your agent is the intelligence.
+- **Verification toolchain** - the citation lockfile, `ground` / `cite`, the marker lint verbs (`drift`, `stale`, `unsourced`, `unverified`, `orphans`), and `rounds` to run the whole maintenance bundle at once.
+- **8 domain templates** - AI Research, Competitive Intel, Publication, Business Ops, Learning, Software Engineering & Architecture, Code Archaeology, or Blank. Each ships a tailored schema, directory layout, and page types.
+- **Agent-agnostic schema** - one canonical `AGENTS.md` (kept lean; the heavy grounding + marker doctrine loads on demand from `.tng-wiki/doctrine/`) with per-agent aliases (`CLAUDE.md`, `.cursorrules`) for Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and anything that reads the [agents.md](https://agents.md/) convention.
+- **Multi-wiki registry** - one user, many wikis. Reach any registered wiki from any directory by slug.
+- **Wiki access verbs** - `query`, `read`, `search` (with `--include-raw` deep search), `sources` - plain text by default, `--json` for scripts and MCP.
+- **Claude Code skill** - `tng-wiki install-skill` teaches every session the verbs and when to use them. Zero token cost until invoked.
+- **MCP server** - `tng-wiki-mcp` ships alongside the CLI for shell-less agents (Claude Desktop, ChatGPT Desktop, web UIs).
+- **QMD hybrid search** - optional BM25 + vector + LLM re-rank integration for wikis past ~100 pages.
+- **Git + Obsidian ready** - `git init` with initial commit on scaffold; suggests a default path from common Obsidian vault locations.
 
 ## Why This Exists
 
-Karpathy described the pattern. Dozens of people built Claude Code plugins. Nobody built the thing that gets a builder from "I just read about this" to "working wiki scaffold" in 10 minutes — with domain-specific templates, agent-agnostic schemas, and QMD-ready setup.
+Karpathy described the pattern; dozens of people built scaffolders and plugins around it. The gap nobody filled is *keeping the wiki trustworthy over time* - the failure mode production users named as the real one: the agent under-updates on ingest, pages silently go stale, and nothing tells you which claims drifted. tng-wiki applies a package-lockfile mindset to knowledge claims, so "verified against this source, at this version" becomes a checkable fact instead of a hope.
 
-This is that thing.
+Its sharpest fit is high-stakes, source-grounded work with fallible inputs - reverse-engineering a codebase, M&A / IP due diligence, porting - where `raw/` holds AI-generated docs that may hallucinate and a real codebase is the ground truth the wiki validates against. It also scaffolds a clean general-purpose research wiki in one command.
 
 ## Quick Start
 
@@ -41,12 +44,12 @@ npx @thenewguard/tng-wiki init
 
 The interactive flow walks you through:
 
-1. **Domain** — AI Research, Competitive Intel, Publication, Business Ops, Learning, Software Engineering & Architecture, or Blank
-2. **Agent** — Claude Code, OpenAI Codex, Cursor, or all three
-3. **Location** — where to create the wiki (suggests a default path from common Obsidian locations)
+1. **Domain** - AI Research, Competitive Intel, Publication, Business Ops, Learning, Software Engineering & Architecture, Code Archaeology, or Blank
+2. **Agent** - Claude Code, OpenAI Codex, Cursor, or all three
+3. **Location** - where to create the wiki (suggests a default path from common Obsidian locations)
 4. **Wiki name**
-5. **Integrations** — Git and/or QMD hybrid search
-6. **Code authorities** *(Software Engineering and Blank domains only)* — register one or more reference codebases as advisory ground truth for [Layer 3B grounding](#3b--code-authorities-local-filesystem). Optional; skip on first scaffold and add later by editing `.tng-wiki.json`.
+5. **Integrations** - Git and/or QMD hybrid search
+6. **Code authorities** *(Software Engineering, Code Archaeology, and Blank domains)* - register one or more reference codebases as advisory ground truth for [Layer 3B grounding](#3b--code-authorities-local-filesystem). On Code Archaeology the prompt nudges hard, since the whole point of the domain is verifying against real code. Optional; skip on first scaffold and add later by editing `.tng-wiki.json`.
 
 **Non-interactive / agent setup.** Pass `--yes` with flags to scaffold headless (no prompts):
 
@@ -95,12 +98,13 @@ Each template generates a tailored schema with domain-specific page types, direc
 | **Publication** | Everything in AI Research + issue tracking | Issue prep workflow, post-publish loop, editorial calendar |
 | **Business Ops** | Projects, decisions, people, processes, retrospectives | Decision tracking, retrospective templates |
 | **Learning** | Concepts, people, connections, open questions | Connection pages for non-obvious links |
-| **Software Engineering & Architecture** | ADRs (with status lifecycle + supersedes chain), components, systems, patterns, incidents (P0–P3 severity), runbooks, tech debt (impact × effort scored) | ADR template, incident template, component template, severity taxonomy, ownership register, tech-debt scoring grid |
-| **Blank** | Topics | Minimal — structure emerges from content |
+| **Software Engineering & Architecture** | ADRs (with status lifecycle + supersedes chain), components, systems, patterns, incidents (P0-P3 severity), runbooks, tech debt (impact × effort scored) | ADR template, incident template, component template, severity taxonomy, ownership register, tech-debt scoring grid |
+| **Code Archaeology / Reverse Engineering** | Meta pages (glossary, ecosystem, project status, open threads, patterns), frozen deliverables (DISCOVERY / ANALYSIS / DESIGN / NOTES), inbox | Verification-first flow, rejection log, code authorities as ground truth, leads-never-sources firewall |
+| **Blank** | Topics | Minimal - structure emerges from content |
 
 ## Agent Support
 
-`AGENTS.md` is the canonical schema file — the [agents.md](https://agents.md/) convention is read natively by Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and others. `tng-wiki init` always writes `AGENTS.md` and creates per-agent filename aliases (symlinks where the filesystem supports them, file copies otherwise) so each agent finds the file it expects to find.
+`AGENTS.md` is the canonical schema file - the [agents.md](https://agents.md/) convention is read natively by Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and others. `tng-wiki init` always writes `AGENTS.md` and creates per-agent filename aliases (symlinks where the filesystem supports them, file copies otherwise) so each agent finds the file it expects to find.
 
 | Agent | File it reads | How `tng-wiki` provides it |
 |-------|--------------|----------------------------|
@@ -149,15 +153,15 @@ tng-wiki help
 
 ## Agent onboarding
 
-tng-wiki is built to be driven *by* an agent, so the command surface is self-describing — a session shouldn't have to probe verb-by-verb to work out how to set up or use a wiki:
+tng-wiki is built to be driven *by* an agent, so the command surface is self-describing - a session shouldn't have to probe verb-by-verb to work out how to set up or use a wiki:
 
 - **`tng-wiki help --json`** emits the full machine-readable manifest: every command with its flags, args, and examples, plus a copy-pasteable `onboarding` block (create / adopt / register / connect recipes). One call, the whole surface.
 - **Every command supports `--help`** (human) and `--help --json` (structured); `tng-wiki help <command>` works too. It's all generated from one spec, so help and the manifest can't drift from what actually runs.
-- **`tng-wiki doctor`** reports the environment, the registry, whether the skill is installed, and — most useful for an agent — the **recommended next command** for the current directory (create a wiki, adopt this dir, register, or query an existing one). `--json` for the structured form.
+- **`tng-wiki doctor`** reports the environment, the registry, whether the skill is installed, and - most useful for an agent - the **recommended next command** for the current directory (create a wiki, adopt this dir, register, or query an existing one). `--json` for the structured form.
 - **`tng-wiki init --yes --dir <path> --domain <d>`** scaffolds without a TTY; **`--into-existing`** adopts a non-empty repo.
 - **`tng-wiki install-skill`** teaches every Claude Code session the verbs *and* the setup recipes, so a fresh session never has to probe.
 
-## The Registry — one user, many wikis
+## The Registry - one user, many wikis
 
 `tng-wiki` keeps a user-level registry at `~/.tng-wiki/registry.json` listing every wiki you've scaffolded or registered. `init` adds new wikis automatically; the first becomes the default. Every registered wiki is reachable from any working directory by its slug.
 
@@ -171,26 +175,26 @@ tng-wiki list
 
 These are the commands an agent invokes (via its Bash tool) to read and navigate a wiki. They're intentionally plain-text and line-oriented by default so agents can parse them fluently and Unix tools can pipe them. Every verb accepts `--wiki <slug>` (defaults to the registry default) and `--json` (machine-readable structured output for scripts and MCP wrappers).
 
-### `query` — read the wiki's index
+### `query` - read the wiki's index
 
 Prints `wiki/index.md` for the chosen wiki. An agent's first call when answering any question about the wiki.
 
 ```bash
 $ tng-wiki query
-# AI Research Wiki — Index
+# AI Research Wiki - Index
 
 _Last updated: 2026-04-15 | Total pages: 23 | Total sources: 41_
 ...
 
 $ tng-wiki query --wiki comp-intel
-# Competitive Intelligence Wiki — Index
+# Competitive Intelligence Wiki - Index
 ...
 
 $ tng-wiki query --json | jq .wiki
 "ai-research"
 ```
 
-### `read` — fetch a specific page
+### `read` - fetch a specific page
 
 Prints the content of a wiki page by its path relative to `wiki/`. Refuses paths that escape the wiki directory.
 
@@ -205,9 +209,9 @@ $ tng-wiki read opportunities/wiki-mcp-server.md --wiki ai-research
 ...
 ```
 
-### `search` — case-insensitive search across wiki pages
+### `search` - case-insensitive search across wiki pages
 
-Prints `[wiki] path:line: matching text` (grep-compatible). Use `--regex` for regex patterns. By default searches only compiled `wiki/` content — that's the canonical distilled knowledge.
+Prints `[wiki] path:line: matching text` (grep-compatible). Use `--regex` for regex patterns. By default searches only compiled `wiki/` content - that's the canonical distilled knowledge.
 
 Pass `--include-raw` to **search deep** into archival `raw/` sources as well. Use this when verifying claims, consulting originals, or when a detail might live in uncompiled source material. Each hit is tagged `[wiki]` or `[raw]` so you always know which layer it came from.
 
@@ -227,20 +231,20 @@ $ tng-wiki search karpathy --include-raw --json | jq '.hits | group_by(.source) 
 [{"source": "raw", "count": 3}, {"source": "wiki", "count": 2}]
 ```
 
-### `sources` — list raw source files
+### `sources` - list raw source files
 
-Enumerates everything under `raw/` with `compiled` status from frontmatter. `--uncompiled` filters to sources the wiki hasn't ingested yet — useful for an agent to drive the ingest loop.
+Enumerates everything under `raw/` with `compiled` status from frontmatter. `--uncompiled` filters to sources the wiki hasn't ingested yet - useful for an agent to drive the ingest loop.
 
 ```bash
 $ tng-wiki sources --uncompiled
-[uncompiled] raw/announcements/2026-04-15-openai-new-model.md  — OpenAI announces GPT-6
-[uncompiled] raw/papers/2026-karpathy-followup.md              — Karpathy on LLM knowledge compounding
+[uncompiled] raw/announcements/2026-04-15-openai-new-model.md  - OpenAI announces GPT-6
+[uncompiled] raw/papers/2026-karpathy-followup.md              - Karpathy on LLM knowledge compounding
 
 $ tng-wiki sources --json | jq '.sources | map(select(.compiled == false)) | length'
 2
 ```
 
-### `stale` — list pages with `⚠️ STALE?` markers
+### `stale` - list pages with `⚠️ STALE?` markers
 
 ```bash
 $ tng-wiki stale
@@ -248,9 +252,9 @@ wiki/entities/anthropic.md    (3 markers)
 wiki/opportunities/ide-for-agents.md  (1 marker)
 ```
 
-### `orphans` — pages with no inbound wikilinks
+### `orphans` - pages with no inbound wikilinks
 
-Lists pages nothing else in the wiki links to (excluding structural pages `wiki/index.md` and `wiki/log.md`). Helpful for linting coverage — a well-connected wiki has few orphans.
+Lists pages nothing else in the wiki links to (excluding structural pages `wiki/index.md` and `wiki/log.md`). Helpful for linting coverage - a well-connected wiki has few orphans.
 
 ```bash
 $ tng-wiki orphans
@@ -258,7 +262,7 @@ wiki/entities/some-forgotten-entity.md
 wiki/opportunities/_scoring-criteria.md
 ```
 
-## Grounding — keeping the wiki honest over time
+## Grounding - keeping the wiki honest over time
 
 LLM-maintained wikis drift. Claims age, sources update, confidence inflates past the evidence, citations go stale. `tng-wiki` ships a three-layer grounding pipeline to catch and reconcile drift without auto-repairing its way into deeper errors.
 
@@ -275,19 +279,19 @@ Anthropic raised $8B in Series F.[^raw/announcements/2026-anthropic-series-f.md]
 The company was founded in 2021.[^raw/papers/anthropic-origins.md]
 ```
 
-The `sources:` list is the trust anchor. Every grounding workflow walks it. The four markers (`⚠️ STALE?`, `⚠️ UNSOURCED?`, `⚠️ UNVERIFIED?`, `⚠️ DRIFT?`) are documented with specific resolution actions inside every generated `AGENTS.md` — agents follow those instructions, not a README.
+The `sources:` list is the trust anchor. Every grounding workflow walks it. The four markers (`⚠️ STALE?`, `⚠️ UNSOURCED?`, `⚠️ UNVERIFIED?`, `⚠️ DRIFT?`) are documented with specific resolution actions inside every generated `AGENTS.md` - agents follow those instructions, not a README.
 
 ### Two canonical flows
 
 There are two honest ways to run a wiki, distinguished by *when* verification happens:
 
-**Ingest-first (the default).** Compile raw sources into wiki pages, then verify over time. Grounding runs after the fact; the `⚠️` marker taxonomy is the **health surface** — markers accumulate where claims age, drift, or outrun their evidence, and rounds burns them down. Fits when sources are reasonably trusted and speed of compounding matters: research feeds, competitive intel, learning notes.
+**Ingest-first (the default).** Compile raw sources into wiki pages, then verify over time. Grounding runs after the fact; the `⚠️` marker taxonomy is the **health surface** - markers accumulate where claims age, drift, or outrun their evidence, and rounds burns them down. Fits when sources are reasonably trusted and speed of compounding matters: research feeds, competitive intel, learning notes.
 
-**Verification-first (the inverse).** Treat every lead claim as a hypothesis: refute the premise first, validate against authorities (web or [code](#3b--code-authorities-local-filesystem)), and distill **only what survives** — typically `[confirmed]` claims — into the wiki. This flow produces near-zero markers by construction, so the health surface moves: the audit artifact is the **rejection log**, a NOTES deliverable (`deliverables/*_NOTES_*.md`) listing every rejected, corrected, or downgraded lead claim with its disposition. Its core argument: *"we verified it" without a list of what failed verification is evidence nothing was looked for.* Fits when the leads themselves are fallible and rigor beats speed: AI-generated PRDs, reverse-engineering, M&A / IP diligence.
+**Verification-first (the inverse).** Treat every lead claim as a hypothesis: refute the premise first, validate against authorities (web or [code](#3b--code-authorities-local-filesystem)), and distill **only what survives** - typically `[confirmed]` claims - into the wiki. This flow produces near-zero markers by construction, so the health surface moves: the audit artifact is the **rejection log**, a NOTES deliverable (`deliverables/*_NOTES_*.md`) listing every rejected, corrected, or downgraded lead claim with its disposition. Its core argument: *"we verified it" without a list of what failed verification is evidence nothing was looked for.* Fits when the leads themselves are fallible and rigor beats speed: AI-generated PRDs, reverse-engineering, M&A / IP diligence.
 
-The two flows share everything else — same schema invariant, same citation forms, same grounding layers. `tng-wiki rounds` reads both surfaces: marker counts for ingest-first health, plus an informational rejection-log count whenever `deliverables/*_NOTES_*.md` files exist.
+The two flows share everything else - same schema invariant, same citation forms, same grounding layers. `tng-wiki rounds` reads both surfaces: marker counts for ingest-first health, plus an informational rejection-log count whenever `deliverables/*_NOTES_*.md` files exist.
 
-### Layer 1 — `ground` (structural, zero-LLM)
+### Layer 1 - `ground` (structural, zero-LLM)
 
 ```bash
 $ tng-wiki ground
@@ -305,17 +309,17 @@ $ tng-wiki ground --at-ref                           # resolve code cites at eac
 $ tng-wiki ground --json | jq '.issues | group_by(.issue)'    # structured for agents + scripts
 ```
 
-Detects structural issues: empty/missing `sources:`, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (frontmatter-only, never cited), raw sources whose last git commit-date (or mtime) is newer than the page's `updated` date, and code-authority problems (`unknown_code_authority`, `missing_code_file`, `excluded_code_file`, `code_line_out_of_range`). Add `--at-ref` to resolve code citations at each authority's pinned git `ref` instead of the working tree — this adds at-ref `missing_code_file`, `code_updated_after_page` (page `updated` predates the file's last commit at the ref), and `code_ref_unresolvable`; default `ground` stays working-tree-based. Skips `wiki/index.md`, `wiki/log.md`, `_`-prefixed template files, and `wiki/meta/*`.
+Detects structural issues: empty/missing `sources:`, inline citations pointing at non-existent raw files, undeclared citations (inline but not in frontmatter), orphan declarations (frontmatter-only, never cited), raw sources whose last git commit-date (or mtime) is newer than the page's `updated` date, and code-authority problems (`unknown_code_authority`, `missing_code_file`, `excluded_code_file`, `code_line_out_of_range`). Add `--at-ref` to resolve code citations at each authority's pinned git `ref` instead of the working tree - this adds at-ref `missing_code_file`, `code_updated_after_page` (page `updated` predates the file's last commit at the ref), and `code_ref_unresolvable`; default `ground` stays working-tree-based. Skips `wiki/index.md`, `wiki/log.md`, `_`-prefixed template files, and `wiki/meta/*`.
 
 Three findings cover index and convention drift:
 
-- `index_header_drift` — the `wiki/index.md` scaffold header (`_Last updated: <date> | Total pages: <N> | ..._`) disagrees with reality. Page count = all `wiki/**/*.md` except `index.md`, `log.md`, and `_`-prefixed files (`wiki/meta/*` counts); the date drifts when it falls behind the newest page's git last-commit date (mtime fallback). JSON fields: `expected_pages` (header), `actual_pages`, `header_date`, `newest_page_date`, `formula`. Indexes without the scaffold header line are skipped — the check never imposes the header on customized indexes.
-- `frontmatter_updated_stale` *(warn-level)* — the page file changed (git last-commit date, mtime fallback) after its frontmatter `updated`, with a 1-day grace window for same-day/timezone noise. JSON fields: `updated`, `last_commit`.
-- `prose_internal_ref` *(warn-level)* — an internal page is referenced in prose (`` `page.md` `` inline-code token, or a markdown link to a relative `.md` path resolving to a wiki page) instead of a `[[wikilink]]`. Fenced code blocks, citation markers, and `raw/` / `deliverables/` file paths are exempt. JSON fields: `line`, `matched`, `suggest` (the `[[wikilink]]` to use).
+- `index_header_drift` - the `wiki/index.md` scaffold header (`_Last updated: <date> | Total pages: <N> | ..._`) disagrees with reality. Page count = all `wiki/**/*.md` except `index.md`, `log.md`, and `_`-prefixed files (`wiki/meta/*` counts); the date drifts when it falls behind the newest page's git last-commit date (mtime fallback). JSON fields: `expected_pages` (header), `actual_pages`, `header_date`, `newest_page_date`, `formula`. Indexes without the scaffold header line are skipped - the check never imposes the header on customized indexes.
+- `frontmatter_updated_stale` *(warn-level)* - the page file changed (git last-commit date, mtime fallback) after its frontmatter `updated`, with a 1-day grace window for same-day/timezone noise. JSON fields: `updated`, `last_commit`.
+- `prose_internal_ref` *(warn-level)* - an internal page is referenced in prose (`` `page.md` `` inline-code token, or a markdown link to a relative `.md` path resolving to a wiki page) instead of a `[[wikilink]]`. Fenced code blocks, citation markers, and `raw/` / `deliverables/` file paths are exempt. JSON fields: `line`, `matched`, `suggest` (the `[[wikilink]]` to use).
 
 Warn-level findings are hygiene signals, not attribution breaks: they render in a distinct color (cyan instead of yellow), never change exit codes, and `tng-wiki rounds` counts them under `convention` instead of `ground`.
 
-### Layer 2 — semantic re-verification (agent-driven)
+### Layer 2 - semantic re-verification (agent-driven)
 
 Agents re-read raw sources, compare against wiki claims, and emit `⚠️ DRIFT?` markers where they diverge:
 
@@ -334,17 +338,17 @@ wiki/entities/anthropic.md  (2 markers)
 wiki/entities/openai.md  (1 marker)
 ```
 
-The agent walks each marker with the user — **accept / edit / reject / defer** — and removes it on resolution. Never auto-apply.
+The agent walks each marker with the user - **accept / edit / reject / defer** - and removes it on resolution. Never auto-apply.
 
 The full Layer 2 workflow (triage order, per-claim outcomes, dependency chains between wiki pages, batching etiquette for large runs) is documented in every generated `AGENTS.md` under `## Operations → ### Grounding → Layer 2`. Agents follow that guidance directly.
 
-### Layer 3 — authority validation (opt-in)
+### Layer 3 - authority validation (opt-in)
 
 Two kinds of authority, same semantics. Disagreement surfaces as `⚠️ DRIFT?` with evidence; human reconciles. Never auto-applied.
 
-#### 3A — Web authorities
+#### 3A - Web authorities
 
-Agent uses `WebFetch` / `WebSearch` under strict authority rules — never free-range search, which is where confident-wrong creeps in.
+Agent uses `WebFetch` / `WebSearch` under strict authority rules - never free-range search, which is where confident-wrong creeps in.
 
 **Authority priority**, highest first:
 
@@ -363,11 +367,11 @@ Agent uses `WebFetch` / `WebSearch` under strict authority rules — never free-
 
 Empty `trusted_authorities` (the default on `init`) means Layer 3A can only reach URLs cited in raw sources. Opt in per-wiki when you want your agent to consult specific authorities automatically.
 
-#### 3B — Code authorities (local filesystem)
+#### 3B - Code authorities (local filesystem)
 
-Built for reverse-engineering, porting, and M&A / IP-acquisition workflows where `raw/` holds AI-generated PRDs and overview docs (fallible — they hallucinate APIs, invert precedence, miss edge cases) and the actual implementation is the ground truth. Cheaper and often higher-trust than web authorities — local filesystem, no network, no SEO drift.
+Built for reverse-engineering, porting, and M&A / IP-acquisition workflows where `raw/` holds AI-generated PRDs and overview docs (fallible - they hallucinate APIs, invert precedence, miss edge cases) and the actual implementation is the ground truth. Cheaper and often higher-trust than web authorities - local filesystem, no network, no SEO drift.
 
-Configure during `init` — when you pick the **Software Engineering** or **Blank** domain, `tng-wiki init` asks whether you have a reference codebase and walks you through registering each authority (path, name, language, optional git ref). You can also edit `.tng-wiki.json` directly:
+Configure during `init` - when you pick the **Software Engineering** or **Blank** domain, `tng-wiki init` asks whether you have a reference codebase and walks you through registering each authority (path, name, language, optional git ref). You can also edit `.tng-wiki.json` directly:
 
 ```json
 {
@@ -384,12 +388,12 @@ Configure during `init` — when you pick the **Software Engineering** or **Blan
 }
 ```
 
-The optional `ref` field pins reads to a specific git ref (branch, tag, or commit SHA) — useful when the source repo is actively evolving and you want grounding to be deterministic. The agent reads via `git show <ref>:<file>` rather than the working tree, so a stashed change or branch switch on the source repo can't contaminate the wiki. Leave `ref` unset (or remove the field) to read the working tree directly.
+The optional `ref` field pins reads to a specific git ref (branch, tag, or commit SHA) - useful when the source repo is actively evolving and you want grounding to be deterministic. The agent reads via `git show <ref>:<file>` rather than the working tree, so a stashed change or branch switch on the source repo can't contaminate the wiki. Leave `ref` unset (or remove the field) to read the working tree directly.
 
 Inline citation form, GitHub-style `#L` anchor (clickable in VS Code, jumps to the line):
 
 ```markdown
-The login flow uses OAuth2 implicit grant — no PKCE parameters sent.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
+The login flow uses OAuth2 implicit grant - no PKCE parameters sent.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
 ```
 
 Frontmatter `sources:` declares the authority alongside raw paths:
@@ -400,7 +404,7 @@ sources:
   - code:legacy-app
 ```
 
-Scope during grounding is implementation-only — the agent disregards comments, docstrings, JSDoc, and any markdown/text files inside the authority tree, even ones the `exclude` globs didn't catch. Comments rot; the AI docs in `raw/` already did; the implementation is what the code *does*.
+Scope during grounding is implementation-only - the agent disregards comments, docstrings, JSDoc, and any markdown/text files inside the authority tree, even ones the `exclude` globs didn't catch. Comments rot; the AI docs in `raw/` already did; the implementation is what the code *does*.
 
 Extended `⚠️ DRIFT?` marker format when a code authority is involved:
 
@@ -408,10 +412,10 @@ Extended `⚠️ DRIFT?` marker format when a code authority is involved:
 ⚠️ DRIFT? [source: raw/prd-auth.md says "OAuth2 with PKCE";
            code: legacy-app/src/auth/oauth.ts#L42-L58 shows "implicit flow, no code_challenge parameter sent";
            wiki says "OAuth2 with PKCE";
-           suggested: "OAuth2 implicit flow — legacy-app does not implement PKCE"]
+           suggested: "OAuth2 implicit flow - legacy-app does not implement PKCE"]
 ```
 
-Code authorities are **advisory**, not absolute — disagreement always surfaces as `⚠️ DRIFT?` for human reconcile, never auto-applied. Structural checks (`tng-wiki ground`) catch code-authority failure classes: `unknown_code_authority` (cited authority not registered), `missing_code_file` (cited file path doesn't exist), `excluded_code_file` (cite targets a path the authority's `exclude` globs skip), and `code_line_out_of_range` (the `#L` anchor exceeds the file). With `tng-wiki ground --at-ref`, citations resolve at each authority's pinned `ref` instead of the working tree, adding `code_updated_after_page` and `code_ref_unresolvable`.
+Code authorities are **advisory**, not absolute - disagreement always surfaces as `⚠️ DRIFT?` for human reconcile, never auto-applied. Structural checks (`tng-wiki ground`) catch code-authority failure classes: `unknown_code_authority` (cited authority not registered), `missing_code_file` (cited file path doesn't exist), `excluded_code_file` (cite targets a path the authority's `exclude` globs skip), and `code_line_out_of_range` (the `#L` anchor exceeds the file). With `tng-wiki ground --at-ref`, citations resolve at each authority's pinned `ref` instead of the working tree, adding `code_updated_after_page` and `code_ref_unresolvable`.
 
 Full workflow lives in `AGENTS.md → ### Grounding → Layer 3`. The Software Engineering & Architecture template ships a scaffolded example ADR (`wiki/decisions/_adr-code-authority-example.md`) showing the full pattern end-to-end.
 
@@ -426,9 +430,9 @@ $ tng-wiki drift        # ⚠️ DRIFT?       (Layer 2/3)
 
 All accept `--wiki <slug>` and `--json`. Output shape is `path (N markers)` for parity with the existing `stale`/`orphans` verbs.
 
-### Ongoing care — rounds
+### Ongoing care - rounds
 
-The wiki is *agent-maintained*, so the unit of interaction is one phrase — **"do your rounds"** — not six verbs you have to remember. Rounds bundles the maintenance loop:
+The wiki is *agent-maintained*, so the unit of interaction is one phrase - **"do your rounds"** - not six verbs you have to remember. Rounds bundles the maintenance loop:
 
 > **Rounds** = ingest anything pending in `raw/` → run `ground` / `orphans` / `unsourced` / `unverified` / `stale` / `drift` → reconcile what's safe and surface the `⚠️` markers that need you → update `index.md` + append a `log.md` entry → report a short summary.
 
@@ -438,7 +442,7 @@ Give your agent the one-liner:
 claude "Read AGENTS.md, then do your wiki rounds"
 ```
 
-`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard — one count per category, zero-LLM — the anchor cron jobs and agents key off. When [verification-first](#two-canonical-flows) rejection logs exist (`deliverables/*_NOTES_*.md`), it adds an informational count so the audit artifact stays visible. The bundle is defined precisely in every generated `AGENTS.md` (`### Rounds`) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
+`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard - one count per category, zero-LLM - the anchor cron jobs and agents key off. When [verification-first](#two-canonical-flows) rejection logs exist (`deliverables/*_NOTES_*.md`), it adds an informational count so the audit artifact stays visible. The bundle is defined precisely in every generated `AGENTS.md` (`### Rounds`) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
 
 ## Ambient Cross-Project Access
 
@@ -446,9 +450,9 @@ Once your wiki is registered, it's reachable from any project you're working in.
 
 ### Terminal agents (Claude Code, Codex, opencode, OpenClaw, hermes-agent)
 
-These can invoke `tng-wiki` directly via their Bash tool. No MCP server, no schema tokens burned per session — the agent pays nothing until it actually uses a verb.
+These can invoke `tng-wiki` directly via their Bash tool. No MCP server, no schema tokens burned per session - the agent pays nothing until it actually uses a verb.
 
-**Claude Code — install the skill (recommended):**
+**Claude Code - install the skill (recommended):**
 
 ```bash
 tng-wiki install-skill
@@ -457,7 +461,7 @@ tng-wiki install-skill
 
 This writes a Claude Code skill that teaches every future session the verbs and when to use them. Claude Code picks it up within the current session via live change detection (no restart). You can invoke the skill directly with `/tng-wiki` or let Claude load it automatically when your question matches the skill description. Re-run with `--force` to update after an upgrade, or `--uninstall` to remove.
 
-**Other terminal agents** — drop a one-liner in your project's `AGENTS.md`:
+**Other terminal agents** - drop a one-liner in your project's `AGENTS.md`:
 
 ```markdown
 ## Knowledge Base
@@ -477,13 +481,13 @@ tng-wiki connect ~/code/some-app --wiki infra
 # ✓ wrote CLAUDE.local.md (added to .git/info/exclude)
 ```
 
-It writes a managed nudge block into a local agent file (`CLAUDE.local.md` for Claude Code) telling sessions in that repo to **search the wiki before re-deriving** domain knowledge and to **hand keepable output back** to it. The file is added to the repo's `.git/info/exclude` — **not** the tracked `.gitignore` — so it stays per-machine and never enters shared git history (it matters when the repo belongs to a client or team). Re-running updates the block in place; `--remove` deletes it. Set a `description` in the wiki's `.tng-wiki.json` and the nudge will say what the wiki actually covers.
+It writes a managed nudge block into a local agent file (`CLAUDE.local.md` for Claude Code) telling sessions in that repo to **search the wiki before re-deriving** domain knowledge and to **hand keepable output back** to it. The file is added to the repo's `.git/info/exclude` - **not** the tracked `.gitignore` - so it stays per-machine and never enters shared git history (it matters when the repo belongs to a client or team). Re-running updates the block in place; `--remove` deletes it. Set a `description` in the wiki's `.tng-wiki.json` and the nudge will say what the wiki actually covers.
 
 ### Shell-less / chat-app agents (Claude Desktop, ChatGPT Desktop, web UIs)
 
-These can only call MCP servers — no Bash. `tng-wiki-mcp` ships alongside `tng-wiki` (same `npm i -g @thenewguard/tng-wiki` installs both) and exposes seven MCP tools: `list_wikis`, `query`, `read`, `search`, `sources`, `stale`, `orphans`. Each tool routes through the registry so every wiki you've registered is reachable by slug.
+These can only call MCP servers - no Bash. `tng-wiki-mcp` ships alongside `tng-wiki` (same `npm i -g @thenewguard/tng-wiki` installs both) and exposes seven MCP tools: `list_wikis`, `query`, `read`, `search`, `sources`, `stale`, `orphans`. Each tool routes through the registry so every wiki you've registered is reachable by slug.
 
-**Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+**Claude Desktop** - edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -498,7 +502,7 @@ These can only call MCP servers — no Bash. `tng-wiki-mcp` ships alongside `tng
 
 Restart Claude Desktop. The tools appear under the server name `tng-wiki`.
 
-**Claude Code** (you'd only enable this if you want MCP specifically rather than the direct CLI, which is usually more token-efficient) — `~/.claude/mcp.json`:
+**Claude Code** (you'd only enable this if you want MCP specifically rather than the direct CLI, which is usually more token-efficient) - `~/.claude/mcp.json`:
 
 ```json
 {
@@ -508,18 +512,18 @@ Restart Claude Desktop. The tools appear under the server name `tng-wiki`.
 }
 ```
 
-**Codex / opencode / OpenClaw** — each has its own MCP config file (`~/.codex/mcp.json`, `~/.config/opencode/mcp.json`, `~/.openclaw/openclaw.json → mcp.servers`). Same shape.
+**Codex / opencode / OpenClaw** - each has its own MCP config file (`~/.codex/mcp.json`, `~/.config/opencode/mcp.json`, `~/.openclaw/openclaw.json → mcp.servers`). Same shape.
 
-**Docker MCP Toolkit** — add a custom server pointing at your installed binary. See [Docker's MCP Toolkit CLI docs](https://docs.docker.com/ai/mcp-catalog-and-toolkit/cli/).
+**Docker MCP Toolkit** - add a custom server pointing at your installed binary. See [Docker's MCP Toolkit CLI docs](https://docs.docker.com/ai/mcp-catalog-and-toolkit/cli/).
 
 > **Why you'd use CLI over MCP when you have the choice:** MCP tool schemas are injected into the agent's context every session. Typical cost is 3-10K tokens for a 7-tool server, paid whether you use it or not. The CLI path pays zero tokens until you invoke a verb. So: use CLI in shell-capable environments, MCP only where CLI isn't reachable.
 
 ### Cross-machine (wiki on one box, agent on another)
 
-- **Git sync** — the wiki is git-tracked; `git clone` on the remote machine and `git pull` to keep fresh. Natural versioning, offline-friendly.
-- **SSH + CLI** — `ssh wiki-host "tng-wiki search karpathy --wiki ai-research"` for ad-hoc queries without a full clone.
-- **Thin HTTP wrapper** — wrap the CLI in ~50 lines of `http.createServer` if you want multiple remote agents hitting one wiki without SSH.
-- **MCP for remote chat-app agents** — same `tng-wiki-mcp` binary; run it on the wiki host and point remote MCP clients at it.
+- **Git sync** - the wiki is git-tracked; `git clone` on the remote machine and `git pull` to keep fresh. Natural versioning, offline-friendly.
+- **SSH + CLI** - `ssh wiki-host "tng-wiki search karpathy --wiki ai-research"` for ad-hoc queries without a full clone.
+- **Thin HTTP wrapper** - wrap the CLI in ~50 lines of `http.createServer` if you want multiple remote agents hitting one wiki without SSH.
+- **MCP for remote chat-app agents** - same `tng-wiki-mcp` binary; run it on the wiki host and point remote MCP clients at it.
 
 ## QMD Integration
 
@@ -543,9 +547,9 @@ This implements Karpathy's three-layer architecture:
 
 The key operations:
 
-- **Ingest** — process a new source, integrate into existing wiki pages, update index and log
-- **Query** — ask questions, get answers with citations, file valuable outputs back into the wiki
-- **Lint** — health-check for contradictions, stale claims, orphans, missing pages, coverage gaps
+- **Ingest** - process a new source, integrate into existing wiki pages, update index and log
+- **Query** - ask questions, get answers with citations, file valuable outputs back into the wiki
+- **Lint** - health-check for contradictions, stale claims, orphans, missing pages, coverage gaps
 
 The wiki compounds. Every source and every query makes it richer.
 

@@ -58,12 +58,12 @@ _Events that would materially change this assessment._
     })}
 # Signal Types
 
-- **Hiring** — Job postings, leadership changes, team expansions/contractions
-- **Product** — Launches, pivots, deprecations, pricing changes
-- **Financial** — Earnings, funding rounds, capex changes, acquisitions
-- **Strategic** — Partnerships, platform shifts, market entry/exit
-- **Technical** — Architecture changes, open-sourcing, API changes
-- **Regulatory** — Compliance moves, legal actions, policy responses
+- **Hiring** - Job postings, leadership changes, team expansions/contractions
+- **Product** - Launches, pivots, deprecations, pricing changes
+- **Financial** - Earnings, funding rounds, capex changes, acquisitions
+- **Strategic** - Partnerships, platform shifts, market entry/exit
+- **Technical** - Architecture changes, open-sourcing, API changes
+- **Regulatory** - Compliance moves, legal actions, policy responses
 `,
   },
 };
