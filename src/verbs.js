@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, statSync } from 'fs';
+import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { basename, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
 import { insideRoot, walkMd } from './paths.js';
@@ -220,6 +220,30 @@ export function listOrphanPages(wikiPath) {
     .map(path => ({ path }));
 }
 
+// _inbox/ is the cheap capture path on librarian-style wikis (code-archaeology,
+// or any wiki that adopts the pattern): any session may drop a file there; a
+// later librarian session triages it into wiki/ / deliverables/ / raw/. Pending
+// items are work exactly like uncompiled raw/ sources, but they are not
+// markdown-only and carry no frontmatter, so they get their own counter instead
+// of flowing through listSources. Returns null when the wiki has no _inbox/ at
+// all — callers distinguish "this wiki doesn't use an inbox" from "inbox empty".
+// Dotfiles (.gitkeep) are ignored.
+export function listInboxItems(wikiPath) {
+  const inboxDir = join(wikiPath, '_inbox');
+  if (!existsSync(inboxDir)) return null;
+  const items = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) items.push({ path: relative(wikiPath, full) });
+    }
+  };
+  walk(inboxDir);
+  return items;
+}
+
 // Rejection logs — NOTES deliverables produced by verification-first campaigns
 // (every rejected/corrected/downgraded lead claim with its disposition). They
 // live under deliverables/ and match `*_NOTES_*.md`. A verification-first wiki
@@ -239,9 +263,12 @@ export function roundsReport(wikiPath) {
   // are hygiene/convention signals, not attribution breaks — they get their own
   // bucket so `ground` stays the hard-failure count.
   const convention = ground.issues.filter((i) => WARN_ISSUES.has(i.issue) || i.level === 'warn').length;
+  const inboxItems = listInboxItems(wikiPath);
   return {
     scanned: ground.scanned,
     uncompiled: listSources(wikiPath, { uncompiledOnly: true }).length,
+    // null = wiki has no _inbox/ capture dir (most domains); a number = pending triage
+    inbox: inboxItems === null ? null : inboxItems.length,
     ground: ground.issues.length - convention,
     convention,
     orphans: listOrphanPages(wikiPath).length,

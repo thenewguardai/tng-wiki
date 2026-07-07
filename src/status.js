@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, resolve } from 'path';
-import { resolveWiki } from './verbs.js';
+import { resolveWiki, listInboxItems } from './verbs.js';
 
 export function computeStatus(root) {
   const hasWiki = existsSync(join(root, 'wiki'));
@@ -35,6 +35,9 @@ export function computeStatus(root) {
 
   const staleCount = countPattern(join(root, 'wiki'), /⚠️ STALE\?/g);
   const uncompiledCount = countPattern(join(root, 'raw'), /compiled: false/g);
+  // Pending capture-dir triage (null = wiki has no _inbox/); mirrors rounds
+  const inboxItems = listInboxItems(root);
+  const inboxCount = inboxItems === null ? null : inboxItems.length;
 
   return {
     isWiki: true,
@@ -48,6 +51,7 @@ export function computeStatus(root) {
     hasIndex,
     staleCount,
     uncompiledCount,
+    inboxCount,
   };
 }
 
@@ -112,6 +116,9 @@ export async function runStatus(args) {
 
   if (status.uncompiledCount > 0) {
     console.log(`  ${pc.yellow('⚠')} ${status.uncompiledCount} uncompiled source${status.uncompiledCount > 1 ? 's' : ''} in raw/`);
+  }
+  if (status.inboxCount > 0) {
+    console.log(`  ${pc.yellow('⚠')} ${status.inboxCount} item${status.inboxCount > 1 ? 's' : ''} pending triage in _inbox/`);
   }
   if (status.staleCount > 0) {
     console.log(`  ${pc.yellow('⚠')} ${status.staleCount} stale marker${status.staleCount > 1 ? 's' : ''} in wiki/`);

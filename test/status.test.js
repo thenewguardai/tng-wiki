@@ -64,6 +64,22 @@ test('computeStatus counts markdown files, ops, stale markers, and uncompiled so
   assert.equal(s.hasIndex, true);
   assert.equal(s.staleCount, 3);
   assert.equal(s.uncompiledCount, 2);
+  assert.equal(s.inboxCount, null); // no _inbox/ — this wiki doesn't use one
+});
+
+test('computeStatus counts _inbox items pending triage when the dir exists', () => {
+  const boxed = mkdtempSync(join(tmpdir(), 'tng-wiki-inbox-'));
+  try {
+    mkdirSync(join(boxed, 'wiki'), { recursive: true });
+    mkdirSync(join(boxed, 'raw'), { recursive: true });
+    mkdirSync(join(boxed, '_inbox'), { recursive: true });
+    assert.equal(computeStatus(boxed).inboxCount, 0);
+    writeFileSync(join(boxed, '_inbox', 'capture.md'), '# dropped', 'utf8');
+    writeFileSync(join(boxed, '_inbox', 'notes.txt'), 'non-markdown counts too', 'utf8');
+    assert.equal(computeStatus(boxed).inboxCount, 2);
+  } finally {
+    rmSync(boxed, { recursive: true, force: true });
+  }
 });
 
 test('computeStatus flags missing schema and missing index', () => {

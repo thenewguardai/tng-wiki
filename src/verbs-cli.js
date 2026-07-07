@@ -240,6 +240,8 @@ export async function runRounds(args) {
       process.stdout.write(`  ${count}  ${label}${n > 0 ? pc.dim(`  ${hint}`) : ''}\n`);
     };
     row('uncompiled sources (ingest)', r.uncompiled, 'tng-wiki sources --uncompiled');
+    // Only wikis with an _inbox/ capture dir get the row — r.inbox is null elsewhere
+    if (r.inbox !== null) row('inbox items pending triage (_inbox/)', r.inbox, 'file into wiki/ · deliverables/ · raw/');
     row('ground issues', r.ground, 'tng-wiki ground');
     row('convention warnings', r.convention, 'tng-wiki ground');
     row('orphan pages', r.orphans, 'tng-wiki orphans');
@@ -252,7 +254,7 @@ export async function runRounds(args) {
       const label = r.rejection_notes === 1 ? 'rejection log' : 'rejection logs';
       process.stdout.write(`  ${pc.cyan(String(r.rejection_notes).padStart(3))}  ${label} ${pc.dim('(verification-first audit trail — deliverables/*_NOTES_*.md)')}\n`);
     }
-    const total = r.uncompiled + r.ground + r.convention + r.orphans + r.unsourced + r.unverified + r.stale + r.drift;
+    const total = r.uncompiled + (r.inbox ?? 0) + r.ground + r.convention + r.orphans + r.unsourced + r.unverified + r.stale + r.drift;
     process.stdout.write('\n');
     process.stdout.write(total === 0
       ? `${pc.green('✓ Clean')} ${pc.dim('— nothing to do this round.')}\n`

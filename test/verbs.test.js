@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { scaffoldWiki } from '../src/init.js';
 import {
   resolveWiki, queryIndex, readPage, resolvePagePath, pageStemMap, searchWiki,
-  listSources, listStalePages, listOrphanPages, listRejectionNotes, roundsReport,
+  listSources, listStalePages, listOrphanPages, listRejectionNotes, listInboxItems, roundsReport,
 } from '../src/verbs.js';
 import { saveRegistry, emptyRegistry, registerWiki } from '../src/registry.js';
 import { checkGrounding } from '../src/ground.js';
@@ -399,6 +399,44 @@ test('listRejectionNotes matches *_NOTES_*.md under deliverables/, recursively',
     ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- _inbox pending triage ---
+
+test('listInboxItems distinguishes "no inbox" from "empty inbox" and counts recursively', () => {
+  const dir = makeWiki();
+  try {
+    // blank scaffold has no _inbox/ — null, not []
+    assert.equal(listInboxItems(dir), null);
+    mkdirSync(join(dir, '_inbox'));
+    writeFileSync(join(dir, '_inbox', '.gitkeep'), '', 'utf8'); // dotfiles ignored
+    assert.deepEqual(listInboxItems(dir), []);
+    writePage(dir, '_inbox/rca-draft.md', '# RCA capture');
+    writeFileSync(join(dir, '_inbox', 'notes.txt'), 'not markdown — still pending triage', 'utf8');
+    writePage(dir, '_inbox/batch/divergence-audit.md', '# nested capture');
+    const paths = listInboxItems(dir).map(i => i.path).sort();
+    assert.deepEqual(paths, ['_inbox/batch/divergence-audit.md', '_inbox/notes.txt', '_inbox/rca-draft.md']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('roundsReport surfaces inbox: null without _inbox/, a count with it', () => {
+  const dir = makeWiki();
+  try {
+    assert.equal(roundsReport(dir).inbox, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // code-archaeology scaffolds _inbox/ — a fresh one reads 0, drops count
+  const dig = makeWiki({ domain: 'code-archaeology', wikiName: 'Dig' });
+  try {
+    assert.equal(roundsReport(dig).inbox, 0);
+    writePage(dig, '_inbox/lead.md', '# dropped capture');
+    assert.equal(roundsReport(dig).inbox, 1);
+  } finally {
+    rmSync(dig, { recursive: true, force: true });
   }
 });
 
