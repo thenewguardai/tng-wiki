@@ -1,0 +1,38 @@
+# Publishes to npm via OIDC trusted publishing - no tokens, no OTP.
+# One-time setup on npmjs.com: package settings -> Trusted Publisher ->
+# GitHub Actions -> repo thenewguardai/tng-wiki, workflow release.yml.
+#
+# Normal flow: `npm version minor` locally; the postversion hook pushes the
+# v* tag and this workflow publishes it. workflow_dispatch exists for
+# re-running a publish that failed (e.g. the tag predates this workflow).
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # OIDC credential for npm trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; Node 22 bundles 10.x
+      - run: npm install -g npm@latest
+
+      - run: npm ci
+
+      # prepublishOnly gates on the full test suite + smoke; provenance
+      # attestation is generated automatically under trusted publishing
+      - run: npm publish
