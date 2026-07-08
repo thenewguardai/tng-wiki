@@ -120,6 +120,9 @@ One schema, every agent. Edit `AGENTS.md`; every alias sees the change.
 ```bash
 # Scaffolding
 tng-wiki init                       # Scaffold a new wiki (interactive; --yes for headless)
+tng-wiki upgrade    [path] [--wiki <slug>] [--domain <d>] [--dry-run] [--json]
+                                    # Regenerate schema + doctrine after a CLI update
+                                    #   (hand-authored sections survive; see below)
 
 # Registry
 tng-wiki register [path]            # Register an existing wiki
@@ -442,7 +445,31 @@ Give your agent the one-liner:
 claude "Read AGENTS.md, then do your wiki rounds"
 ```
 
-`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard - one count per category, zero-LLM - the anchor cron jobs and agents key off. When [verification-first](#two-canonical-flows) rejection logs exist (`deliverables/*_NOTES_*.md`), it adds an informational count so the audit artifact stays visible. The bundle is defined precisely in every generated `AGENTS.md` (`### Rounds`) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
+`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard - one count per category, zero-LLM - the anchor cron jobs and agents key off. When [verification-first](#two-canonical-flows) rejection logs exist (`deliverables/*_NOTES_*.md`), it adds an informational count so the audit artifact stays visible. Wikis with an `_inbox/` capture directory get an **inbox items pending triage** row (any file dropped there counts - captures are not markdown-only). The bundle is defined precisely in every generated `AGENTS.md` (`### Rounds`) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
+
+Rounds also reports **ritual meta-health** - the maintenance loop itself can lapse while every marker reads clean. A closing line shows the age of the last `log.md` entry and the wiki repo's own uncommitted churn, and turns yellow only when both signals agree (log stale two weeks or more *and* uncommitted changes present):
+
+```
+Ritual: last log entry 27d ago · uncommitted: 5 changed + 8 untracked
+```
+
+### Upgrading a wiki's schema - `upgrade`
+
+A wiki's `AGENTS.md` and `.tng-wiki/doctrine/` are generated, and the generator improves between releases - but wikis accumulate hand-written operating rules that a regen must never destroy. `tng-wiki upgrade` regenerates both without clobbering anything you wrote:
+
+```bash
+$ tng-wiki upgrade --dry-run     # report what would change, write nothing
+$ tng-wiki upgrade               # cwd when it is a wiki, else the registered default
+$ tng-wiki upgrade --wiki research
+$ tng-wiki upgrade --domain code-archaeology   # re-domain while upgrading
+```
+
+How it preserves your content:
+
+- **Fenced schemas** (any scaffold or upgrade from v0.8.0 on) carry managed markers - `<!-- tng-wiki:schema ... -->` ... `<!-- /tng-wiki:schema -->`. Upgrade replaces only what's between them; anything you added above or below survives byte-for-byte.
+- **Pre-fence schemas** get a heading-based merge: any top-level `##` section the generator never owned (your hand-authored contracts, house rules, filing tables) is carried below the new fenced block, in order. Edits made *inside* generated sections are the one thing this can't detect - the previous schema is always backed up to `.tng-wiki/backup/AGENTS.md`, so `git diff` (or the backup) shows exactly what changed before you commit.
+
+Upgrade also refreshes copy-mode alias files (`CLAUDE.md` / `.cursorrules`; symlinks follow automatically, diverged copies are left alone and reported), converts pre-AGENTS.md wikis to the canonical layout, and stamps `schema_version` in `.tng-wiki.json`. `tng-wiki doctor` compares that stamp against the installed CLI and tells you which registered wikis are running an older schema.
 
 ## Ambient Cross-Project Access
 

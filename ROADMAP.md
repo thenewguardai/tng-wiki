@@ -59,6 +59,17 @@ Every new verb / command / integration point ships with a README entry containin
 
 Split to `docs/` once README crosses ~250 lines.
 
+## Schema Lifecycle (shipped 2026-07-07, post-0.7.0)
+
+Dogfood review of the maintainer's wiki surfaced four gaps; all shipped in one batch (see CHANGELOG Unreleased):
+
+- **`tng-wiki upgrade` + managed schema fences.** The 0.7.0 doctrine split made every pre-0.7.0 wiki stale with no migration path, and hand-authored schema extensions (the dogfood wiki's `## Repository-Specific Contract`) made naive regeneration destructive. Generated schemas now carry `connect`-style fence markers; `upgrade` splices fenced wikis byte-preservingly, heading-merges legacy ones, rewrites doctrine, stamps `schema_version`, and supports `--domain` re-domaining. `doctor` flags wikis whose stamp trails the installed CLI.
+- **`_inbox/` visibility.** rounds/status counted pending ingest only from `raw/`; librarian-style wikis capture through `_inbox/` (12 items had backed up unseen).
+- **Ritual meta-health.** Markers can read clean while the loop itself lapses (4 weeks of stalled log + uncommitted edits, invisible). rounds/status now report log age + working-tree churn.
+- **Page-count coherence.** status (all files) and rounds (groundable) contradicted each other without explanation; both now label their notions and share the same walker.
+
+Follow-ups worth considering: an `upgrade --all` sweep over every registered wiki; a `doctor` hint when `_inbox/` exists but the domain section doesn't teach librarian duties; fencing the doctrine files too if users start editing them.
+
 ## Improvement Ideas
 
 - **Code-authority follow-ups (deferred from Phase 4).**

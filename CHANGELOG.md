@@ -4,6 +4,18 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`tng-wiki upgrade`** - regenerate a wiki's schema and doctrine after a CLI update without clobbering anything hand-written. Generated schemas are now wrapped in managed fence markers (`<!-- tng-wiki:schema v<ver> domain=<d> -->` ... `<!-- /tng-wiki:schema -->`, the pattern `connect` already uses); upgrade splices the fenced region and preserves user content outside it byte-for-byte. Pre-fence wikis get a heading-based merge: `##` sections the generator never owned (hand-authored contracts, house rules) are carried below the new fenced block, while generated and historical headings (including the pre-0.7.0 inlined `Marker Taxonomy`) are rebuilt. Every run rewrites `.tng-wiki/doctrine/`, refreshes byte-identical copy aliases (symlinks follow; diverged copies are left alone and reported), converts pre-AGENTS.md wikis (`CLAUDE.md` as the schema) to canonical + alias, backs the previous schema up to `.tng-wiki/backup/AGENTS.md`, and stamps `schema_version` in `.tng-wiki.json`. `--domain <d>` re-domains a wiki (e.g. `software-engineering` to `code-archaeology`) and syncs the registry; `--dry-run` reports the full plan without writing. Validated against the maintainer's dogfood wiki: a 75-line hand-authored contract survived byte-for-byte while the schema received the 0.7.0 doctrine split it had missed (35 KB to 24 KB).
+- **`doctor` flags stale wiki schemas.** `init` and `upgrade` stamp `schema_version` in `.tng-wiki.json`; `doctor` compares each registered wiki's stamp against the installed CLI and prints `run tng-wiki upgrade --wiki <slug>` for wikis whose schema an older (or no longer current) generator wrote. Unstamped pre-upgrade wikis are called out the same way.
+- **`_inbox/` is finally visible to the health surface.** Librarian-style wikis capture through `_inbox/`, not `raw/`, so the ingest counters said "0 pending" while captures backed up (the dogfood wiki accumulated 12 unseen). `rounds` gains an `inbox items pending triage` row and `status` a warning line, both counting every non-dot file dropped there (captures are not markdown-only). Wikis without an `_inbox/` dir report `inbox: null` and render nothing - "doesn't use an inbox" and "inbox empty" stay distinct.
+- **Ritual meta-health in `rounds` and `status`.** The maintenance loop itself can lapse while every marker reads clean - the dogfood wiki went four weeks with a stalled `log.md` and uncommitted edits and nothing surfaced it. Both commands now report days since the last `log.md` operation and the wiki repo's own working-tree churn (fail-soft `null` outside git), rendered yellow only when both signals agree (log stale >= 14 days AND uncommitted changes present). Informational only; exit codes never change.
+
+### Changed
+- **`status` and `rounds` stopped contradicting each other about page counts.** `status` counted every `.md` under `wiki/` (32 on the dogfood wiki) while `rounds` scanned only groundable pages (25, after the index/log/`_`-template/meta exemptions) - with no explanation of either number. `status` now shows both, computed with the same `walkMd` + `isGroundable` logic the verbs use, and the `rounds` header says "groundable pages" explicitly.
+- **Generated `AGENTS.md` opens with a fence marker line.** Agents ignore the HTML comment; tooling keys off it. Content is otherwise unchanged for new scaffolds.
+
 ## [0.7.0] - 2026-07-07
 
 ### Added
