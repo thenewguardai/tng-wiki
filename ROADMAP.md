@@ -59,6 +59,16 @@ Every new verb / command / integration point ships with a README entry containin
 
 Split to `docs/` once README crosses ~250 lines.
 
+## Fourth External Review (received 2026-07-08, inspected 0.6.0)
+
+Disposition, for the record - the review arrived two releases stale and mixed real findings with tooling artifacts:
+
+- **Endorsed the positioning pivot** independently: "strong wiki operating system for disciplined agents, weak productized wiki compiler" is the same diagnosis the 0.7.0 reframe already acted on. Its ecosystem/star-count claims remain unverifiable (same caveat as the first three reviews).
+- **Two findings were real but already fixed in 0.7.0** before the review was read: the qmd.js execSync injection (its proposed diff nearly matches what shipped) and the package.json repository URL typo.
+- **One priority finding was a fetch artifact, not a fact**: it claimed core files are "single-line programs" (registry.js "3 lines", ground.js "59") and ranked reformatting as its #2 fix. Real counts: registry.js 112, doctor.js 246, connect.js 213, verbs.js 313, ground.js 836 - all conventional multi-line JS. The reviewer's pipeline lost newlines. Lesson worth keeping: verify a reviewer's raw observations before acting on its recommendations.
+- **Actionable residue, shipped 2026-07-08**: push/PR test CI (test.yml; the release workflow's first run had already caught a real CI-only bug), a zero-dependency coverage script (`npm run coverage`, native node - 91.3% line / 90.1% branch / 94.0% funcs at time of adding), and a lockfile refresh clearing 5 transitive audit findings (fast-uri / hono / ip-address / qs - all in MCP SDK HTTP-transport chains the stdio-only server never exercises; the review's "upgrade off 1.29.0" remedy was wrong, 1.29.0 is latest).
+- **Deferred**: benchmarking `ground` lock-mode hashing on 10k+ page vaults (reasonable observation, personal/team scale is fine today).
+
 ## Schema Lifecycle (shipped 2026-07-07, post-0.7.0)
 
 Dogfood review of the maintainer's wiki surfaced four gaps; all shipped in one batch (see CHANGELOG Unreleased):
