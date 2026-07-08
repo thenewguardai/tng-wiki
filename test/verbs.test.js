@@ -522,7 +522,10 @@ test('rounds CLI prints the rejection-log line only when ≥1 exists; --json is 
     saveRegistry(reg, home);
     const cli = fileURLToPath(new URL('../bin/cli.js', import.meta.url));
     const run = (...args) => execFileSync(process.execPath, [cli, 'rounds', ...args], {
-      env: { ...process.env, HOME: home },
+      // FORCE_COLOR/NO_COLOR: CI environments set CI=true, which flips
+      // picocolors to ANSI output and breaks the plain-text regexes below
+      // (same guard as leads.test.js).
+      env: { ...process.env, HOME: home, FORCE_COLOR: '0', NO_COLOR: '1' },
       encoding: 'utf8',
     });
 
