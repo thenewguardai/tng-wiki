@@ -1,0 +1,35 @@
+# Runs the full suite + smoke on every push and PR. The release workflow
+# (release.yml) gates publishes the same way; this catches regressions and
+# CI-environment sensitivities (like the CI=true color flip that broke the
+# first-ever publish run) before they reach a release.
+
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Current LTS + current. The test script's glob form needs a modern
+        # node --test; the engines floor (>=18) is exercised by users, not CI.
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run smoke
