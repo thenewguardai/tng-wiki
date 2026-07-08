@@ -4,7 +4,7 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.0] - 2026-07-08
 
 ### Added
 - **`tng-wiki upgrade`** - regenerate a wiki's schema and doctrine after a CLI update without clobbering anything hand-written. Generated schemas are now wrapped in managed fence markers (`<!-- tng-wiki:schema v<ver> domain=<d> -->` ... `<!-- /tng-wiki:schema -->`, the pattern `connect` already uses); upgrade splices the fenced region and preserves user content outside it byte-for-byte. Pre-fence wikis get a heading-based merge: `##` sections the generator never owned (hand-authored contracts, house rules) are carried below the new fenced block, while generated and historical headings (including the pre-0.7.0 inlined `Marker Taxonomy`) are rebuilt. Every run rewrites `.tng-wiki/doctrine/`, refreshes byte-identical copy aliases (symlinks follow; diverged copies are left alone and reported), converts pre-AGENTS.md wikis (`CLAUDE.md` as the schema) to canonical + alias, backs the previous schema up to `.tng-wiki/backup/AGENTS.md`, and stamps `schema_version` in `.tng-wiki.json`. `--domain <d>` re-domains a wiki (e.g. `software-engineering` to `code-archaeology`) and syncs the registry; `--dry-run` reports the full plan without writing. Validated against the maintainer's dogfood wiki: a 75-line hand-authored contract survived byte-for-byte while the schema received the 0.7.0 doctrine split it had missed (35 KB to 24 KB).
