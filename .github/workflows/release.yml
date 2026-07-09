@@ -23,13 +23,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24 bundles npm 11.x, which supports OIDC trusted publishing
+      # natively. Do NOT self-upgrade npm here ('npm install -g npm@latest'
+      # over the bundled copy left a broken tree on the runner once - npm's
+      # own libnpmpublish lost its sigstore module mid-publish).
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
-
-      # Trusted publishing (OIDC) requires npm >= 11.5.1; Node 22 bundles 10.x
-      - run: npm install -g npm@latest
 
       - run: npm ci
 
