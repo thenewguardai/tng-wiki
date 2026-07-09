@@ -6,7 +6,7 @@ import pc from 'picocolors';
 // without probing every verb with --help.
 
 // Reused flags
-const WIKI = { name: '--wiki', value: '<slug>', desc: 'target a specific registered wiki (default: the registered default)' };
+const WIKI = { name: '--wiki', value: '<slug>', desc: 'target a specific registered wiki (default: the wiki the cwd is inside, else the registered default)' };
 const JSON_FLAG = { name: '--json', desc: 'structured, machine-readable output' };
 
 export const COMMANDS = [
@@ -144,7 +144,7 @@ export const COMMANDS = [
     name: 'upgrade', group: 'Scaffolding',
     summary: 'Regenerate a wiki\'s schema + doctrine after a CLI update, preserving hand-authored sections',
     usage: 'tng-wiki upgrade [path] [--wiki <slug>] [--domain <d>] [--dry-run] [--json]',
-    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (default: the cwd when it is a wiki, else the registered default)' }],
+    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (default: the wiki the cwd is inside, else the registered default)' }],
     flags: [
       WIKI,
       { name: '--domain', value: '<d>', desc: 're-domain the wiki while upgrading (e.g. software-engineering → code-archaeology); updates .tng-wiki.json and the registry' },
@@ -171,7 +171,7 @@ export const COMMANDS = [
   {
     name: 'status', group: 'Diagnostics', summary: 'Basic wiki health snapshot',
     usage: 'tng-wiki status [path] [--wiki <slug>] [--json]',
-    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (bypasses the registry — mutually exclusive with --wiki; default: the registered default wiki)' }],
+    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (bypasses the registry — mutually exclusive with --wiki; default: the wiki the cwd is inside, else the registered default)' }],
     flags: [WIKI, JSON_FLAG],
     examples: ['tng-wiki status', 'tng-wiki status --wiki research', 'tng-wiki status --json'],
   },

@@ -290,10 +290,10 @@ function firstPositional(args) {
 }
 
 // Target resolution, most-specific first: explicit path > --wiki <slug> >
-// the cwd when it is itself a wiki > the registered default. A mutating
-// command run bare inside a wiki must obviously target THAT wiki, which is
-// why cwd outranks the registered default here (status, being read-only,
-// resolves default-first).
+// the wiki the cwd is inside > the registered default. The same order every
+// verb uses (resolveWiki owns the cwd-vs-default logic, ancestor-walking
+// included) - upgrade pioneered cwd-outranks-default and the read verbs were
+// unified onto it in 0.9.0.
 export function resolveUpgradeRoot(args, { cwd = process.cwd(), home } = {}) {
   const slug = argValue(args, '--wiki');
   const explicit = firstPositional(args);
@@ -301,8 +301,7 @@ export function resolveUpgradeRoot(args, { cwd = process.cwd(), home } = {}) {
     throw new Error(`Pass either a path ("${explicit}") or --wiki ${slug}, not both.`);
   }
   if (explicit) return { root: resolve(explicit), slug: null };
-  if (!slug && existsSync(join(cwd, '.tng-wiki.json'))) return { root: cwd, slug: null };
-  const wiki = resolveWiki(slug, home);
+  const wiki = resolveWiki(slug, home, { cwd });
   return { root: wiki.path, slug: wiki.slug };
 }
 

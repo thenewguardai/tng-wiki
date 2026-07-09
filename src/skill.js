@@ -31,7 +31,7 @@ The user maintains one or more Karpathy-style LLM-maintained markdown knowledge 
 
 ## Registry and multi-wiki
 
-The user may have several wikis (research, competitive intel, learning, etc.). Start with \`tng-wiki list\` to see what's registered. Every verb accepts \`--wiki <slug>\` to target a specific wiki; omit it to use the registered default. Every verb also accepts \`--json\` for structured output when you need to parse results.
+The user may have several wikis (research, competitive intel, learning, etc.). Start with \`tng-wiki list\` to see what's registered. Every verb accepts \`--wiki <slug>\` to target a specific wiki; omit it and the verb targets the wiki the current directory is inside (git-style, ancestor directories count), falling back to the registered default when you're not standing in one. Every verb also accepts \`--json\` for structured output when you need to parse results.
 
 ## Setting up a wiki (when there isn't one yet)
 

@@ -101,6 +101,25 @@ test('computeStatus flags missing schema and missing index', () => {
   }
 });
 
+test('resolveStatusRoot: bare status inside a wiki reports that wiki, not the default', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-status-home-'));
+  const inside = mkdtempSync(join(tmpdir(), 'tng-wiki-status-inside-'));
+  try {
+    mkdirSync(join(inside, 'wiki'), { recursive: true });
+    mkdirSync(join(inside, 'raw'), { recursive: true });
+    writeFileSync(join(inside, '.tng-wiki.json'), '{"version":1,"name":"Inside","domain":"blank"}', 'utf8');
+    let reg = registerWiki(emptyRegistry(), { name: 'Deflt', path: '/tmp/elsewhere', domain: 'blank' });
+    reg = registerWiki(reg, { name: 'Inside', path: inside, domain: 'blank' });
+    saveRegistry(reg, home); // default is 'deflt'
+    const { root, slug } = resolveStatusRoot([], home, inside);
+    assert.equal(root, inside);
+    assert.equal(slug, 'inside');
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(inside, { recursive: true, force: true });
+  }
+});
+
 // --- resolveStatusRoot (registry-aware resolution, same semantics as query) ---
 
 test('resolveStatusRoot resolves --wiki <slug> through the registry from any cwd', () => {

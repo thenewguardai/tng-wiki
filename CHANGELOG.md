@@ -4,7 +4,10 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-07-09
+
+### Changed
+- **One resolution order for every verb: explicit path > `--wiki <slug>` > the wiki the cwd is inside > the registered default.** Read verbs previously resolved the registered default from anywhere (a deliberate 0.6.0 choice), while `upgrade` resolved cwd-first - so standing inside wiki A and running bare `rounds` reported wiki B. An external reviewer hit exactly that live. `resolveWiki` now owns the cwd logic for all verbs (`status`, `query`/`read`/`search`/`sources`, the lint verbs, `rounds`, `ground`, `cite`, `upgrade`): git-style ancestor walking, and an *unregistered* wiki you're standing in still resolves (null slug). The MCP server deliberately keeps default-only resolution - its cwd is wherever the host launched it, which the conversation can't see, so "omit to use the default wiki" stays literally true.
 
 ### Added
 - **`upgrade` detects fence tampering.** An adversarial review pass found the one corner the splice missed: a stray close marker pasted inside the managed block makes the splice cut short, stranding stale generated text in the file as if it were user content (no data loss, but debris only a human diff would catch). Upgrade now counts full-line fence markers in the merged result and, on anything other than exactly one open + one close, reports a loud `Fence anomaly` warning (CLI and `--json` `fenceAnomaly`, dry-run included) telling the user which markers to delete before rerunning. We warn rather than guess because the "right" marker is undecidable - a stray paste inside the block and a genuine user mention below it look identical to string matching. The review's tamper battery (stray close, deleted close, prose mentions) is committed as regression tests.

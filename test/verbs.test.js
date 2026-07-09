@@ -59,6 +59,48 @@ test('resolveWiki throws when an unknown slug is passed', () => {
   }
 });
 
+test('resolveWiki: the wiki the cwd is inside outranks the registered default', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  const inside = makeWiki({ wikiName: 'Inside' });
+  const other = makeWiki({ wikiName: 'Other' });
+  try {
+    let reg = registerWiki(emptyRegistry(), { name: 'Other', path: other, domain: 'blank' });
+    reg = registerWiki(reg, { name: 'Inside', path: inside, domain: 'blank' });
+    saveRegistry(reg, home); // default is 'other' (registered first)
+
+    // standing inside a registered non-default wiki resolves THAT wiki
+    assert.equal(resolveWiki(null, home, { cwd: inside }).slug, 'inside');
+    // ancestor directories count (git-style)
+    assert.equal(resolveWiki(null, home, { cwd: join(inside, 'wiki') }).slug, 'inside');
+    // an explicit slug still outranks the cwd
+    assert.equal(resolveWiki('other', home, { cwd: inside }).slug, 'other');
+    // outside any wiki, the registered default wins
+    assert.equal(resolveWiki(null, home, { cwd: tmpdir() }).slug, 'other');
+    // cwd: null disables detection entirely (the MCP server's mode)
+    assert.equal(resolveWiki(null, home, { cwd: null }).slug, 'other');
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(inside, { recursive: true, force: true });
+    rmSync(other, { recursive: true, force: true });
+  }
+});
+
+test('resolveWiki resolves an UNREGISTERED cwd wiki with a null slug', () => {
+  const home = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  const unregistered = makeWiki({ wikiName: 'Rogue' });
+  try {
+    saveRegistry(emptyRegistry(), home);
+    const wiki = resolveWiki(null, home, { cwd: unregistered });
+    assert.equal(wiki.slug, null);
+    assert.equal(wiki.path, unregistered);
+    // outside any wiki with an empty registry, the old error still applies
+    assert.throws(() => resolveWiki(null, home, { cwd: tmpdir() }), /No default wiki/);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(unregistered, { recursive: true, force: true });
+  }
+});
+
 // --- queryIndex / readPage ---
 
 test('queryIndex returns wiki/index.md content', () => {

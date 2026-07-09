@@ -176,7 +176,9 @@ tng-wiki list
 
 ## Wiki Access Verbs
 
-These are the commands an agent invokes (via its Bash tool) to read and navigate a wiki. They're intentionally plain-text and line-oriented by default so agents can parse them fluently and Unix tools can pipe them. Every verb accepts `--wiki <slug>` (defaults to the registry default) and `--json` (machine-readable structured output for scripts and MCP wrappers).
+These are the commands an agent invokes (via its Bash tool) to read and navigate a wiki. They're intentionally plain-text and line-oriented by default so agents can parse them fluently and Unix tools can pipe them. Every verb accepts `--wiki <slug>` and `--json` (machine-readable structured output for scripts and MCP wrappers).
+
+**Resolution order, every verb the same:** an explicit path argument (where the verb takes one) > `--wiki <slug>` > **the wiki the current directory is inside** (git-style - ancestor directories count, and an unregistered wiki still resolves) > the registered default. Standing inside a wiki and running a bare verb always targets *that* wiki, never a different registered default. The MCP server is the one exception: it has no meaningful cwd, so omitting the `wiki` parameter there means the registered default, as its tool descriptions say.
 
 ### `query` - read the wiki's index
 
@@ -459,7 +461,7 @@ A wiki's `AGENTS.md` and `.tng-wiki/doctrine/` are generated, and the generator 
 
 ```bash
 $ tng-wiki upgrade --dry-run     # report what would change, write nothing
-$ tng-wiki upgrade               # cwd when it is a wiki, else the registered default
+$ tng-wiki upgrade               # the wiki the cwd is inside, else the registered default
 $ tng-wiki upgrade --wiki research
 $ tng-wiki upgrade --domain code-archaeology   # re-domain while upgrading
 ```

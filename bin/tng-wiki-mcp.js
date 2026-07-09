@@ -39,7 +39,10 @@ function err(message) {
 
 function withWiki(wiki, fn) {
   try {
-    const resolved = resolveWiki(wiki ?? null);
+    // cwd detection is disabled here on purpose: the server's cwd is wherever
+    // the MCP host launched it, which the conversation can't see - tools
+    // documented as "omit to use the default wiki" must mean exactly that.
+    const resolved = resolveWiki(wiki ?? null, undefined, { cwd: null });
     return fn(resolved);
   } catch (e) {
     return err(e.message);

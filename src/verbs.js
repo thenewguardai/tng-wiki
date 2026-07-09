@@ -1,17 +1,46 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
-import { basename, join, relative, resolve, sep } from 'path';
+import { basename, dirname, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
 import { insideRoot, walkMd } from './paths.js';
 import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
 import { workingTreeCounts } from './git-read.js';
 import { splitFrontmatter, parseScalars } from './frontmatter.js';
 
-export function resolveWiki(slug, home) {
+// Nearest ancestor of `startDir` (inclusive) that is a tng-wiki wiki root
+// (has a .tng-wiki.json manifest), or null. Git-style: standing anywhere
+// inside a wiki counts as being "in" it.
+export function findWikiRoot(startDir) {
+  let dir = resolve(startDir);
+  for (;;) {
+    if (existsSync(join(dir, '.tng-wiki.json'))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+// Wiki resolution, most-specific first: --wiki <slug> > the wiki the cwd is
+// inside > the registered default. Running a verb while standing inside a
+// wiki must report THAT wiki - resolving the registered default from inside a
+// different wiki is a footgun (an external reviewer hit it live). A cwd wiki
+// that isn't registered still resolves (slug null, name from the dir); pass
+// `cwd: null` to disable cwd detection entirely (the MCP server does - its
+// cwd is wherever the host launched it, which the conversation can't see).
+export function resolveWiki(slug, home, { cwd = process.cwd() } = {}) {
   const registry = loadRegistry(home);
   if (slug) {
     const wiki = getWiki(registry, slug);
     if (!wiki) throw new Error(`No wiki registered under slug "${slug}". Run \`tng-wiki list\` to see registered wikis.`);
     return wiki;
+  }
+  if (cwd) {
+    const root = findWikiRoot(cwd);
+    if (root) {
+      const entry = Object.entries(registry.wikis)
+        .find(([, w]) => resolve(w.path) === root);
+      if (entry) return { slug: entry[0], ...entry[1], isDefault: registry.default === entry[0] };
+      return { slug: null, name: basename(root), path: root, domain: null, isDefault: false };
+    }
   }
   const def = getDefault(registry);
   if (!def) throw new Error('No default wiki registered. Pass --wiki <slug> or run `tng-wiki register` / `tng-wiki init` first.');
