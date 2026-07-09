@@ -35,7 +35,7 @@ export const softwareEngineeringTemplate = {
     content: `${frontmatter({
       title: 'ADR-0001: Adopt AGENTS.md as canonical agent schema',
       source: 'tng-wiki project',
-      url: 'https://github.com/thenewguard/tng-wiki',
+      url: 'https://github.com/thenewguardai/tng-wiki',
       date: '2026-04-15',
       clipped: today(),
       type: 'rfc',
