@@ -10,6 +10,11 @@ import {
   readLock, writeLock, normalizeLines, hashLines, citeKey, rangeAnchor, rangeLabel,
   sliceRange, findContentMatches,
 } from './lock.js';
+import { splitFrontmatter, extractListKey } from './frontmatter.js';
+
+// Re-exported for existing importers (cite.js, tests) - the implementation
+// moved to the shared frontmatter module.
+export { splitFrontmatter } from './frontmatter.js';
 
 // Warn-level findings: hygiene/convention signals, not attribution breaks.
 // Renderers color them differently and `rounds` counts them under `convention`;
@@ -62,53 +67,6 @@ export function loadLeadArchives(wikiPath) {
   return Array.isArray(meta.lead_archives) ? meta.lead_archives : [];
 }
 
-
-export function splitFrontmatter(content) {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n?/);
-  if (!match) return { frontmatter: '', body: content, bodyStartLine: 1 };
-  // consumed text includes the fences + inner + trailing \n; count its newlines
-  // to get the 1-indexed line where the body starts in the original file.
-  const bodyStartLine = match[0].split('\n').length;
-  return {
-    frontmatter: match[1],
-    body: content.slice(match[0].length),
-    bodyStartLine,
-  };
-}
-
-// Shared parser for top-level frontmatter list keys (`sources:`, `leads:`).
-// Handles inline arrays, block lists, scalars, and quoted entries identically
-// so the two keys can never drift in what they accept.
-function extractListKey(frontmatter, key) {
-  const lines = frontmatter.split('\n');
-  const idx = lines.findIndex((l) => l.startsWith(`${key}:`));
-  if (idx === -1) return null;
-  const line = lines[idx];
-
-  // inline array form: `<key>: [a, b]` or `<key>: []`
-  const inline = line.match(new RegExp(`^${key}:\\s*\\[(.*)\\]`));
-  if (inline) {
-    return inline[1].trim()
-      ? inline[1].split(',').map((s) => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
-      : [];
-  }
-
-  // scalar form: legacy `sources: 3` (count) — treat as empty, it's a migration target
-  const scalar = line.slice(key.length + 1).replace(/#.*$/, '').trim();
-  if (scalar && !scalar.startsWith('[')) {
-    if (/^\d+$/.test(scalar)) return [];
-    return [scalar.replace(/^["']|["']$/g, '')];
-  }
-
-  // block list form (with or without trailing comment on the key line)
-  const out = [];
-  for (let i = idx + 1; i < lines.length; i++) {
-    const m = lines[i].match(/^\s+-\s+(.+?)\s*(?:#.*)?$/);
-    if (!m) break;
-    out.push(m[1].replace(/^["']|["']$/g, ''));
-  }
-  return out;
-}
 
 export function extractSources(frontmatter) {
   return extractListKey(frontmatter, 'sources');

@@ -59,6 +59,16 @@ Every new verb / command / integration point ships with a README entry containin
 
 Split to `docs/` once README crosses ~250 lines.
 
+## Fifth + Sixth External Reviews (received 2026-07-09, inspected 0.8.0)
+
+Two follow-up reviews of 0.8.0; the second re-ran an adversarial battery against the upgrade machinery. Disposition:
+
+- **Both confirmed the 0.7.0/0.8.0 fixes held** (qmd hardening, schema over-claim correction, positioning reframe, doctrine split token measurement ~8.2k -> ~3.6k always-on, CI/coverage/trusted-publishing hygiene) and retracted the fourth review's "single-line programs" artifact.
+- **One real new defect, fixed same day**: a stray close marker pasted inside the fenced block makes the splice strand stale generated text as user content. `upgrade` now reports a `Fence anomaly` warning (warn, not guess - the right marker is undecidable); the review's tamper battery is committed as regression tests in upgrade.test.js.
+- **Frontmatter parser duplication (verbs.js vs ground.js)**: consolidated into `src/frontmatter.js`, same treatment insideRoot/walkMd got.
+- **Open UX decision**: read-only verbs resolve the registered default from anywhere (deliberate, 0.6.0), while `upgrade` resolves cwd-first - the reviewer ran `rounds` inside one wiki and got another. Options: unify all verbs to explicit > --wiki > cwd-wiki > default (behavior change, needs a minor bump), or print a notice when cwd is a different registered wiki than the one resolved.
+- **Still deferred**: 10k-page lock-hashing benchmark; splitting ground.js into frontmatter/citations/authorities/lock-checks/convention-lints modules (the file is coherent but remains the complexity sink).
+
 ## Fourth External Review (received 2026-07-08, inspected 0.6.0)
 
 Disposition, for the record - the review arrived two releases stale and mixed real findings with tooling artifacts:

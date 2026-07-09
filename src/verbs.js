@@ -4,6 +4,7 @@ import { loadRegistry, getDefault, getWiki } from './registry.js';
 import { insideRoot, walkMd } from './paths.js';
 import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
 import { workingTreeCounts } from './git-read.js';
+import { splitFrontmatter, parseScalars } from './frontmatter.js';
 
 export function resolveWiki(slug, home) {
   const registry = loadRegistry(home);
@@ -135,28 +136,12 @@ export function searchWiki(wikiPath, query, { regex = false, includeRaw = false,
   return hits;
 }
 
-function parseFrontmatter(content) {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return {};
-  const out = {};
-  for (const raw of match[1].split('\n')) {
-    const m = raw.match(/^(\w[\w-]*):\s*(.*)$/);
-    if (!m) continue;
-    const [, key, value] = m;
-    const cleaned = value.trim().replace(/^["'](.*)["']$/, '$1');
-    out[key] = cleaned === 'true' ? true
-      : cleaned === 'false' ? false
-      : cleaned;
-  }
-  return out;
-}
-
 export function listSources(wikiPath, { uncompiledOnly = false } = {}) {
   const rawDir = join(wikiPath, 'raw');
   const results = [];
   for (const file of walkMd(rawDir)) {
     const content = readFileSync(file, 'utf8');
-    const fm = parseFrontmatter(content);
+    const fm = parseScalars(splitFrontmatter(content).frontmatter);
     const compiled = fm.compiled === true;
     if (uncompiledOnly && compiled) continue;
     results.push({

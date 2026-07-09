@@ -77,6 +77,20 @@ export function salvageUserSections(oldContent, newSchema) {
     .map((s) => ({ heading: s.heading, text: s.lines.join('\n').trimEnd() }));
 }
 
+// Full-line fence-marker counts in `text`. Expected exactly {1, 1} in an
+// upgraded schema; anything else means a stray marker survived somewhere
+// outside the managed block. A stray CLOSE pasted inside the old block is the
+// dangerous case: the splice cuts at the first close, so everything between
+// the stray and the real close is treated as user suffix and kept - stale
+// generated debris that only a human diff would catch. We can't pick the
+// "right" marker automatically (a marker quoted in genuine user content is
+// equally possible), so upgrade warns loudly instead of guessing.
+export function countFenceMarkers(text) {
+  const opens = [...text.matchAll(/^<!-- tng-wiki:schema\b[^\n]*-->[ \t]*$/gm)].length;
+  const closes = [...text.matchAll(/^<!-- \/tng-wiki:schema -->[ \t]*$/gm)].length;
+  return { opens, closes };
+}
+
 // Fenced merge: replace the managed region, keep the user's prefix/suffix
 // byte-for-byte. Returns null when the markers are missing or malformed so the
 // caller can fall back to legacy salvage.
@@ -174,6 +188,12 @@ export function upgradeWiki(root, { domain: domainOverride = null, dryRun = fals
   const doctrine = generateDoctrine({ wikiName });
   const schemaVersion = installedVersion();
 
+  // Post-merge sanity: the result must contain exactly one open + one close
+  // marker (the fresh managed block's own). Extra markers mean stale generated
+  // debris or a stray marker is being carried as user content.
+  const markerCounts = countFenceMarkers(merged);
+  const fenceAnomaly = markerCounts.opens !== 1 || markerCounts.closes !== 1 ? markerCounts : null;
+
   const result = {
     root,
     wikiName,
@@ -187,6 +207,7 @@ export function upgradeWiki(root, { domain: domainOverride = null, dryRun = fals
     aliases,
     schemaVersion,
     registrySynced: false,
+    fenceAnomaly,
     dryRun,
   };
 
@@ -329,6 +350,12 @@ export async function runUpgrade(args) {
     console.log(`  ${pc.cyan('Backup:')}   ${result.dryRun ? 'would save' : 'saved'} previous schema to ${result.backup}`);
   }
   console.log('');
+  if (result.fenceAnomaly) {
+    const { opens, closes } = result.fenceAnomaly;
+    console.log(`  ${pc.yellow('!')} ${pc.yellow(`Fence anomaly: result carries ${opens} opening / ${closes} closing schema marker(s) (expected 1/1).`)}`);
+    console.log(`    A stray marker in the old file makes the splice keep stale generated text as if it were yours.`);
+    console.log(`    Review ${pc.cyan('git diff ' + CANONICAL_SCHEMA_FILE)}, delete the stray marker(s) and any duplicated generated sections, then rerun ${pc.cyan('tng-wiki upgrade')}.`);
+  }
   if (result.mode === 'legacy') {
     console.log(`  ${pc.yellow('!')} Legacy merge is heading-based: edits made INSIDE generated sections are not carried over.`);
     console.log(`    Review with ${pc.cyan('git diff ' + CANONICAL_SCHEMA_FILE)} (or against ${result.backup ?? 'the backup'}) before committing.`);

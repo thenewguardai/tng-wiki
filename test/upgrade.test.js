@@ -6,7 +6,9 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { scaffoldWiki } from '../src/init.js';
-import { upgradeWiki, salvageUserSections, spliceFencedSchema, resolveUpgradeRoot } from '../src/upgrade.js';
+import {
+  upgradeWiki, salvageUserSections, spliceFencedSchema, resolveUpgradeRoot, countFenceMarkers,
+} from '../src/upgrade.js';
 import { generateAgentsMd, SCHEMA_FENCE_CLOSE, SCHEMA_FENCE_OPEN_RE, DOCTRINE_DIR } from '../src/agents/index.js';
 import { getTemplate } from '../src/templates/index.js';
 import { installedVersion } from '../src/version.js';
@@ -283,6 +285,70 @@ test('resolveUpgradeRoot: explicit path > cwd-wiki > registered default; path + 
     rmSync(wiki, { recursive: true, force: true });
     rmSync(other, { recursive: true, force: true });
   }
+});
+
+// --- fence tampering (adversarial battery from an external review) ---
+
+test('upgradeWiki flags a stray close marker inside the fenced block as a fence anomaly', () => {
+  const dir = makeWiki();
+  try {
+    const schemaPath = join(dir, 'AGENTS.md');
+    // paste a stray close marker mid-block (e.g. a careless copy-paste), plus
+    // a genuine user section below the real close
+    const tampered = readFileSync(schemaPath, 'utf8')
+      .replace('## Markers', `${SCHEMA_FENCE_CLOSE}\n\n## Markers`)
+      + '\n' + CONTRACT;
+    writeFileSync(schemaPath, tampered, 'utf8');
+
+    const result = upgradeWiki(dir);
+    // splice cut at the stray marker: stale generated text is stranded in the
+    // suffix (## Markers appears twice) - the anomaly must be reported
+    assert.deepEqual(result.fenceAnomaly, { opens: 1, closes: 2 });
+    const upgraded = readFileSync(schemaPath, 'utf8');
+    assert.ok(upgraded.includes('## Repository-Specific Contract'), 'real user content still preserved');
+    // and the same anomaly shows on --dry-run without writing
+    const dry = upgradeWiki(dir, { dryRun: true });
+    assert.ok(dry.fenceAnomaly, 'dry run reports the anomaly too');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('upgradeWiki reports no fence anomaly on clean fenced and legacy paths', () => {
+  const dir = makeWiki();
+  try {
+    const schemaPath = join(dir, 'AGENTS.md');
+    writeFileSync(schemaPath, readFileSync(schemaPath, 'utf8') + '\n' + CONTRACT, 'utf8');
+    assert.equal(upgradeWiki(dir).fenceAnomaly, null); // fenced
+    writeFileSync(schemaPath, defence(readFileSync(schemaPath, 'utf8')), 'utf8');
+    assert.equal(upgradeWiki(dir).fenceAnomaly, null); // legacy
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('upgradeWiki falls back to legacy salvage when the close marker was deleted', () => {
+  const dir = makeWiki();
+  try {
+    const schemaPath = join(dir, 'AGENTS.md');
+    const noClose = (readFileSync(schemaPath, 'utf8') + '\n' + CONTRACT)
+      .replace(SCHEMA_FENCE_CLOSE + '\n', '');
+    writeFileSync(schemaPath, noClose, 'utf8');
+    const result = upgradeWiki(dir);
+    assert.equal(result.mode, 'legacy');
+    assert.deepEqual(result.salvaged, ['Repository-Specific Contract']);
+    const upgraded = readFileSync(schemaPath, 'utf8');
+    assert.equal(upgraded.match(/## What This Is/g).length, 1, 'no duplicated generated sections');
+    assert.equal(upgradeWiki(dir).fenceAnomaly, null, 'repaired file is clean on the next run');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('countFenceMarkers counts only full-line markers', () => {
+  assert.deepEqual(countFenceMarkers('<!-- tng-wiki:schema v1 domain=blank | x -->\nbody\n<!-- /tng-wiki:schema -->\n'), { opens: 1, closes: 1 });
+  // an inline prose mention is not a marker
+  assert.deepEqual(countFenceMarkers('the `<!-- /tng-wiki:schema -->` marker closes the block\n'), { opens: 0, closes: 0 });
 });
 
 // --- helpers ---

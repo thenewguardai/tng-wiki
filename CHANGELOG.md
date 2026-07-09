@@ -4,6 +4,14 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`upgrade` detects fence tampering.** An adversarial review pass found the one corner the splice missed: a stray close marker pasted inside the managed block makes the splice cut short, stranding stale generated text in the file as if it were user content (no data loss, but debris only a human diff would catch). Upgrade now counts full-line fence markers in the merged result and, on anything other than exactly one open + one close, reports a loud `Fence anomaly` warning (CLI and `--json` `fenceAnomaly`, dry-run included) telling the user which markers to delete before rerunning. We warn rather than guess because the "right" marker is undecidable - a stray paste inside the block and a genuine user mention below it look identical to string matching. The review's tamper battery (stray close, deleted close, prose mentions) is committed as regression tests.
+
+### Changed
+- **Frontmatter primitives consolidated into `src/frontmatter.js`.** `ground.js` (splitFrontmatter + list-key extraction) and `verbs.js` (a private scalar parser) each owned their own frontmatter boundary regex - the last notable duplication from the external-review list, same drift risk `insideRoot`/`walkMd` had before `paths.js`. One module now owns the boundary; `ground.js` re-exports `splitFrontmatter` so existing importers are unchanged.
+
 ## [0.8.0] - 2026-07-08
 
 ### Added
