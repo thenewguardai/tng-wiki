@@ -4,6 +4,11 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-07-10
+
+### Fixed
+- **The SE template's seed ADR cited a 404 URL.** The demo raw source every software-engineering scaffold ships pointed its frontmatter `url:` at `github.com/thenewguard/tng-wiki` (missing `ai`) - the same org typo fixed in `package.json` back in 0.7.0, surviving in template content. Now resolves.
+
 ## [0.9.0] - 2026-07-09
 
 ### Changed
