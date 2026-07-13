@@ -52,19 +52,59 @@ function loadWikiMeta(wikiPath) {
   }
 }
 
+// Machine-local, gitignored companion to .tng-wiki.json. Written by
+// `tng-wiki localize` when a wiki is handed to a teammate whose authority
+// repos live at different paths (or who doesn't have them at all). Never
+// committed - the shared manifest stays canonical for WHICH authorities exist;
+// this only remaps a path or marks an authority trusted-remote on THIS machine.
+// Shape: { code_authorities: { "<name>": { path? , trusted? } }, lead_archives: {...} }.
+export function loadLocalOverrides(wikiPath) {
+  const p = join(wikiPath, '.tng-wiki.local.json');
+  if (!existsSync(p)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(p, 'utf8'));
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Apply a config family's local overrides. `path` (non-empty string) remaps the
+// resolved location for this machine; `trusted: true` marks the entry
+// trusted-remote (accept the recorded verification as truth, skip local checks).
+// Overrides only annotate entries that exist in the committed manifest -
+// unknown names in the local file are ignored, so a stale local file can never
+// invent an authority.
+function applyOverrides(entries, overrideMap) {
+  const ov = (overrideMap && typeof overrideMap === 'object') ? overrideMap : {};
+  return entries.map((e) => {
+    const o = ov[e.name];
+    if (!o || typeof o !== 'object') return e;
+    const next = { ...e };
+    if (typeof o.path === 'string' && o.path.trim() !== '') {
+      next.path = o.path;
+      next.localPathOverride = true;
+    }
+    if (o.trusted === true) next.trusted = true;
+    return next;
+  });
+}
+
 export function loadCodeAuthorities(wikiPath) {
   const meta = loadWikiMeta(wikiPath);
-  return Array.isArray(meta.code_authorities) ? meta.code_authorities : [];
+  const list = Array.isArray(meta.code_authorities) ? meta.code_authorities : [];
+  return applyOverrides(list, loadLocalOverrides(wikiPath).code_authorities);
 }
 
 // External, fallible doc archives ("leads, never sources"). Each entry:
 // { name, path, description? } — path resolved relative to the wiki root,
-// same as code_authorities.path.
-// TODO(#16): adopt the shared ~-expanding resolver (src/paths.js) once it lands,
-// so both config families resolve paths identically.
+// same as code_authorities.path. Local overrides can remap the path so a
+// teammate points leads at their own copies (trusted is meaningless for leads -
+// they are never citable regardless - so only `path` is honored).
 export function loadLeadArchives(wikiPath) {
   const meta = loadWikiMeta(wikiPath);
-  return Array.isArray(meta.lead_archives) ? meta.lead_archives : [];
+  const list = Array.isArray(meta.lead_archives) ? meta.lead_archives : [];
+  return applyOverrides(list, loadLocalOverrides(wikiPath).lead_archives);
 }
 
 
@@ -289,10 +329,16 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
   const refResolvable = new Map();
   if (atRef) {
     for (const a of codeAuthorities) {
-      if (!a.ref) continue;
+      if (!a.ref || a.trusted) continue; // trusted-remote: no local repo to resolve against
       refResolvable.set(a.name, refResolves(resolveConfigPath(wikiPath, a.path), a.ref));
     }
   }
+
+  // Trusted-remote authorities (marked in .tng-wiki.local.json): the machine
+  // doesn't have the checkout and the user accepted the recorded verification
+  // as truth. Their cites skip every local check; we tally them per authority
+  // and emit one informational warning per run with the lockfile's provenance.
+  const trustedCiteCounts = new Map();
 
   // Shared by the prose_internal_ref lint: the orphans stem map plus a resolved
   // file set for markdown-link targets.
@@ -473,8 +519,17 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
         continue;
       }
 
+      const authorityForCite = authorityByName.get(c.authority);
+      // Trusted-remote: no local checkout to verify against. Count the cite
+      // (whole-authority refs included) and skip all file/range/lock checks -
+      // the recorded lockfile verification stands in for a local re-check.
+      if (authorityForCite?.trusted) {
+        trustedCiteCounts.set(c.authority, (trustedCiteCounts.get(c.authority) ?? 0) + 1);
+        continue;
+      }
+
       if (!c.file) continue;  // whole-authority reference — no file to check
-      const authority = authorityByName.get(c.authority);
+      const authority = authorityForCite;
       if (!authority) continue;  // unknown authority already flagged above
 
       const repoAbs = resolveConfigPath(wikiPath, authority.path);
@@ -685,6 +740,21 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
     issues.push(...findProseInternalRefs({
       pageRel: rel, pageAbs: file, body, bodyStartLine, stemByPage, wikiFiles, wikiPath,
     }));
+  }
+
+  // Trusted-remote authorities: one informational warning per authority that
+  // had cites this run, carrying the lockfile provenance so the reader sees
+  // WHAT verification they're inheriting ("verified against develop@8d280c2").
+  // A warning, not an issue: exit code and issue counts are untouched.
+  for (const [name, cites] of trustedCiteCounts) {
+    const authState = lock?.authorities?.[name];
+    warnings.push({
+      code: 'trusted_authority',
+      authority: name,
+      cites,
+      verified_ref: authState?.ref ?? null,
+      verified_sha: authState?.resolved_sha ?? null,
+    });
   }
 
   // Wiki-level check: the index.md scaffold header vs reality. Skipped on --page

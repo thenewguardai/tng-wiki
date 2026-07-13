@@ -123,6 +123,9 @@ tng-wiki init                       # Scaffold a new wiki (interactive; --yes fo
 tng-wiki upgrade    [path] [--wiki <slug>] [--domain <d>] [--dry-run] [--json]
                                     # Regenerate schema + doctrine after a CLI update
                                     #   (hand-authored sections survive; see below)
+tng-wiki localize   [path] [--wiki <slug>] [--set <name>=<path>]... [--trust <name>]...
+                                    # Reconcile a shared wiki with this machine:
+                                    #   remap or trust code authorities (see Sharing)
 
 # Registry
 tng-wiki register [path]            # Register an existing wiki
@@ -173,6 +176,31 @@ tng-wiki list
 #   ★ ai-research    ai-research         ~/Documents/Obsidian/ai-research-wiki
 #     comp-intel     competitive-intel   ~/work/comp-intel-wiki
 ```
+
+## Sharing a wiki with your team - `localize`
+
+A wiki is a normal git repo, so handing it to a teammate is `git clone` + `tng-wiki register .`. The content, the schema, the citation lockfile - all portable. The one machine-specific thing is `code_authorities` / `lead_archives`: they point at *your* checkouts (`~/w/vso/foglifter-ng`), which a teammate keeps somewhere else, or doesn't have at all.
+
+`tng-wiki localize` reconciles that per machine, writing a **gitignored `.tng-wiki.local.json`** (the committed `.tng-wiki.json` stays canonical for the team - your teammate's local choices never enter shared history):
+
+```bash
+tng-wiki localize            # walks each authority: I have it (enter path) / trust as-is / skip
+```
+
+For each authority a teammate doesn't have at your path, they choose:
+
+- **I have it** - point at their local path; full local verification resumes (`ground` re-checks every cite).
+- **Trust as-is** - accept your recorded verification as truth. This is the key one: the citation lockfile already records *what* was verified and *at which commit*, so a teammate without the code still consumes the knowledge with provenance. `ground` reports `ℹ authority "foglifter-ng": 34 citations trusted, not verifiable here (verified develop@8d280c2)` instead of erroring - the wiki reads as healthy, because for them it is.
+- **Skip** - leave it unresolved for now.
+
+Headless / scripted form:
+
+```bash
+tng-wiki localize --set foglifter-ng=~/dev/foglifter-ng --trust kpom-legacy
+tng-wiki localize --yes --json     # report per-authority state without prompting
+```
+
+`tng-wiki doctor` reflects the result: a trusted authority reads healthy ("verification inherited"), a remapped one shows "(local override)". The upshot: a teammate gets the full *find-answers* value of your wiki immediately - `query` / `read` / `search` never needed the authorities - and re-verification is available for exactly the repos they actually have.
 
 ## Wiki Access Verbs
 

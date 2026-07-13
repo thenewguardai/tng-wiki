@@ -4,6 +4,13 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`tng-wiki localize` - hand a wiki to a teammate without breaking its code authorities.** A wiki travels fine over git (content, schema, and the content-hashed citation lockfile are all portable); the one machine-specific thing is `code_authorities` / `lead_archives`, which point at the author's checkouts. `localize` reconciles them per machine into a **gitignored `.tng-wiki.local.json`** - the committed `.tng-wiki.json` stays canonical for the team. For each authority a teammate doesn't have at the author's path, the wizard offers: **I have it** (remap to a local path, full verification resumes), **trust as-is** (accept the recorded verification as truth), or **skip**. Headless form: `--set <name>=<path>`, `--trust <name>`, `--clear <name>`, `--yes`, `--json`.
+- **Trusted-remote authority state in `ground`.** An authority marked trusted (via `localize`) whose checkout isn't present no longer errors with `missing_code_file` / `unknown_code_authority`. Its cites skip local file/range/lock checks and produce a single informational warning carrying the lockfile's inherited provenance (`ℹ authority "X": N citations trusted, not verifiable here (verified develop@8d280c2)`). Never changes the exit code. This is the payoff of the per-claim lockfile across machines: a teammate without the code still consumes verified knowledge with a checkable "verified against this commit" record, rather than a wall of errors.
+- **`.tng-wiki.local.json` machine-local override layer.** `loadCodeAuthorities` / `loadLeadArchives` merge it at load: a `path` remaps an entry's resolved location on this machine, `trusted: true` marks it trusted-remote. Overrides only annotate authorities already in the committed manifest (a stale local file can't invent one). `doctor` reflects both states (trusted reads healthy; a remap shows "local override"); new scaffolds gitignore the file, and `localize` back-fills the ignore rule for wikis created before this release.
+
 ## [0.9.1] - 2026-07-10
 
 ### Fixed

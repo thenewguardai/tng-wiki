@@ -130,6 +130,11 @@ async function main() {
       await runUpgrade(args);
       break;
     }
+    case 'localize': {
+      const { runLocalize } = await import('../src/localize.js');
+      await runLocalize(args);
+      break;
+    }
     case 'install-skill': {
       const { runInstallSkill } = await import('../src/skill-cli.js');
       await runInstallSkill(args);

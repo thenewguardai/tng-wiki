@@ -114,12 +114,25 @@ export function runChecks(root, deps = {}) {
         });
         continue;
       }
+      // Trusted-remote (via .tng-wiki.local.json): the machine intentionally
+      // has no checkout and inherits the recorded verification. Healthy, not
+      // missing — the whole point of `localize --trust`.
+      if (a.trusted) {
+        checks.push({
+          name: `Code authority "${a.name}"`,
+          ok: true,
+          detail: 'trusted-remote — verification inherited, not checked on this machine (tng-wiki localize)',
+          optional: true,
+        });
+        continue;
+      }
       const exists = existsSync(resolveConfigPath(root, a.path));
-      const travel = form === 'absolute' ? " ⚠ won't travel across machines" : '';
+      const override = a.localPathOverride ? ' (local override)' : '';
+      const travel = form === 'absolute' && !a.localPathOverride ? " ⚠ won't travel across machines" : '';
       checks.push({
         name: `Code authority "${a.name}"`,
         ok: exists,
-        detail: `${a.path} — ${FORM_LABEL[form]} path, ${exists ? 'exists' : 'missing on this machine'}${travel}`,
+        detail: `${a.path} — ${FORM_LABEL[form]} path${override}, ${exists ? 'exists' : 'missing on this machine — run tng-wiki localize'}${travel}`,
         optional: true,
       });
     }

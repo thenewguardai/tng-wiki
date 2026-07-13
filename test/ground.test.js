@@ -9,6 +9,7 @@ import { scaffoldWiki } from '../src/init.js';
 import {
   splitFrontmatter, extractSources, extractCitations, checkGrounding, buildStemMap,
   listDriftPages, listUnsourcedPages, listUnverifiedPages,
+  loadCodeAuthorities, loadLocalOverrides,
 } from '../src/ground.js';
 
 function makeWiki() {
@@ -299,6 +300,73 @@ test('checkGrounding is clean on a page cited purely against a registered code a
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(join(dir, '..', 'legacy-app'), { recursive: true, force: true });
+  }
+});
+
+// --- machine-local overrides (.tng-wiki.local.json) ---
+
+function setLocalOverrides(wikiRoot, obj) {
+  writeFileSync(join(wikiRoot, '.tng-wiki.local.json'), JSON.stringify(obj, null, 2));
+}
+
+test('loadCodeAuthorities remaps a path from .tng-wiki.local.json without touching the manifest', () => {
+  const dir = makeWiki();
+  try {
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '/nowhere/on/this/box' }]);
+    setLocalOverrides(dir, { code_authorities: { legacy: { path: '../legacy-app' } } });
+    const [a] = loadCodeAuthorities(dir);
+    assert.equal(a.path, '../legacy-app');
+    assert.equal(a.localPathOverride, true);
+    // committed manifest is untouched
+    const meta = JSON.parse(readFileSync(join(dir, '.tng-wiki.json'), 'utf8'));
+    assert.equal(meta.code_authorities[0].path, '/nowhere/on/this/box');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('loadCodeAuthorities ignores overrides for authority names not in the manifest', () => {
+  const dir = makeWiki();
+  try {
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '../legacy-app' }]);
+    setLocalOverrides(dir, { code_authorities: { ghost: { trusted: true } } });
+    const names = loadCodeAuthorities(dir).map((a) => a.name);
+    assert.deepEqual(names, ['legacy']); // ghost is not invented
+    assert.equal(loadCodeAuthorities(dir)[0].trusted, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a trusted-remote authority skips file checks and emits an informational warning, not errors', () => {
+  const dir = makeWiki();
+  try {
+    // manifest points at a path that does NOT exist on this machine
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '/nowhere/on/this/box', ref: 'main' }]);
+    setLocalOverrides(dir, { code_authorities: { legacy: { trusted: true } } });
+    writeFile(dir, 'wiki/entities/auth.md',
+      '---\ntitle: Auth\nsources:\n  - code:legacy\n---\n' +
+      'Implicit flow.[^code:legacy/src/auth/oauth.ts#L42-L58]\nAnd more.[^code:legacy/src/db.ts#L10]');
+    const { issues, warnings } = checkGrounding(dir, { page: 'entities/auth.md' });
+    // no missing_code_file / unknown_code_authority despite the absent path
+    assert.equal(issues.filter((i) => i.issue === 'missing_code_file').length, 0);
+    assert.equal(issues.filter((i) => i.issue === 'unknown_code_authority').length, 0);
+    const w = warnings.find((x) => x.code === 'trusted_authority' && x.authority === 'legacy');
+    assert.ok(w, 'expected a trusted_authority warning');
+    assert.equal(w.cites, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('loadLocalOverrides tolerates a missing or malformed local file', () => {
+  const dir = makeWiki();
+  try {
+    assert.deepEqual(loadLocalOverrides(dir), {}); // absent
+    writeFileSync(join(dir, '.tng-wiki.local.json'), '{ not json', 'utf8');
+    assert.deepEqual(loadLocalOverrides(dir), {}); // malformed -> {}
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

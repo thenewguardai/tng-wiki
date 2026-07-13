@@ -816,6 +816,9 @@ Thumbs.db
 # QMD cache (rebuild with qmd embed)
 .qmd/
 
+# Machine-local wiki config (tng-wiki localize) — never commit; each clone has its own
+.tng-wiki.local.json
+
 # Editor
 *.swp
 *.swo

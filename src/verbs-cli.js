@@ -153,6 +153,12 @@ export async function runGround(args) {
     for (const w of result.warnings ?? []) {
       if (w.code === 'working_tree_of_ref_authority') {
         process.stderr.write(`${pc.yellow('⚠')} authority "${w.authority}" has ref "${w.ref}" — checking the WORKING TREE; pass --at-ref for ref-pinned checks\n`);
+      } else if (w.code === 'trusted_authority') {
+        const prov = w.verified_sha
+          ? ` (verified ${w.verified_ref ? `${w.verified_ref}@` : ''}${w.verified_sha.slice(0, 7)})`
+          : '';
+        const n = w.cites === 1 ? '1 citation' : `${w.cites} citations`;
+        process.stderr.write(`${pc.cyan('ℹ')} authority "${w.authority}": ${n} trusted, not verifiable here${prov} — no local checkout; run \`tng-wiki localize\` to point at one\n`);
       }
     }
     if (result.issues.length === 0) {

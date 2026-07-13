@@ -154,6 +154,25 @@ export const COMMANDS = [
     examples: ['tng-wiki upgrade --dry-run', 'tng-wiki upgrade', 'tng-wiki upgrade --wiki research --domain code-archaeology'],
   },
   {
+    name: 'localize', group: 'Scaffolding',
+    summary: 'Reconcile a shared wiki with THIS machine: remap or trust code authorities whose paths differ',
+    usage: 'tng-wiki localize [path] [--wiki <slug>] [--set <name>=<path>]... [--trust <name>]... [--clear <name>]... [--json]',
+    args: [{ name: 'path', required: false, desc: 'explicit wiki directory (default: the wiki the cwd is inside, else the registered default)' }],
+    flags: [
+      WIKI,
+      { name: '--set', value: '<name>=<path>', desc: 'repeatable: point a code authority at its local path on this machine' },
+      { name: '--trust', value: '<name>', desc: "repeatable: accept the author's recorded verification as truth; skip local checks (no checkout needed)" },
+      { name: '--clear', value: '<name>', desc: 'repeatable: remove a local override (back to unresolved)' },
+      { name: '--yes', desc: 'non-interactive: apply --set/--trust/--clear (or just report status) without prompting' },
+      JSON_FLAG,
+    ],
+    examples: [
+      'tng-wiki localize',
+      'tng-wiki localize --set foglifter-ng=~/dev/foglifter-ng --trust kpom-legacy',
+      'tng-wiki localize --yes --json',
+    ],
+  },
+  {
     name: 'install-skill', group: 'Agent integration',
     summary: 'Install the Claude Code skill (teaches every session the verbs)',
     usage: 'tng-wiki install-skill [--force] [--uninstall]',
