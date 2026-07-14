@@ -840,11 +840,16 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
     // lint/report shouldn't dirty a tracked file, and `rounds` reports the
     // wiki's own working-tree churn, so a self-inflicted rewrite would pollute
     // that signal. Still surface the merged authorities for the "verified
-    // against X@sha" display. Only --fix-moved (a mutating op) persists: it
-    // moves shifted anchors and refreshes the authorities block as a side effect.
-    const authorities = { ...lock.authorities, ...Object.fromEntries(authorityState) };
-    lockResult.authorities = authorities;
+    // against X@sha" display - but only when an authority was actually consulted
+    // this run (authorityState populated), so a --page run over a page with no
+    // code cites doesn't print "verified against" for authorities it never
+    // touched. Only --fix-moved (a mutating op) persists.
+    if (authorityState.size > 0) {
+      lockResult.authorities = { ...lock.authorities, ...Object.fromEntries(authorityState) };
+    }
     if (moveFixes.length > 0) {
+      const authorities = { ...lock.authorities, ...Object.fromEntries(authorityState) };
+      lockResult.authorities = authorities;
       const citations = lock.citations;
       for (const f of moveFixes) {
         const pageCites = citations[f.rel];

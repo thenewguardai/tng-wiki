@@ -450,6 +450,30 @@ test('ritualReport measures log recency by file time, not entry syntax (#35); gi
   }
 });
 
+test('ritualReport uses the commit date over a clone-reset mtime (no fresh-clone under-report)', () => {
+  // git clone/checkout resets mtimes to now; a plain mtime (or a max against it)
+  // would report every freshly-cloned wiki as 0 days old, masking a stale log
+  // for the teammate who just received it. The commit date must win.
+  const dir = makeWiki();
+  try {
+    const gitEnv = {
+      ...process.env,
+      GIT_AUTHOR_DATE: '2020-01-01T00:00:00', GIT_COMMITTER_DATE: '2020-01-01T00:00:00',
+      GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@e.com',
+      GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@e.com',
+    };
+    execFileSync('git', ['-C', dir, 'init', '-q']);
+    execFileSync('git', ['-C', dir, 'add', 'wiki/log.md']);
+    execFileSync('git', ['-C', dir, 'commit', '-q', '-m', 'log'], { env: gitEnv });
+    // simulate a fresh clone: working-copy mtime is "now", commit date is 2020
+    utimesSync(join(dir, 'wiki', 'log.md'), new Date(), new Date());
+    const r = ritualReport(dir);
+    assert.ok(r.last_log_days > 2000, `clone-reset mtime must not mask real age; got ${r.last_log_days}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('ritualReport counts working-tree churn in a git-tracked wiki', () => {
   const dir = makeWiki();
   try {

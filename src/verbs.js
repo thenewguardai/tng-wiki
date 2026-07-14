@@ -283,13 +283,14 @@ export function ritualReport(wikiPath) {
     // "When was the log last written." Format-agnostic on purpose: scraping the
     // canonical `## [date]` heading silently under-reported when entries drifted
     // to other shapes (bullets), reading the ritual as stale while the log was
-    // current. Use max(last commit touching log.md, mtime) - the commit date is
-    // durable and can't be faked by a backdated entry; the mtime catches an
-    // uncommitted write the commit date would miss. Falls back cleanly to mtime
-    // on a non-git wiki (fileCommitDate returns null).
-    const commit = fileCommitDate(wikiPath, logRel);
-    const mtime = statSync(logAbs).mtime;
-    const t = commit && commit > mtime ? commit : mtime;
+    // current. Prefer the git commit date, mtime only as fallback - the same
+    // clone-safe idiom every other staleness check uses (ground's
+    // source/frontmatter checks), because `git clone`/`checkout` resets file
+    // mtimes to now: a plain mtime (or a max against it) would report every
+    // freshly-cloned wiki as 0 days old, masking a genuinely stale log for the
+    // teammate who just received it. On a non-git wiki, or a log.md with no
+    // commit yet, fileCommitDate returns null and mtime is the right answer.
+    const t = fileCommitDate(wikiPath, logRel) ?? statSync(logAbs).mtime;
     lastLogDate = t.toISOString().slice(0, 10);
     lastLogDays = Math.max(0, Math.floor((Date.now() - t.getTime()) / 86_400_000));
   }
