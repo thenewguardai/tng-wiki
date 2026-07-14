@@ -119,6 +119,18 @@ export function extractLeads(frontmatter) {
   return extractListKey(frontmatter, 'leads') ?? [];
 }
 
+// True when `changeTime` lands more than a day after the page's `updated` date,
+// comparing UTC calendar dates with a +1-day grace. `updated:` is a local
+// calendar date; a source committed in the evening west of UTC rolls to the
+// next UTC day, so a bare `sourceDate > updatedDate` would flag genuinely
+// same-day work as stale. The grace absorbs that. Shared by
+// source_updated_after_page and frontmatter_updated_stale so the two staleness
+// checks can't drift apart (they did: only the latter had the grace).
+export function isStaleAfterGrace(updated, changeTime) {
+  const graceCutoff = new Date(updated.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return changeTime.toISOString().slice(0, 10) > graceCutoff;
+}
+
 export function extractCitations(body, bodyStartLine = 1) {
   const hits = [];
   const lines = body.split('\n');
@@ -525,6 +537,17 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
       // the recorded lockfile verification stands in for a local re-check.
       if (authorityForCite?.trusted) {
         trustedCiteCounts.set(c.authority, (trustedCiteCounts.get(c.authority) ?? 0) + 1);
+        // Preserve inherited verification: an --update-lock run rebuilds the
+        // citation map from newCitations, so a trusted cite that skips the
+        // lock-tracking block below would be dropped - stripping the hash a
+        // teammate without the checkout can't recompute, and re-flagging it
+        // cite_unlocked on a machine that later DOES have the repo. Carry the
+        // existing locked entry forward untouched.
+        if (updateLock && c.file) {
+          const tkey = citeKey(c);
+          const entry = lockEntryFor(rel, tkey);
+          if (entry) (newCitations[rel] ??= {})[tkey] = entry;
+        }
         continue;
       }
 
@@ -683,14 +706,13 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
         const abs = join(wikiPath, d);
         if (!existsSync(abs)) continue;
         const sourceTime = fileCommitDate(wikiPath, d) ?? statSync(abs).mtime;
-        const sourceDate = sourceTime.toISOString().slice(0, 10);
-        if (sourceDate > updatedDate) {
+        if (isStaleAfterGrace(updated, sourceTime)) {
           issues.push({
             page: rel,
             issue: 'source_updated_after_page',
             raw: d,
             page_updated: updatedDate,
-            source_mtime: sourceDate,
+            source_mtime: sourceTime.toISOString().slice(0, 10),
           });
         }
       }
@@ -724,14 +746,12 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
     // noise. Matters because every staleness check above keys on `updated`.
     if (updated) {
       const pageTime = fileCommitDate(wikiPath, rel) ?? statSync(file).mtime;
-      const lastCommit = pageTime.toISOString().slice(0, 10);
-      const graceCutoff = new Date(updated.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      if (lastCommit > graceCutoff) {
+      if (isStaleAfterGrace(updated, pageTime)) {
         issues.push({
           page: rel,
           issue: 'frontmatter_updated_stale',
           updated: updated.toISOString().slice(0, 10),
-          last_commit: lastCommit,
+          last_commit: pageTime.toISOString().slice(0, 10),
         });
       }
     }
@@ -815,19 +835,27 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
     lockResult.exists = lockResult.exists || lockResult.written;
     lockResult.citations_locked = Object.values(citations).reduce((n, m) => n + Object.keys(m).length, 0);
     lockResult.authorities = authorities;
-  } else if (lockActive && (authorityState.size > 0 || moveFixes.length > 0)) {
-    const citations = lock.citations;
-    for (const f of moveFixes) {
-      const pageCites = citations[f.rel];
-      if (!pageCites) continue;
-      delete pageCites[f.oldKey];
-      const entry = { hash: f.hash };
-      if (f.sha) entry.hashed_at_sha = f.sha;
-      pageCites[`code:${f.authority}/${f.citedFile}${rangeAnchor(f.newRange)}`] = entry;
-    }
+  } else if (lockActive) {
+    // A flagless (read-only) `ground` must NOT rewrite the lockfile - a
+    // lint/report shouldn't dirty a tracked file, and `rounds` reports the
+    // wiki's own working-tree churn, so a self-inflicted rewrite would pollute
+    // that signal. Still surface the merged authorities for the "verified
+    // against X@sha" display. Only --fix-moved (a mutating op) persists: it
+    // moves shifted anchors and refreshes the authorities block as a side effect.
     const authorities = { ...lock.authorities, ...Object.fromEntries(authorityState) };
-    lockResult.written = writeLock(wikiPath, { authorities, citations });
     lockResult.authorities = authorities;
+    if (moveFixes.length > 0) {
+      const citations = lock.citations;
+      for (const f of moveFixes) {
+        const pageCites = citations[f.rel];
+        if (!pageCites) continue;
+        delete pageCites[f.oldKey];
+        const entry = { hash: f.hash };
+        if (f.sha) entry.hashed_at_sha = f.sha;
+        pageCites[`code:${f.authority}/${f.citedFile}${rangeAnchor(f.newRange)}`] = entry;
+      }
+      lockResult.written = writeLock(wikiPath, { authorities, citations });
+    }
   }
 
   const result = { scanned: targets.length, issues, warnings, lock: lockResult };

@@ -370,6 +370,73 @@ test('loadLocalOverrides tolerates a missing or malformed local file', () => {
   }
 });
 
+test('--update-lock preserves a trusted authority\'s inherited citation entries (#36)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, '../legacy-app/src/a.js', Array(20).fill('x').join('\n'));
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '../legacy-app' }]);
+    writeFile(dir, 'wiki/entities/p.md',
+      '---\ntitle: P\nsources:\n  - code:legacy\n---\nClaim.[^code:legacy/src/a.js#L1-L5]');
+    checkGrounding(dir, { updateLock: true }); // establish the lockfile
+    const lockPath = join(dir, 'wiki', '.tng-wiki.lock.json');
+    const key = 'code:legacy/src/a.js#L1-L5';
+    const before = JSON.parse(readFileSync(lockPath, 'utf8')).citations['wiki/entities/p.md'][key];
+    assert.ok(before, 'precondition: cite is locked');
+
+    // this machine now trusts legacy (accept-as-truth) and re-runs --update-lock
+    setLocalOverrides(dir, { code_authorities: { legacy: { trusted: true } } });
+    checkGrounding(dir, { updateLock: true });
+    const after = JSON.parse(readFileSync(lockPath, 'utf8')).citations['wiki/entities/p.md']?.[key];
+    assert.deepEqual(after, before, 'trusted cite entry must survive --update-lock, not be stripped');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(dir, '..', 'legacy-app'), { recursive: true, force: true });
+  }
+});
+
+test('a flagless ground run does not rewrite the lockfile, but still surfaces authorities (#35)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, '../legacy-app/src/a.js', Array(20).fill('x').join('\n'));
+    setCodeAuthorities(dir, [{ name: 'legacy', path: '../legacy-app' }]);
+    writeFile(dir, 'wiki/entities/p.md',
+      '---\ntitle: P\nsources:\n  - code:legacy\n---\nClaim.[^code:legacy/src/a.js#L1-L5]');
+    checkGrounding(dir, { updateLock: true }); // create the lockfile
+    const lockPath = join(dir, 'wiki', '.tng-wiki.lock.json');
+    const snapshot = readFileSync(lockPath, 'utf8');
+
+    const r = checkGrounding(dir); // flagless, read-only
+    assert.equal(readFileSync(lockPath, 'utf8'), snapshot, 'flagless ground must not touch the lockfile');
+    assert.notEqual(r.lock.written, true);
+    assert.ok(r.lock.authorities?.legacy, 'authorities block still surfaced for the "verified against" display');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(dir, '..', 'legacy-app'), { recursive: true, force: true });
+  }
+});
+
+test('source_updated_after_page grants the same +1-day grace as frontmatter_updated_stale (#35)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'raw/papers/s.md', 'body');
+    writeFile(dir, 'wiki/entities/p.md',
+      '---\ntitle: P\nupdated: 2026-07-09\nsources:\n  - raw/papers/s.md\n---\nClaim.[^raw/papers/s.md]');
+    const countStale = () => checkGrounding(dir, { page: 'entities/p.md' })
+      .issues.filter((i) => i.issue === 'source_updated_after_page').length;
+
+    // source committed one UTC-day after the page date = same local day west of
+    // UTC -> within grace, not stale (the bug: strict compare flagged this).
+    utimesSync(join(dir, 'raw/papers/s.md'), new Date('2026-07-10T12:00:00Z'), new Date('2026-07-10T12:00:00Z'));
+    assert.equal(countStale(), 0, 'a source one day after the page date is within grace');
+
+    // two days out is beyond the grace -> still flags (grace is +1d, not infinite)
+    utimesSync(join(dir, 'raw/papers/s.md'), new Date('2026-07-12T12:00:00Z'), new Date('2026-07-12T12:00:00Z'));
+    assert.equal(countStale(), 1, 'beyond the grace window it still flags');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkGrounding expands ~/ in authority paths to the home directory (issue #16)', () => {
   const dir = makeWiki();
   const fakeHome = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));

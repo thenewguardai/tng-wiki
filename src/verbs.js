@@ -3,7 +3,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki } from './registry.js';
 import { insideRoot, walkMd } from './paths.js';
 import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
-import { workingTreeCounts } from './git-read.js';
+import { workingTreeCounts, fileCommitDate } from './git-read.js';
 import { splitFrontmatter, parseScalars } from './frontmatter.js';
 
 // Nearest ancestor of `startDir` (inclusive) that is a tng-wiki wiki root
@@ -277,19 +277,25 @@ export function listRejectionNotes(wikiPath) {
 export function ritualReport(wikiPath) {
   let lastLogDate = null;
   let lastLogDays = null;
-  const logPath = join(wikiPath, 'wiki', 'log.md');
-  if (existsSync(logPath)) {
-    const ops = [...readFileSync(logPath, 'utf8').matchAll(/^## \[([^\]]+)\]/gm)];
-    const last = ops.at(-1);
-    if (last) {
-      lastLogDate = last[1];
-      const d = new Date(last[1]);
-      if (!isNaN(d.getTime())) {
-        lastLogDays = Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000));
-      }
-    }
+  const logRel = join('wiki', 'log.md');
+  const logAbs = join(wikiPath, logRel);
+  if (existsSync(logAbs)) {
+    // "When was the log last written." Format-agnostic on purpose: scraping the
+    // canonical `## [date]` heading silently under-reported when entries drifted
+    // to other shapes (bullets), reading the ritual as stale while the log was
+    // current. Use max(last commit touching log.md, mtime) - the commit date is
+    // durable and can't be faked by a backdated entry; the mtime catches an
+    // uncommitted write the commit date would miss. Falls back cleanly to mtime
+    // on a non-git wiki (fileCommitDate returns null).
+    const commit = fileCommitDate(wikiPath, logRel);
+    const mtime = statSync(logAbs).mtime;
+    const t = commit && commit > mtime ? commit : mtime;
+    lastLogDate = t.toISOString().slice(0, 10);
+    lastLogDays = Math.max(0, Math.floor((Date.now() - t.getTime()) / 86_400_000));
   }
   return {
+    // last_log_date is when log.md was last WRITTEN (commit/mtime), not the
+    // stated date of its newest entry - the honest signal for "ritual lapsed?"
     last_log_date: lastLogDate,
     last_log_days: lastLogDays,
     // { changed, untracked } for the wiki's own repo, or null when not git-tracked

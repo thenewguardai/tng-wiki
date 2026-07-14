@@ -6,8 +6,9 @@ import { join, resolve } from 'path';
 import { scaffoldWiki } from '../src/init.js';
 import {
   applyLocalizeActions, authorityStatuses, leadArchiveStatuses,
-  writeLocalOverrides, ensureGitignored, resolveLocalizeTarget,
+  writeLocalOverrides, ensureGitignored, resolveLocalizeTarget, runLocalize,
 } from '../src/localize.js';
+import { loadLocalOverrides } from '../src/ground.js';
 import { saveRegistry, emptyRegistry, registerWiki } from '../src/registry.js';
 
 function makeWiki() {
@@ -114,6 +115,51 @@ test('ensureGitignored is idempotent', () => {
 });
 
 // --- resolveLocalizeTarget ---
+
+// --- runLocalize headless behaviors (#36) ---
+
+test('runLocalize --json is non-interactive and prints JSON status (#36-2)', async () => {
+  const dir = makeWiki();
+  const chunks = [];
+  const orig = process.stdout.write;
+  process.stdout.write = (s) => { chunks.push(String(s)); return true; };
+  try {
+    setAuthorities(dir, [{ name: 'x', path: '/nowhere' }]);
+    await runLocalize([dir, '--json']); // must NOT drop into the wizard (would hang on non-TTY)
+    process.stdout.write = orig;
+    const out = JSON.parse(chunks.join(''));
+    assert.equal(out.root, dir);
+    assert.equal(out.authorities[0].state, 'missing');
+  } finally {
+    process.stdout.write = orig;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runLocalize rejects an empty --set path instead of writing a dead override (#36-3)', async () => {
+  const dir = makeWiki();
+  try {
+    await assert.rejects(() => runLocalize([dir, '--set', 'x=']), /non-empty path/);
+    assert.deepEqual(loadLocalOverrides(dir), {}); // nothing written
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runLocalize --set writes the override headlessly', async () => {
+  const dir = makeWiki();
+  const orig = process.stdout.write;
+  process.stdout.write = () => true;
+  try {
+    setAuthorities(dir, [{ name: 'legacy', path: '/nowhere' }]);
+    await runLocalize([dir, '--set', 'legacy=../legacy-app', '--json']);
+    process.stdout.write = orig;
+    assert.equal(loadLocalOverrides(dir).code_authorities.legacy.path, '../legacy-app');
+  } finally {
+    process.stdout.write = orig;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('resolveLocalizeTarget follows the shared order and rejects path + --wiki together', () => {
   const wiki = makeWiki();

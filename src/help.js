@@ -156,7 +156,7 @@ export const COMMANDS = [
   {
     name: 'localize', group: 'Scaffolding',
     summary: 'Reconcile a shared wiki with THIS machine: remap or trust code authorities whose paths differ',
-    usage: 'tng-wiki localize [path] [--wiki <slug>] [--set <name>=<path>]... [--trust <name>]... [--clear <name>]... [--json]',
+    usage: 'tng-wiki localize [path] [--wiki <slug>] [--set <name>=<path>]... [--trust <name>]... [--clear <name>]... [--yes] [--json]',
     args: [{ name: 'path', required: false, desc: 'explicit wiki directory (default: the wiki the cwd is inside, else the registered default)' }],
     flags: [
       WIKI,

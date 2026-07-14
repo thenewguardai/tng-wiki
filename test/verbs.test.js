@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -424,18 +424,26 @@ test('roundsReport returns counts and skips template/meta example markers', () =
 
 // --- ritual meta-health ---
 
-test('ritualReport reads last log entry age; git is null (unknown) outside a repo', () => {
+test('ritualReport measures log recency by file time, not entry syntax (#35); git null outside a repo', () => {
   const dir = makeWiki();
   try {
     const r = ritualReport(dir);
-    // scaffold log carries a today-dated init entry
+    // scaffold log was just written -> recent by mtime
     assert.equal(r.last_log_days, 0);
-    // no git repo: unknown, not "clean"
+    // no git repo: churn unknown, not "clean"
     assert.equal(r.git, null);
-    // stalled log: last entry years old
-    writePage(dir, 'wiki/log.md', '# Operations Log\n\n## [2020-01-01T00:00:00] init | Wiki initialized\n');
+
+    // Format-agnostic: a log whose entries use a NON-canonical shape (bullets,
+    // not `## [date]`) still reads current, because recency is file-time, not a
+    // heading scrape. The old parser reported this as stale (found no headings).
+    const logPath = join(dir, 'wiki', 'log.md');
+    writeFileSync(logPath, '# Operations Log\n\n- **2026-07-14 - ingest:** did a thing\n', 'utf8');
+    const bullety = ritualReport(dir);
+    assert.equal(bullety.last_log_days, 0, 'bullet-form entries must not read as stale');
+
+    // And an old FILE (regardless of entry content) reads stale via mtime.
+    utimesSync(logPath, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'));
     const stalled = ritualReport(dir);
-    assert.equal(stalled.last_log_date, '2020-01-01T00:00:00');
     assert.ok(stalled.last_log_days > 2000, `expected years of lapse, got ${stalled.last_log_days}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
