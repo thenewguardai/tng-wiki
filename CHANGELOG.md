@@ -6,6 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+### Fixed
+- **A mistyped invocation can no longer silently operate on the default wiki (#47).** Verbs previously ignored positional arguments they did not consume, so `tng-wiki ground <typo'd-path> --update-lock` run outside any wiki fell through resolution to the registered default and wrote its lockfile. Two guards: every read verb now errors on surplus positionals ("unknown argument X - did you mean --wiki X?"), and mutating ground runs (`--update-lock` / `--fix-moved`) refuse the default-wiki fallback outright - standing inside the wiki or passing `--wiki` both count as naming the target; nothing else does. `resolveWiki` now reports how it resolved (`via: flag | cwd | default`) so any caller can make the same distinction.
+
 ### Changed
 - **The SE template's seed source is now the RFC, not the finished ADR.** The demo raw source shipped by the software-engineering template was a fully-formed ADR sitting in `raw/rfcs/` - "compiling" it was a copy job, and it carried a claim its own citation refutes ("deletes ~100 lines of per-agent generator code": commit `9668e6e` is net +43 lines, and the deleted per-agent wrappers were 7 lines each). The seed is now the 2026-04-14 proposal in RFC voice with only commit-verifiable claims, so the first ingest exercises the real raw → compile → ground loop: distill it into an ADR via `wiki/decisions/_adr-template.md`, then verify the result against the implementing commit.
 - **All three scaffold seeds (software-engineering, ai-research, publication) open with a `> Scaffold demo source` note** declaring their provenance - they arrive with the scaffold, not via the user's clipper - and telling the agent to compile or delete them.

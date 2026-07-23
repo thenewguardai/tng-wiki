@@ -14,14 +14,26 @@ function argValue(args, flag) {
   return next && !next.startsWith('--') ? next : null;
 }
 
-function firstPositional(args) {
+// Every non-flag token, in order, skipping the values of value-taking flags.
+function positionals(args) {
+  const out = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '--wiki' || a === '--page') { i++; continue; } // skip value-taking flags
     if (a.startsWith('--')) continue;
-    return a;
+    out.push(a);
   }
-  return undefined;
+  return out;
+}
+
+// Surplus positionals are an error, not noise: silently ignoring them let a
+// mistyped invocation fall through wiki resolution and operate on the DEFAULT
+// wiki - with --update-lock, a write to a wiki nobody named (#47).
+function rejectSurplus(verb, args, allowed = 0, hint = null) {
+  const extra = positionals(args).slice(allowed);
+  if (extra.length === 0) return;
+  const takes = allowed === 0 ? 'takes no positional arguments' : `takes only ${allowed} positional argument${allowed === 1 ? '' : 's'}`;
+  throw new Error(`unknown argument "${extra[0]}" - \`${verb}\` ${takes}. ${hint ?? `Did you mean --wiki ${extra[0]}?`}`);
 }
 
 function wikiFromArgs(args) {
@@ -37,6 +49,7 @@ function maybeJson(args, data, render) {
 }
 
 export async function runQuery(args) {
+  rejectSurplus('query', args);
   const wiki = wikiFromArgs(args);
   const content = queryIndex(wiki.path);
   if (args.includes('--json')) {
@@ -47,7 +60,8 @@ export async function runQuery(args) {
 }
 
 export async function runRead(args) {
-  const relPath = firstPositional(args);
+  rejectSurplus('read', args, 1);
+  const relPath = positionals(args)[0];
   if (!relPath) {
     process.stderr.write('Usage: tng-wiki read <page> [--wiki <slug>] [--json]\n');
     process.exit(1);
@@ -63,7 +77,8 @@ export async function runRead(args) {
 }
 
 export async function runSearch(args) {
-  const query = firstPositional(args);
+  rejectSurplus('search', args, 1, 'Quote multi-word queries: tng-wiki search "two words".');
+  const query = positionals(args)[0];
   if (!query) {
     process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--include-leads] [--json]\n');
     process.exit(1);
@@ -85,6 +100,7 @@ export async function runSearch(args) {
 }
 
 export async function runSources(args) {
+  rejectSurplus('sources', args);
   const wiki = wikiFromArgs(args);
   const sources = listSources(wiki.path, { uncompiledOnly: args.includes('--uncompiled') });
   maybeJson(args, { wiki: wiki.slug, sources }, () => {
@@ -97,6 +113,7 @@ export async function runSources(args) {
 }
 
 export async function runStale(args) {
+  rejectSurplus('stale', args);
   const wiki = wikiFromArgs(args);
   const pages = listStalePages(wiki.path);
   maybeJson(args, { wiki: wiki.slug, pages }, () => {
@@ -108,6 +125,7 @@ export async function runStale(args) {
 }
 
 export async function runOrphans(args) {
+  rejectSurplus('orphans', args);
   const wiki = wikiFromArgs(args);
   const pages = listOrphanPages(wiki.path);
   maybeJson(args, { wiki: wiki.slug, pages }, () => {
@@ -141,11 +159,21 @@ const ISSUE_LABEL = {
 };
 
 export async function runGround(args) {
+  rejectSurplus('ground', args);
   const wiki = wikiFromArgs(args);
   const page = argValue(args, '--page');
   const atRef = args.includes('--at-ref');
   const updateLock = args.includes('--update-lock');
   const fixMoved = args.includes('--fix-moved');
+  // A mutating run must name its target: standing inside the wiki or passing
+  // --wiki both count, the registered-default fallback does not (#47).
+  if ((updateLock || fixMoved) && wiki.via === 'default') {
+    const flag = updateLock ? '--update-lock' : '--fix-moved';
+    throw new Error(
+      `refusing \`ground ${flag}\` via the default-wiki fallback: you are not inside a wiki, ` +
+      `so this would write to "${wiki.slug}" implicitly. Pass --wiki ${wiki.slug} to target it, or run from inside the wiki.`,
+    );
+  }
   const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef, updateLock, fixMoved });
   maybeJson(args, { wiki: wiki.slug, ...result }, () => {
     // Warnings go to stderr (findings stay on stdout); --json carries them in
@@ -237,6 +265,7 @@ export async function runGround(args) {
 }
 
 export async function runRounds(args) {
+  rejectSurplus('rounds', args);
   const wiki = wikiFromArgs(args);
   const r = roundsReport(wiki.path);
   maybeJson(args, { wiki: wiki.slug, ...r }, () => {
@@ -287,7 +316,8 @@ export async function runRounds(args) {
   });
 }
 
-function runMarkerVerb(args, lister) {
+function runMarkerVerb(verb, args, lister) {
+  rejectSurplus(verb, args);
   const wiki = wikiFromArgs(args);
   const pages = lister(wiki.path);
   maybeJson(args, { wiki: wiki.slug, pages }, () => {
@@ -298,6 +328,6 @@ function runMarkerVerb(args, lister) {
   });
 }
 
-export const runDrift = (args) => runMarkerVerb(args, listDriftPages);
-export const runUnsourced = (args) => runMarkerVerb(args, listUnsourcedPages);
-export const runUnverified = (args) => runMarkerVerb(args, listUnverifiedPages);
+export const runDrift = (args) => runMarkerVerb('drift', args, listDriftPages);
+export const runUnsourced = (args) => runMarkerVerb('unsourced', args, listUnsourcedPages);
+export const runUnverified = (args) => runMarkerVerb('unverified', args, listUnverifiedPages);

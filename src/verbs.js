@@ -26,25 +26,28 @@ export function findWikiRoot(startDir) {
 // that isn't registered still resolves (slug null, name from the dir); pass
 // `cwd: null` to disable cwd detection entirely (the MCP server does - its
 // cwd is wherever the host launched it, which the conversation can't see).
+// The returned wiki carries `via` ('flag' | 'cwd' | 'default') so callers can
+// tell an explicitly targeted wiki from the fallback - mutating runs refuse
+// the 'default' fallback rather than write to a wiki nobody named (#47).
 export function resolveWiki(slug, home, { cwd = process.cwd() } = {}) {
   const registry = loadRegistry(home);
   if (slug) {
     const wiki = getWiki(registry, slug);
     if (!wiki) throw new Error(`No wiki registered under slug "${slug}". Run \`tng-wiki list\` to see registered wikis.`);
-    return wiki;
+    return { ...wiki, via: 'flag' };
   }
   if (cwd) {
     const root = findWikiRoot(cwd);
     if (root) {
       const entry = Object.entries(registry.wikis)
         .find(([, w]) => resolve(w.path) === root);
-      if (entry) return { slug: entry[0], ...entry[1], isDefault: registry.default === entry[0] };
-      return { slug: null, name: basename(root), path: root, domain: null, isDefault: false };
+      if (entry) return { slug: entry[0], ...entry[1], isDefault: registry.default === entry[0], via: 'cwd' };
+      return { slug: null, name: basename(root), path: root, domain: null, isDefault: false, via: 'cwd' };
     }
   }
   const def = getDefault(registry);
   if (!def) throw new Error('No default wiki registered. Pass --wiki <slug> or run `tng-wiki register` / `tng-wiki init` first.');
-  return def;
+  return { ...def, via: 'default' };
 }
 
 export function queryIndex(wikiPath) {
