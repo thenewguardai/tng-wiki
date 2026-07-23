@@ -43,6 +43,8 @@ export const aiResearchTemplate = {
     })}
 # LLM Knowledge Bases - Andrej Karpathy
 
+> **Scaffold demo source.** Shipped with the template so your first ingest has material - this is the post that inspired the tng-wiki pattern. Compile it or delete it.
+
 ## Key Claims
 
 - A large fraction of recent token throughput is going into manipulating knowledge (markdown + images) rather than code

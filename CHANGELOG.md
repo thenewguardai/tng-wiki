@@ -4,6 +4,16 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The SE template's seed source is now the RFC, not the finished ADR.** The demo raw source shipped by the software-engineering template was a fully-formed ADR sitting in `raw/rfcs/` - "compiling" it was a copy job, and it carried a claim its own citation refutes ("deletes ~100 lines of per-agent generator code": commit `9668e6e` is net +43 lines, and the deleted per-agent wrappers were 7 lines each). The seed is now the 2026-04-14 proposal in RFC voice with only commit-verifiable claims, so the first ingest exercises the real raw → compile → ground loop: distill it into an ADR via `wiki/decisions/_adr-template.md`, then verify the result against the implementing commit.
+- **All three scaffold seeds (software-engineering, ai-research, publication) open with a `> Scaffold demo source` note** declaring their provenance - they arrive with the scaffold, not via the user's clipper - and telling the agent to compile or delete them.
+- **The generated AGENTS.md Ingest section now explains scaffold seeds.** `init` told the human ("Seed source added to raw/ - your first ingest") but the schema never told the agent, so seeds sat `compiled: false` indefinitely. The Ingest section now gives an explicit compile-or-delete instruction and notes that `sources --uncompiled` keeps surfacing the seed until one happens.
+
+### Fixed
+- `init`'s seed-source success line used an em-dash; now a hyphen (same sweep as 0.10.0's localize `.gitignore` fix).
+
 ## [0.10.0] - 2026-07-14
 
 ### Added

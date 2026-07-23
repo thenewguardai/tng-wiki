@@ -45,6 +45,8 @@ export const publicationTemplate = {
     })}
 # LLM Knowledge Bases - Andrej Karpathy
 
+> **Scaffold demo source.** Shipped with the template so your first ingest has material - this is the post that inspired the tng-wiki pattern. Compile it or delete it.
+
 Karpathy describes a system where LLMs incrementally compile raw sources into a structured markdown wiki - summaries, backlinks, concept articles, cross-links - replacing traditional RAG for personal-scale knowledge bases (~100 articles, ~400K words). Outputs filed back into the wiki create a compounding knowledge base. He calls it "an incredible new product waiting to be built."
 
 Key tools: Obsidian (frontend), Web Clipper (ingest), Marp (slides), QMD (search at scale).

@@ -31,53 +31,49 @@ export const softwareEngineeringTemplate = {
   logMd: makeLogMd,
 
   seedSource: {
-    path: 'rfcs/2026-04-15-adr-template-demo.md',
+    path: 'rfcs/2026-04-14-agents-md-canonical-schema.md',
     content: `${frontmatter({
-      title: 'ADR-0001: Adopt AGENTS.md as canonical agent schema',
-      source: 'tng-wiki project',
+      title: 'RFC: Adopt AGENTS.md as the canonical agent schema',
+      source: 'tng-wiki project (scaffold demo)',
       url: 'https://github.com/thenewguardai/tng-wiki',
-      date: '2026-04-15',
+      date: '2026-04-14',
       clipped: today(),
       type: 'rfc',
       compiled: false,
-      tags: ['adr', 'schema', 'agents-md'],
+      tags: ['rfc', 'schema', 'agents-md', 'scaffold-demo'],
     })}
-# ADR-0001: Adopt AGENTS.md as canonical agent schema
+# RFC: Adopt AGENTS.md as the canonical agent schema
 
-## Status
+> **Scaffold demo source.** Real tng-wiki history, shipped with the software-engineering
+> template so your first ingest has material. Compile it into an ADR in \`wiki/decisions/\`
+> (start from \`_adr-template.md\`), or delete it to start clean. The proposal below was
+> accepted 2026-04-15 and implemented in tng-wiki commit \`9668e6e\` - claims in your
+> compiled ADR should survive verification against that commit.
 
-Accepted - 2026-04-15
+## Problem
 
-## Context
+The CLI generates three parallel schema files - CLAUDE.md, AGENTS.md, .cursorrules - from three generators. claude-code.js holds the real content; codex.js and cursor.js are thin wrappers that string-replace the header line. Every schema change touches all three, and the string match is fragile: renaming the target heading breaks the injection silently, producing a schema file with a stale header and no error.
 
-The \`tng-wiki\` CLI originally generated three parallel schema files (CLAUDE.md, AGENTS.md, .cursorrules), each a near-copy of the same content with a different per-agent header. Every schema change had to touch all three generators. String-matching header injection in codex.js/cursor.js was fragile - renaming the target heading silently broke the injection.
+## Proposal
 
-Meanwhile the [agents.md convention](https://agents.md/) has consolidated as the portable schema across Claude Code, Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and others. Claude Code falls back to AGENTS.md when no CLAUDE.md is present and follows symlinks transparently.
+Make \`AGENTS.md\` the single canonical schema file. Generate \`CLAUDE.md\` and \`.cursorrules\` as symlinks to it, falling back to file copies on platforms where symlinks need elevated permission (Windows without Developer Mode). Delete the wrapper generators.
 
-## Decision
+The [agents.md convention](https://agents.md/) has consolidated as the portable schema across Claude Code, Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and others. Claude Code falls back to AGENTS.md when no CLAUDE.md is present and follows symlinks transparently, so one file covers every supported agent.
 
-Treat \`AGENTS.md\` as the single canonical schema file. Generate \`CLAUDE.md\` and \`.cursorrules\` as symlinks (file copies on platforms without symlink permission).
+## Tradeoffs
 
-## Consequences
-
-**Positive:**
-- One source of truth. Edit AGENTS.md, every alias sees the change.
-- Covers 7+ agents out of the box.
-- Deletes ~100 lines of per-agent generator code and the fragile string-replacement pattern.
-
-**Negative:**
-- Filesystems without symlink permission need the copy fallback (detected, handled automatically).
-- Users who had customized per-agent content lose the per-agent header seam. They can re-introduce by editing a specific alias file instead of the canonical.
+- One source of truth: edit AGENTS.md and every alias sees the change.
+- Users who customized a per-agent file lose the per-agent seam. They can re-introduce it by replacing a specific alias with a real file.
+- Filesystems without symlink permission get copies, which forfeit the single-source property until regenerated.
 
 ## Alternatives considered
 
-- **Keep parallel generators:** preserves per-agent specialization, but the agents.md convention has made that specialization unnecessary.
-- **Ship only AGENTS.md, no aliases:** users with agents that hard-require a specific filename (e.g. Cursor's \`.cursorrules\`) would need manual setup.
+- **Keep the parallel generators:** preserves per-agent specialization, but the agents.md convention has made that specialization unnecessary.
+- **Ship only AGENTS.md, no aliases:** agents that hard-require a specific filename (e.g. Cursor's \`.cursorrules\`) would need manual setup.
 
 ## Links
 
 - [agents.md spec](https://agents.md/)
-- Commit \`9668e6e\` (implementation)
 `,
   },
 

@@ -476,6 +476,8 @@ When the human drops a new source into \`raw/\` and asks you to process it:
 
 The human prefers to ingest one source at a time and stay involved unless they say otherwise.
 
+Some templates ship a **scaffold demo source** in \`raw/\` (marked \`compiled: false\`, opening with a \`> **Scaffold demo source.**\` note). It arrived with the scaffold, not via the human's clipper. Treat it like any pending source: compile it as your first ingest, or delete it if it is not relevant to this wiki - \`tng-wiki sources --uncompiled\` will keep surfacing it until you do one or the other.
+
 ### Query
 
 When the human asks a question:

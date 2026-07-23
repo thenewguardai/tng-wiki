@@ -427,7 +427,7 @@ async function runInitWizard(opts) {
   }
 
   if (template.seedSource) {
-    results.push(`${pc.green('✓')} Seed source added to raw/ ${pc.dim('— your first ingest')}`);
+    results.push(`${pc.green('✓')} Seed source added to raw/ ${pc.dim('- your first ingest')}`);
   }
 
   if (codeAuthorities.length > 0) {
