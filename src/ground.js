@@ -136,22 +136,38 @@ export function extractCitations(body, bodyStartLine = 1) {
   const lines = body.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = i + bodyStartLine;
-    for (const m of lines[i].matchAll(/\[\^(raw\/[^\]]+)\]/g)) {
-      hits.push({ kind: 'raw', path: m[1], line });
-    }
-    // Code citations: [^code:<authority>/<file-path>[#L<start>[-L<end>]]]
-    // The GitHub-style #L anchor is optional; when absent, the cite points at a whole file.
-    for (const m of lines[i].matchAll(/\[\^code:([^\/\]]+)(?:\/([^\]#]+))?(?:#L(\d+)(?:-L(\d+))?)?\]/g)) {
-      const [, authority, file, lStart, lEnd] = m;
-      const hit = {
-        kind: 'code',
-        path: `code:${authority}`,   // matches the frontmatter `sources:` key
-        authority,
-        file: file || null,
-        line,
-      };
-      if (lStart) hit.range = { start: Number(lStart), end: lEnd ? Number(lEnd) : Number(lStart) };
-      hits.push(hit);
+    for (const m of lines[i].matchAll(/\[\^([^\]]+)\]/g)) {
+      const token = m[1];
+      if (token.startsWith('raw/')) {
+        hits.push({ kind: 'raw', path: token, line });
+        continue;
+      }
+      // Code citations: code:<authority>[/<file-path>][#L<start>[-L<end>]]
+      // The GitHub-style #L anchor is optional; when absent, the cite points at a whole file.
+      if (token.startsWith('code:')) {
+        const cm = token.match(/^code:([^\/]+)(?:\/([^#]+))?(?:#L(\d+)(?:-L(\d+))?)?$/);
+        if (cm) {
+          const [, authority, file, lStart, lEnd] = cm;
+          const hit = {
+            kind: 'code',
+            path: `code:${authority}`,   // matches the frontmatter `sources:` key
+            authority,
+            file: file || null,
+            line,
+          };
+          if (lStart) hit.range = { start: Number(lStart), end: lEnd ? Number(lEnd) : Number(lStart) };
+          hits.push(hit);
+        } else {
+          hits.push({ kind: 'unknown', path: token, line });
+        }
+        continue;
+      }
+      // Path-shaped tokens under any other root (`_inbox/`, a typo'd prefix, an
+      // absolute path) are citation INTENT the engine cannot resolve. Surface
+      // them as kind 'unknown' instead of skipping - an invisible cite made
+      // orphan_source_decl report the opposite of what was on the page (#48).
+      // Plain markdown footnotes ([^1], [^note]) have no slash and stay exempt.
+      if (token.includes('/')) hits.push({ kind: 'unknown', path: token, line });
     }
   }
   return hits;
@@ -410,7 +426,19 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
     const content = readFileSync(file, 'utf8');
     const { frontmatter, body, bodyStartLine } = splitFrontmatter(content);
     const declared = extractSources(frontmatter);
-    const cited = extractCitations(body, bodyStartLine);
+    const extracted = extractCitations(body, bodyStartLine);
+    const cited = extracted.filter((c) => c.kind !== 'unknown');
+
+    // Cite tokens under an unrecognized root never reach the checks below -
+    // flag them here so they fail loudly instead of vanishing (#48).
+    for (const c of extracted) {
+      if (c.kind !== 'unknown') continue;
+      const issue = { page: rel, issue: 'unknown_cite_root', cite: c.path, line: c.line };
+      if (c.path.startsWith('_inbox/')) {
+        issue.suggest = `tng-wiki graduate ${c.path.slice('_inbox/'.length)} - then cite the raw/ path it prints`;
+      }
+      issues.push(issue);
+    }
 
     if (declared === null || declared.length === 0) {
       issues.push({ page: rel, issue: 'empty_sources' });
@@ -492,7 +520,11 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
       const citedSet = new Set(cited.map((c) => c.path));
       for (const d of declared) {
         if (!citedSet.has(d)) {
-          issues.push({ page: rel, issue: 'orphan_source_decl', raw: d });
+          const issue = { page: rel, issue: 'orphan_source_decl', raw: d };
+          if (d.startsWith('_inbox/')) {
+            issue.suggest = `_inbox/ is not a citable root - tng-wiki graduate ${d.slice('_inbox/'.length)} and declare the raw/ path`;
+          }
+          issues.push(issue);
         }
       }
     }

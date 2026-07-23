@@ -90,6 +90,17 @@ export const COMMANDS = [
     examples: ['tng-wiki search "openai"', 'tng-wiki search "PKCE" --include-raw', 'tng-wiki search "RAPS" --include-leads'],
   },
   {
+    name: 'graduate', group: 'Wiki access',
+    summary: 'Move an _inbox/ capture into raw/ so pages can cite it (_inbox/ is not a citable root)',
+    usage: 'tng-wiki graduate <inbox-item> [--to raw/<dir>] [--wiki <slug>] [--json]',
+    args: [{ name: 'inbox-item', required: true, desc: 'file under _inbox/, with or without the _inbox/ prefix' }],
+    flags: [
+      { name: '--to', value: '<raw/dir>', desc: 'destination directory under raw/ (default: raw/captures)' },
+      WIKI, JSON_FLAG,
+    ],
+    examples: ['tng-wiki graduate session-notes.md', 'tng-wiki graduate briefs/q3-brief.md --to raw/briefs'],
+  },
+  {
     name: 'sources', group: 'Wiki access', summary: 'List raw sources',
     usage: 'tng-wiki sources [--uncompiled] [--wiki <slug>] [--json]',
     args: [], flags: [{ name: '--uncompiled', desc: 'only sources not yet marked compiled (the ingest queue)' }, WIKI, JSON_FLAG],

@@ -142,6 +142,7 @@ Each wiki's \`AGENTS.md\` defines rounds precisely - \`cd\` into the wiki dir (f
 ## What not to do
 
 - **Never modify files directly via the filesystem.** The wiki is maintained inside a specific workflow (ingest / lint / ground) defined by each wiki's \`AGENTS.md\`. If the user asks you to update the wiki, \`cd\` into the wiki directory (from \`tng-wiki list\`) and follow the \`AGENTS.md\` instructions there.
+- **One exception: \`_inbox/\` capture.** On wikis whose \`AGENTS.md\` defines the inbox capture contract, any session may drop NEW files into \`_inbox/\` - capture is cheap and owes no grounding, index, or log updates; a later librarian session triages them. The exception covers adding new capture files only: filing into \`wiki/\` / \`raw/\` / \`deliverables/\` stays librarian work (\`tng-wiki graduate <item>\` moves a capture to \`raw/\` when a page needs to cite it), and \`_inbox/\` is never a citable root.
 - **Don't confuse \`raw/\` with \`wiki/\`.** \`tng-wiki search\` only searches \`wiki/\` (the compiled knowledge). Uncompiled sources live in \`raw/\` - use \`tng-wiki sources\` to enumerate them.
 - **Prefer CLI over MCP for this skill.** If the user has both the \`tng-wiki\` CLI and the \`tng-wiki-mcp\` server configured, use the CLI - the MCP form exists only for shell-less environments.
 

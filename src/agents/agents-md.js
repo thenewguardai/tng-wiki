@@ -29,6 +29,7 @@ Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catch
 - Pages whose \`updated\` (by date) is older than a cited raw source's last git commit-date - or mtime when the wiki isn't a git repo (source changed after distillation - candidate for Layer 2)
 - Inline \`[^code:<name>/...]\` citations where \`<name>\` is not a registered code authority in \`.tng-wiki.json\` (\`unknown_code_authority\`) or where the file path resolves to nothing on disk (\`missing_code_file\`)
 - Inline \`[^code:<name>/file]\` citations targeting a file the authority's \`exclude\` globs skip (\`excluded_code_file\`), or whose \`#L<start>-L<end>\` anchor exceeds the cited file (\`code_line_out_of_range\`)
+- Inline path-shaped cites under any other root (\`unknown_cite_root\`) - only \`raw/\` and \`code:\` are citable. \`_inbox/\` especially: graduate the artifact first (\`tng-wiki graduate <item>\`) and cite the \`raw/\` path it prints
 - With \`--at-ref\`: code citations are resolved at each authority's pinned \`ref\` instead of the working tree - adds \`missing_code_file\` at the ref, \`code_updated_after_page\` (the page's \`updated\` predates the file's last commit at the ref), and \`code_ref_unresolvable\` (the ref or repo can't be resolved)
 - \`wiki/index.md\` scaffold header out of sync with the actual page set (\`index_header_drift\` - fix the header to the stated page-count formula and the newest page date)
 - Warn-level hygiene findings: pages whose file changed (git commit-date, mtime fallback) after their frontmatter \`updated\` (\`frontmatter_updated_stale\` - bump \`updated\`), and internal pages referenced in prose instead of \`[[wikilinks]]\` (\`prose_internal_ref\` - apply the suggested wikilink)
@@ -758,7 +759,7 @@ Two output surfaces with opposite lifecycles. Never conflate them:
 
 A session opened *in this wiki* is its librarian. Capture is cheap and happens from anywhere (any session can drop a doc in \`_inbox/\`); filing is careful and happens here. Every session, before you finish:
 
-1. **Triage \`_inbox/\`.** Read what landed there, then file it: distill verifiable claims into grounded \`wiki/\` pages, send dated point-in-time write-ups to \`deliverables/\`, and move immutable captures to \`raw/\`. \`_inbox/\` should be empty when you leave, or carry only items you logged as deferred.
+1. **Triage \`_inbox/\`.** Read what landed there, then file it: distill verifiable claims into grounded \`wiki/\` pages, send dated point-in-time write-ups to \`deliverables/\`, and move immutable captures to \`raw/\` (\`tng-wiki graduate <item>\` does the move and prints the citable path). \`_inbox/\` is never a citable root - a page that needs an inbox artifact as evidence graduates it first. \`_inbox/\` should be empty when you leave, or carry only items you logged as deferred.
 2. **Keep \`wiki/index.md\` and \`wiki/log.md\` current** via the tng-wiki verbs: every new or changed page earns an index entry and a log line.
 3. **Register and close open threads.** Anything you can neither confirm nor refute goes in \`wiki/meta/open-threads.md\`; when a thread resolves, check it off with a one-line pointer to what resolved it.
 4. **Distill, don't dump.** A new deliverable becomes a grounded wiki page (sources frontmatter + code-authority citations), not a copy.

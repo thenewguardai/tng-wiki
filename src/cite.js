@@ -92,7 +92,9 @@ function resolvePagePath(wikiPath, page) {
 export function citeShow(wikiPath, page, { atRef = false, context = DEFAULT_CONTEXT, only = null } = {}) {
   const abs = resolvePagePath(wikiPath, page);
   const { body, bodyStartLine } = splitFrontmatter(readFileSync(abs, 'utf8'));
-  const cites = extractCitations(body, bodyStartLine);
+  // kind 'unknown' (unrecognized cite root, #48) has no evidence to show and
+  // would corrupt the raw/code column pairing below - ground reports it.
+  const cites = extractCitations(body, bodyStartLine).filter((c) => c.kind !== 'unknown');
   const bodyLines = body.split('\n');
 
   // Recover each cite's column: extractCitations emits per-line raw matches

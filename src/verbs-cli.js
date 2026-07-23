@@ -138,6 +138,7 @@ const ISSUE_LABEL = {
   missing_raw: 'cited raw file does not exist',
   undeclared_cite: 'cited inline but not in frontmatter `sources:`',
   orphan_source_decl: 'declared in frontmatter but not cited inline',
+  unknown_cite_root: 'cite root is not citable - only raw/ and code: resolve',
   source_updated_after_page: 'raw source modified after page `updated`',
   page_not_found: 'page does not exist',
   unknown_code_authority: '`code:<name>` authority not registered in `.tng-wiki.json`',

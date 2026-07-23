@@ -145,6 +145,11 @@ async function main() {
       await runGround(args);
       break;
     }
+    case 'graduate': {
+      const { runGraduate } = await import('../src/graduate.js');
+      await runGraduate(args);
+      break;
+    }
     case 'cite': {
       const { runCite } = await import('../src/cite.js');
       await runCite(args);
