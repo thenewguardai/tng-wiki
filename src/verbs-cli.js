@@ -1,6 +1,6 @@
 import pc from 'picocolors';
 import {
-  resolveWiki, queryIndex, readPage, resolvePagePath, searchWiki,
+  resolveWiki, queryIndex, readPage, resolvePagePath, searchWiki, searchAllWikis,
   listSources, listStalePages, listOrphanPages, roundsReport,
 } from './verbs.js';
 import {
@@ -80,21 +80,38 @@ export async function runSearch(args) {
   rejectSurplus('search', args, 1, 'Quote multi-word queries: tng-wiki search "two words".');
   const query = positionals(args)[0];
   if (!query) {
-    process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--include-leads] [--json]\n');
+    process.stderr.write('Usage: tng-wiki search <query> [--wiki <slug> | --all-wikis] [--regex] [--include-raw] [--include-leads] [--json]\n');
     process.exit(1);
   }
-  const wiki = wikiFromArgs(args);
-  const hits = searchWiki(wiki.path, query, {
+  const opts = {
     regex: args.includes('--regex'),
     includeRaw: args.includes('--include-raw'),
     includeLeads: args.includes('--include-leads'),
-  });
+  };
+  const hitTag = (h) => (h.source === 'raw' ? pc.yellow('[raw] ')
+    : h.source === 'lead' ? pc.magenta(`[lead:${h.archive}]`)
+    : pc.dim('[wiki]'));
+
+  if (args.includes('--all-wikis')) {
+    if (argValue(args, '--wiki')) throw new Error('--all-wikis and --wiki are mutually exclusive - pass one or the other.');
+    const { searched, hits, errors } = searchAllWikis(query, opts);
+    if (searched.length === 0 && errors.length === 0) throw new Error('No wikis registered. Run `tng-wiki register` or `tng-wiki init` first.');
+    maybeJson(args, { all_wikis: true, wikis: searched, query, hits, errors }, () => {
+      for (const h of hits) {
+        process.stdout.write(`${pc.cyan(`[${h.wiki}]`)} ${hitTag(h)} ${h.path}:${h.line}: ${h.text}\n`);
+      }
+      for (const e of errors) {
+        process.stderr.write(`${pc.yellow('⚠')} ${e.wiki}: ${e.error}\n`);
+      }
+    });
+    return;
+  }
+
+  const wiki = wikiFromArgs(args);
+  const hits = searchWiki(wiki.path, query, opts);
   maybeJson(args, { wiki: wiki.slug, query, hits }, () => {
     for (const h of hits) {
-      const tag = h.source === 'raw' ? pc.yellow('[raw] ')
-        : h.source === 'lead' ? pc.magenta(`[lead:${h.archive}]`)
-        : pc.dim('[wiki]');
-      process.stdout.write(`${tag} ${h.path}:${h.line}: ${h.text}\n`);
+      process.stdout.write(`${hitTag(h)} ${h.path}:${h.line}: ${h.text}\n`);
     }
   });
 }

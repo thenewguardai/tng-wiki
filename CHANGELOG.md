@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 ## [Unreleased]
 
 ### Added
+- **`search --all-wikis` (#46)** - aggregate search across every registered wiki in one invocation, restoring the skill's single-question recall promise at multi-wiki scale. Hits are prefixed `[<slug>]` in terminal output and carry a `wiki` field in `--json`; a dead registration surfaces as a per-wiki error (stderr / `errors` array) instead of silently contributing zero hits. Mutually exclusive with `--wiki`. MCP parity via the search tool's `all_wikis` parameter.
 - **`ground --fix-index` (#40)** - deterministic repair of `index_header_drift`: rewrites the `index.md` scaffold header to the measured page count and newest page date the check already computes. The rest of the header line (source count) and file are untouched; the finding is consumed by the fix. Like every mutating ground flag, it refuses the default-wiki fallback.
 - **`tng-wiki graduate <inbox-item> [--to raw/<dir>]` (#37)** - moves an `_inbox/` capture into `raw/` (default `raw/captures/`) and prints the citable path, closing the capture-to-citation gap both dogfooding machines ranked #1. Destination is confined to `raw/`, overwrites are refused, and like ground's mutating flags it will not operate through the default-wiki fallback. The generated schema's librarian-triage step and the doctrine's grounding list now teach the rule: `_inbox/` is never a citable root; graduate first, then cite.
 

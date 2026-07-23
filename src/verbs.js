@@ -1,6 +1,6 @@
 import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { basename, dirname, join, relative, resolve, sep } from 'path';
-import { loadRegistry, getDefault, getWiki } from './registry.js';
+import { loadRegistry, getDefault, getWiki, listWikis } from './registry.js';
 import { insideRoot, walkMd } from './paths.js';
 import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
 import { workingTreeCounts, fileCommitDate } from './git-read.js';
@@ -118,6 +118,34 @@ export function resolvePagePath(wikiPath, input) {
 export function readPage(wikiPath, relPath) {
   const form = resolvePagePath(wikiPath, relPath);
   return readFileSync(resolve(join(wikiPath, 'wiki'), form), 'utf8');
+}
+
+// Aggregate search across every registered wiki (#46) - "what do I know about
+// X" is one invocation at multi-wiki scale, not one per wiki. Each hit carries
+// its wiki slug (mirroring how include_raw/include_leads tag layers). A wiki
+// whose path is unreadable degrades to an entry in `errors`; the sweep never
+// aborts on one broken registration.
+export function searchAllWikis(query, opts = {}, home) {
+  const wikis = listWikis(loadRegistry(home));
+  const searched = [];
+  const hits = [];
+  const errors = [];
+  for (const w of wikis) {
+    // A dead registration must surface, not silently contribute zero hits -
+    // searchWiki treats a missing tree as empty, so probe the manifest first.
+    if (!existsSync(join(w.path, '.tng-wiki.json'))) {
+      errors.push({ wiki: w.slug, error: `wiki path missing or not a wiki: ${w.path}` });
+      continue;
+    }
+    try {
+      const wikiHits = searchWiki(w.path, query, opts);
+      searched.push(w.slug);
+      for (const h of wikiHits) hits.push({ wiki: w.slug, ...h });
+    } catch (e) {
+      errors.push({ wiki: w.slug, error: e.message });
+    }
+  }
+  return { searched, hits, errors };
 }
 
 export function searchWiki(wikiPath, query, { regex = false, includeRaw = false, includeLeads = false } = {}) {

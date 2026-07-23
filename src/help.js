@@ -78,16 +78,17 @@ export const COMMANDS = [
   },
   {
     name: 'search', group: 'Wiki access', summary: 'Case-insensitive search across wiki pages',
-    usage: 'tng-wiki search <query> [--wiki <slug>] [--regex] [--include-raw] [--include-leads] [--json]',
+    usage: 'tng-wiki search <query> [--wiki <slug> | --all-wikis] [--regex] [--include-raw] [--include-leads] [--json]',
     args: [{ name: 'query', required: true, desc: 'search term (quote multi-word)' }],
     flags: [
       WIKI,
+      { name: '--all-wikis', desc: 'search every registered wiki; each hit is prefixed with its wiki slug (mutually exclusive with --wiki)' },
       { name: '--regex', desc: 'interpret the query as a regular expression' },
       { name: '--include-raw', desc: 'also search archival raw/ sources' },
       { name: '--include-leads', desc: 'also search registered lead archives (.tng-wiki.json lead_archives) — hits tagged [lead:<name>]; leads are never citable' },
       JSON_FLAG,
     ],
-    examples: ['tng-wiki search "openai"', 'tng-wiki search "PKCE" --include-raw', 'tng-wiki search "RAPS" --include-leads'],
+    examples: ['tng-wiki search "openai"', 'tng-wiki search "PKCE" --include-raw', 'tng-wiki search "quantization" --all-wikis'],
   },
   {
     name: 'graduate', group: 'Wiki access',

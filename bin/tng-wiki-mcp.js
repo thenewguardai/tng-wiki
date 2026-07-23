@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 import {
-  resolveWiki, queryIndex, readPage, searchWiki,
+  resolveWiki, queryIndex, readPage, searchWiki, searchAllWikis,
   listSources, listStalePages, listOrphanPages,
 } from '../src/verbs.js';
 import {
@@ -99,15 +99,21 @@ server.registerTool(
     description: 'Case-insensitive search across wiki pages. Returns grep-style hits tagged source:"wiki" by default. Pass include_raw=true to also search raw/ sources — use this for deep searches, source-verification ("confirm this", "consult the official docs"), or when a compiled answer is missing and you suspect the detail survives in the archival source. Pass include_leads=true to also search registered lead archives (.tng-wiki.json lead_archives) — external untrusted doc trees; hits are tagged source:"lead" with the archive name. Leads are never citable sources.',
     inputSchema: {
       query: z.string().describe('Search term. Substring by default; pass regex=true for regex patterns.'),
-      wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki.'),
+      wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki. Ignored when all_wikis=true.'),
+      all_wikis: z.boolean().optional().describe('Search every registered wiki in one call; each hit carries a wiki:"<slug>" field. The right form for "what do I know about X" at multi-wiki scale. Default: false.'),
       regex: z.boolean().optional().describe('Interpret `query` as a regex pattern. Default: false.'),
       include_raw: z.boolean().optional().describe('Also search raw/ source material, not just compiled wiki/ pages. Each hit is tagged source:"wiki" or source:"raw". Default: false.'),
       include_leads: z.boolean().optional().describe('Also search registered lead archives. Lead hits are tagged source:"lead" and archive:"<name>", with paths relative to the archive root. Independent of include_raw. Default: false.'),
     },
   },
-  async ({ query, wiki, regex, include_raw, include_leads }) => withWiki(wiki, (w) => ok({
-    wiki: w.slug, query, hits: searchWiki(w.path, query, { regex: !!regex, includeRaw: !!include_raw, includeLeads: !!include_leads }),
-  })),
+  async ({ query, wiki, regex, include_raw, include_leads, all_wikis }) => {
+    const opts = { regex: !!regex, includeRaw: !!include_raw, includeLeads: !!include_leads };
+    if (all_wikis) {
+      const { searched, hits, errors } = searchAllWikis(query, opts);
+      return ok({ all_wikis: true, wikis: searched, query, hits, errors });
+    }
+    return withWiki(wiki, (w) => ok({ wiki: w.slug, query, hits: searchWiki(w.path, query, opts) }));
+  },
 );
 
 server.registerTool(
