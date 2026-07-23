@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from 'fs';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 // Valid config paths are non-empty strings; surrounding whitespace is noise
@@ -71,6 +71,16 @@ export function suggestRelative(wikiRoot, absPath, maxUp = 4) {
 export function insideRoot(root, absPath) {
   const rel = relative(root, absPath);
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+// True when `p` lives under a system temp root. A registered wiki there is
+// almost certainly a leftover scratch scaffold from a past session; doctor and
+// list use this to advise `unregister` instead of schema maintenance (#44).
+// Pure path logic - nothing on disk is consulted.
+export function isTempPath(p) {
+  const abs = resolve(String(p));
+  const roots = [resolve(tmpdir()), `${sep}tmp`, `${sep}var${sep}tmp`];
+  return roots.some((root) => insideRoot(root, abs));
 }
 
 // Recursively collect `.md` files under `dir` (absolute paths), skipping

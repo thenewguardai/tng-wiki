@@ -6,6 +6,7 @@ import {
   loadRegistry, saveRegistry, registerWiki, unregisterWiki,
   setDefault as setDefaultInRegistry, listWikis, registryPath,
 } from './registry.js';
+import { isTempPath } from './paths.js';
 
 export function readWikiMetadata(root) {
   if (!existsSync(join(root, 'AGENTS.md'))) {
@@ -71,7 +72,10 @@ export async function runList() {
   console.log('');
   for (const w of wikis) {
     const marker = w.isDefault ? pc.green('★') : ' ';
-    console.log(`  ${marker} ${pc.bold(w.slug.padEnd(24))} ${pc.dim(w.domain.padEnd(18))} ${w.path}`);
+    const temp = isTempPath(w.path)
+      ? ` ${pc.yellow('⚠ temp path')} ${pc.dim(`- likely ephemeral; tng-wiki unregister ${w.slug}`)}`
+      : '';
+    console.log(`  ${marker} ${pc.bold(w.slug.padEnd(24))} ${pc.dim(w.domain.padEnd(18))} ${w.path}${temp}`);
   }
   console.log('');
 }
