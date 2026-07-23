@@ -93,6 +93,10 @@ test('ground --update-lock refuses the default-wiki fallback and writes nothing'
     const f = run(['ground', '--fix-moved'], { home, cwd: neutral });
     assert.equal(f.status, 1);
     assert.match(f.stderr, /refusing `ground --fix-moved`/);
+
+    const i = run(['ground', '--fix-index'], { home, cwd: neutral });
+    assert.equal(i.status, 1);
+    assert.match(i.stderr, /refusing `ground --fix-index`/);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

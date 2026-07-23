@@ -318,7 +318,7 @@ function checkIndexHeader(wikiPath, allFiles) {
   };
 }
 
-export function checkGrounding(wikiPath, { page, atRef = false, updateLock = false, fixMoved = false } = {}) {
+export function checkGrounding(wikiPath, { page, atRef = false, updateLock = false, fixMoved = false, fixIndex = false } = {}) {
   const wikiDir = join(wikiPath, 'wiki');
   const allFiles = walkMd(wikiDir);
   const targets = page
@@ -811,9 +811,25 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
 
   // Wiki-level check: the index.md scaffold header vs reality. Skipped on --page
   // runs — they're scoped to a single page's own invariants.
+  // --fix-index rewrites the header to the measured values instead of reporting
+  // the drift: the check already computes the ground truth (page count per
+  // PAGE_COUNT_FORMULA, newest page date), so the repair is deterministic (#40).
+  let fixedIndex = null;
   if (!page) {
     const headerIssue = checkIndexHeader(wikiPath, allFiles);
-    if (headerIssue) issues.push(headerIssue);
+    if (headerIssue && fixIndex) {
+      const indexAbs = join(wikiPath, 'wiki', 'index.md');
+      const date = headerIssue.newest_page_date ?? headerIssue.header_date;
+      const content = readFileSync(indexAbs, 'utf8');
+      const patched = content.replace(
+        /^(_Last updated:\s*)\d{4}-\d{2}-\d{2}(\s*\|\s*Total pages:\s*)\d+/m,
+        `$1${date}$2${headerIssue.actual_pages}`,
+      );
+      writeFileSync(indexAbs, patched);
+      fixedIndex = { pages: headerIssue.actual_pages, date, was_pages: headerIssue.expected_pages, was_date: headerIssue.header_date };
+    } else if (headerIssue) {
+      issues.push(headerIssue);
+    }
   }
 
   // --fix-moved: rewrite each shifted #L anchor in the page to the new range.
@@ -897,6 +913,7 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
 
   const result = { scanned: targets.length, issues, warnings, lock: lockResult };
   if (fixMoved) result.fixed = fixed;
+  if (fixedIndex) result.fixed_index = fixedIndex;
   return result;
 }
 

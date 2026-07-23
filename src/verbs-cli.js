@@ -166,16 +166,17 @@ export async function runGround(args) {
   const atRef = args.includes('--at-ref');
   const updateLock = args.includes('--update-lock');
   const fixMoved = args.includes('--fix-moved');
+  const fixIndex = args.includes('--fix-index');
   // A mutating run must name its target: standing inside the wiki or passing
   // --wiki both count, the registered-default fallback does not (#47).
-  if ((updateLock || fixMoved) && wiki.via === 'default') {
-    const flag = updateLock ? '--update-lock' : '--fix-moved';
+  if ((updateLock || fixMoved || fixIndex) && wiki.via === 'default') {
+    const flag = updateLock ? '--update-lock' : fixMoved ? '--fix-moved' : '--fix-index';
     throw new Error(
       `refusing \`ground ${flag}\` via the default-wiki fallback: you are not inside a wiki, ` +
       `so this would write to "${wiki.slug}" implicitly. Pass --wiki ${wiki.slug} to target it, or run from inside the wiki.`,
     );
   }
-  const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef, updateLock, fixMoved });
+  const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef, updateLock, fixMoved, fixIndex });
   maybeJson(args, { wiki: wiki.slug, ...result }, () => {
     // Warnings go to stderr (findings stay on stdout); --json carries them in
     // the top-level `warnings` array instead.
@@ -238,6 +239,10 @@ export async function runGround(args) {
         }
       }
       process.stdout.write(`\n${pc.dim(`${result.issues.length} issue(s) across ${byPage.size} page(s), ${result.scanned} scanned`)}\n`);
+    }
+    if (result.fixed_index) {
+      const fi = result.fixed_index;
+      process.stdout.write(`${pc.green('✓')} index header updated ${pc.dim(`(${fi.was_pages} pages, ${fi.was_date} → ${fi.pages} pages, ${fi.date})`)}\n`);
     }
     if (result.fixed?.length) {
       process.stdout.write(`${pc.green('✓')} fixed ${result.fixed.length} moved cite anchor(s)\n`);

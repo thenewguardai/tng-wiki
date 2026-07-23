@@ -109,15 +109,16 @@ export const COMMANDS = [
   {
     name: 'ground', group: 'Grounding & lint',
     summary: 'Structural ground-check: attribution, dead cites, staleness, code authorities, lead archives, per-citation churn (zero-LLM)',
-    usage: 'tng-wiki ground [--page <path>] [--at-ref] [--update-lock] [--fix-moved] [--wiki <slug>] [--json]',
+    usage: 'tng-wiki ground [--page <path>] [--at-ref] [--update-lock] [--fix-moved] [--fix-index] [--wiki <slug>] [--json]',
     args: [], flags: [
       { name: '--page', value: '<path>', desc: 'scope the check to a single page' },
       { name: '--at-ref', desc: "resolve code-authority citations at each authority's pinned git ref" },
       { name: '--update-lock', desc: 'record per-citation content hashes + authority SHAs in wiki/.tng-wiki.lock.json — run after verify/reconcile to bless current state' },
       { name: '--fix-moved', desc: 'rewrite #L anchors for cites whose locked content moved unchanged (the only safe auto-fix; updates the lockfile)' },
+      { name: '--fix-index', desc: 'rewrite the index.md header to the measured page count and newest page date (deterministic repair of index_header_drift)' },
       WIKI, JSON_FLAG,
     ],
-    examples: ['tng-wiki ground', 'tng-wiki ground --at-ref --json', 'tng-wiki ground --update-lock', 'tng-wiki ground --fix-moved'],
+    examples: ['tng-wiki ground', 'tng-wiki ground --at-ref --json', 'tng-wiki ground --update-lock', 'tng-wiki ground --fix-moved', 'tng-wiki ground --fix-index'],
   },
   {
     name: 'cite', group: 'Grounding & lint',
