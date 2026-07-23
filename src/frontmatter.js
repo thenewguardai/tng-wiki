@@ -38,7 +38,7 @@ export function extractListKey(frontmatter, key) {
       : [];
   }
 
-  // scalar form: legacy `sources: 3` (count) — treat as empty, it's a migration target
+  // scalar form: legacy `sources: 3` (count) - treat as empty, it's a migration target
   const scalar = line.slice(key.length + 1).replace(/#.*$/, '').trim();
   if (scalar && !scalar.startsWith('[')) {
     if (/^\d+$/.test(scalar)) return [];

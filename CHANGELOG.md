@@ -13,6 +13,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ### Fixed
 - `init`'s seed-source success line used an em-dash; now a hyphen (same sweep as 0.10.0's localize `.gitignore` fix).
+- More of that sweep: the `sources` listing's title separator, the unsupported-lock-version stderr notice, and `lock.js` / `frontmatter.js` comments. (Generated wiki artifacts were already dash-scrubbed and test-enforced via `agents-md.js`'s `clean()`.)
 
 ## [0.10.0] - 2026-07-14
 

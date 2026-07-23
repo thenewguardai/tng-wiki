@@ -90,7 +90,7 @@ export async function runSources(args) {
   maybeJson(args, { wiki: wiki.slug, sources }, () => {
     for (const s of sources) {
       const status = s.compiled ? pc.dim('[compiled]  ') : pc.yellow('[uncompiled]');
-      const title = s.title ? `  ${pc.dim('—')} ${s.title}` : '';
+      const title = s.title ? `  ${pc.dim('-')} ${s.title}` : '';
       process.stdout.write(`${status} ${s.path}${title}\n`);
     }
   });

@@ -1,6 +1,6 @@
 // Per-citation content lockfile for `tng-wiki ground`.
 //
-// The lockfile (`wiki/.tng-wiki.lock.json`, COMMITTED — it is verification state
+// The lockfile (`wiki/.tng-wiki.lock.json`, COMMITTED: it is verification state
 // that must travel with the wiki, analogous to a package lockfile) pins, per
 // citation, what the cited content was when it was last human-verified (a
 // normalized sha256), plus, per code authority, which SHA the configured ref
@@ -10,7 +10,7 @@
 //
 // Every function here is pure or fail-soft: a missing / corrupt /
 // unsupported-version lockfile reads as null and an unwritable lockfile reports
-// `false` — ground never crashes on lock state.
+// `false`; ground never crashes on lock state.
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'fs';
@@ -30,8 +30,8 @@ function isPlainObject(v) {
 // Parsed lockfile, normalized to `{ version, updated_at, authorities, citations }`,
 // or null when absent / unreadable / malformed (treated as "no lockfile").
 // A recognizable lockfile whose `version` isn't the supported LOCK_VERSION is
-// also treated as absent — schema changes must never silently feed wrong-shape
-// data into churn detection — but gets a one-line stderr notice so the user
+// also treated as absent (schema changes must never silently feed wrong-shape
+// data into churn detection), but gets a one-line stderr notice so the user
 // knows their lock state is being ignored (and that `--update-lock` would
 // rewrite it at the current version).
 export function readLock(wikiPath) {
@@ -40,7 +40,7 @@ export function readLock(wikiPath) {
     if (!isPlainObject(lock)) return null;
     if (lock.version !== LOCK_VERSION) {
       process.stderr.write(
-        `tng-wiki: ignoring ${LOCK_RELPATH} — unsupported lock version ${JSON.stringify(lock.version ?? null)} ` +
+        `tng-wiki: ignoring ${LOCK_RELPATH} - unsupported lock version ${JSON.stringify(lock.version ?? null)} ` +
         `(this tng-wiki supports version ${LOCK_VERSION}); \`ground --update-lock\` would rewrite it\n`,
       );
       return null;
@@ -57,7 +57,7 @@ export function readLock(wikiPath) {
 }
 
 // Write the lockfile. Returns true on success, false when the path is unwritable
-// (read-only checkout) — callers surface that instead of throwing mid-lint.
+// (read-only checkout); callers surface that instead of throwing mid-lint.
 export function writeLock(wikiPath, { authorities = {}, citations = {} } = {}) {
   const lock = {
     version: LOCK_VERSION,
@@ -85,7 +85,7 @@ export function hashLines(lines) {
   return 'sha256:' + createHash('sha256').update(lines.join('\n')).digest('hex');
 }
 
-// Canonical lock key for a parsed citation (an extractCitations() hit) — the
+// Canonical lock key for a parsed citation (an extractCitations() hit): the
 // literal cite string: `raw/<path>`, `code:<authority>/<file>`, or
 // `code:<authority>/<file>#L<s>[-L<e>]`. Single-line anchors canonicalize to
 // `#L<n>` so `#L42` and `#L42-L42` share one entry.
@@ -112,8 +112,8 @@ export function sliceRange(lines, range) {
   return lines.slice(range.start - 1, range.end);
 }
 
-// All windows of `windowLen` lines whose normalized hash equals `lockedHash` —
-// where did the locked content move to? Returns 1-indexed inclusive ranges.
+// All windows of `windowLen` lines whose normalized hash equals `lockedHash`,
+// i.e. where did the locked content move to? Returns 1-indexed inclusive ranges.
 // Exactly one match -> cite_moved; several -> cite_moved_ambiguous.
 export function findContentMatches(lines, lockedHash, windowLen) {
   if (windowLen <= 0) return [];
