@@ -1,6 +1,6 @@
 {
   "name": "@thenewguard/tng-wiki",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Keep your LLM wiki honest: a per-claim citation lockfile, drift detection, and code-grounding for Karpathy-style knowledge bases. Scaffolds a fresh wiki or adopts an existing one; agent-agnostic.",
   "keywords": [
     "llm",
