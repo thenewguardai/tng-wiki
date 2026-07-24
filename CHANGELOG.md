@@ -4,7 +4,7 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - 2026-07-24
 
 ### Added
 - **`search --all-wikis` (#46)** - aggregate search across every registered wiki in one invocation, restoring the skill's single-question recall promise at multi-wiki scale. Hits are prefixed `[<slug>]` in terminal output and carry a `wiki` field in `--json`; a dead registration surfaces as a per-wiki error (stderr / `errors` array) instead of silently contributing zero hits. Mutually exclusive with `--wiki`. MCP parity via the search tool's `all_wikis` parameter.
