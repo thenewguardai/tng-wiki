@@ -4,6 +4,12 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`tng-wiki claim` / `release` - machine-local advisory wiki lease (#39).** Coordinates concurrent agent sessions sharing one checkout: the observed collision class is session A running `ground --update-lock` while session B is mid-ingest, blessing content nobody verified. The lease lives in `~/.tng-wiki/leases.json` (nothing committed, nothing to go stale in the repo), same-holder re-claims renew, TTL expiry (default 120 min) is the only staleness mechanism, and `--force` takes over explicitly. Mutating verbs (`ground --update-lock`/`--fix-*`, `graduate`, `log`) print an informational lease line - advisory means they never refuse - and `rounds` surfaces the lease (JSON included). The schema's Rounds section teaches claim-before-mutating.
+- **A documented merge story for multi-machine wikis (#39)**, in `.tng-wiki/doctrine/grounding.md`: `log.md` conflicts are append-only unions (keep both sides); `index.md` is derived state (take either side, `ground --fix-index`); the lockfile is take-ONE-side-wholesale - prefer the side from the machine that verifies authorities this machine only trusts remotely - then plain `ground`, whose `cite_unlocked` / `cite_content_changed` findings are the recovery queue, then `--update-lock`. Explicitly forbids resolving a lockfile conflict by running `--update-lock` on unreviewed merged content.
+
 ## [0.11.0] - 2026-07-24
 
 ### Added

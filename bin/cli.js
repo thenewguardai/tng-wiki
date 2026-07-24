@@ -155,6 +155,16 @@ async function main() {
       await runLog(args);
       break;
     }
+    case 'claim': {
+      const { runClaim } = await import('../src/lease.js');
+      await runClaim(args);
+      break;
+    }
+    case 'release': {
+      const { runRelease } = await import('../src/lease.js');
+      await runRelease(args);
+      break;
+    }
     case 'cite': {
       const { runCite } = await import('../src/cite.js');
       await runCite(args);

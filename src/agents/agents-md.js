@@ -290,6 +290,16 @@ _On-demand doctrine referenced from \`AGENTS.md\`. Read this before a Layer 2 (s
 ## Grounding
 
 ${GROUNDING_DOCTRINE}
+
+## Merge Conflicts (multi-machine wikis)
+
+When two machines maintain this wiki between \`git pull\`s, three files conflict. Each has a resolution that leans on the tool, not on hand-editing conflict markers:
+
+- **\`wiki/log.md\`** - append-only, so a conflict is always two sets of entries added at the tail. Keep BOTH sides (union), ordered by timestamp. Entries never conflict semantically.
+- **\`wiki/index.md\`** - take either side wholesale, then run \`tng-wiki ground --fix-index\`. The header is derived state; the fixer recomputes it from reality.
+- **\`wiki/.tng-wiki.lock.json\`** - take ONE side wholesale (\`git checkout --theirs -- wiki/.tng-wiki.lock.json\`, or \`--ours\`), never hand-merge the JSON. Prefer the side from the machine that verifies authorities you only trust remotely - its entries are the ones THIS machine cannot regenerate. Then commit the merge and run plain \`tng-wiki ground\`: the discarded side's verifications surface as \`cite_unlocked\` and content drift as \`cite_content_changed\` - that finding list IS the recovery queue. Re-verify exactly that queue, then \`ground --update-lock\`.
+
+**Never resolve a lockfile conflict by running \`--update-lock\` directly on unreviewed merged content** - that blesses the other machine's unverified edits wholesale. The lockfile records human-verified state; the queue-then-bless order above is what keeps that true across machines.
 `,
     'markers.md': `# Marker Taxonomy - ${wikiName}
 
@@ -461,6 +471,8 @@ _The full CLI surface is one call away: \`tng-wiki help --json\` (every command,
 5. **Report** a short human-readable summary of what you did and what still needs the human.
 
 Run rounds when asked, or on a maintenance cadence (the user may wire it to cron or the \`schedule\` skill).
+
+**Concurrent sessions:** if other agent sessions may be active on this machine, \`tng-wiki claim\` before mutating and \`tng-wiki release\` when done - an advisory machine-local lease (\`rounds\` shows it; mutating verbs mention it). If a mutating verb reports someone ELSE's lease, stop and coordinate instead of writing. For multi-machine wikis synced over git, see the merge-conflict section of \`.tng-wiki/doctrine/grounding.md\`.
 
 ### Ingest
 

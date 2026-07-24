@@ -9,6 +9,7 @@ import { existsSync, readFileSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import pc from 'picocolors';
 import { resolveWiki } from './verbs.js';
+import { warnIfLeased } from './lease.js';
 
 function argValue(args, flag) {
   const idx = args.indexOf(flag);
@@ -83,6 +84,8 @@ export async function runLog(args) {
       `Pass --wiki ${wiki.slug} to target it, or run from inside the wiki.`,
     );
   }
+
+  warnIfLeased(wiki.path);
 
   const validTypes = schemaLogTypes(wiki.path);
   if (validTypes && !validTypes.includes(type)) {

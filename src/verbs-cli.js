@@ -6,6 +6,7 @@ import {
 import {
   checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages,
 } from './ground.js';
+import { warnIfLeased, activeLease } from './lease.js';
 
 function argValue(args, flag) {
   const idx = args.indexOf(flag);
@@ -194,6 +195,7 @@ export async function runGround(args) {
       `so this would write to "${wiki.slug}" implicitly. Pass --wiki ${wiki.slug} to target it, or run from inside the wiki.`,
     );
   }
+  if (updateLock || fixMoved || fixIndex || fixDates) warnIfLeased(wiki.path);
   const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef, updateLock, fixMoved, fixIndex, fixDates });
   maybeJson(args, { wiki: wiki.slug, ...result }, () => {
     // Warnings go to stderr (findings stay on stdout); --json carries them in
@@ -298,8 +300,12 @@ export async function runRounds(args) {
   rejectSurplus('rounds', args);
   const wiki = wikiFromArgs(args);
   const r = roundsReport(wiki.path);
-  maybeJson(args, { wiki: wiki.slug, ...r }, () => {
+  const lease = activeLease(wiki.path);
+  maybeJson(args, { wiki: wiki.slug, ...r, lease }, () => {
     process.stdout.write(`${pc.bold('Wiki rounds')} ${pc.dim(`— ${wiki.slug} · ${r.scanned} groundable pages`)}\n\n`);
+    if (lease) {
+      process.stdout.write(`  ${pc.cyan('ℹ')} lease: "${lease.holder}" holds this wiki until ${lease.expires_at.slice(11, 16)} UTC${lease.note ? ` (${lease.note})` : ''}\n\n`);
+    }
     const row = (label, n, hint) => {
       const count = n > 0 ? pc.yellow(String(n).padStart(3)) : pc.green('  0');
       process.stdout.write(`  ${count}  ${label}${n > 0 ? pc.dim(`  ${hint}`) : ''}\n`);

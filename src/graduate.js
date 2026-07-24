@@ -8,6 +8,7 @@ import { join, resolve, dirname, basename } from 'path';
 import pc from 'picocolors';
 import { resolveWiki } from './verbs.js';
 import { insideRoot } from './paths.js';
+import { warnIfLeased } from './lease.js';
 
 function argValue(args, flag) {
   const idx = args.indexOf(flag);
@@ -55,6 +56,8 @@ export async function runGraduate(args) {
       `so this would move a file in "${wiki.slug}" implicitly. Pass --wiki ${wiki.slug} to target it, or run from inside the wiki.`,
     );
   }
+
+  warnIfLeased(wiki.path);
 
   const inboxDir = join(wiki.path, '_inbox');
   if (!existsSync(inboxDir)) throw new Error(`"${wiki.slug ?? wiki.name}" has no _inbox/ directory - nothing to graduate.`);

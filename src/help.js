@@ -102,6 +102,27 @@ export const COMMANDS = [
     examples: ['tng-wiki graduate session-notes.md', 'tng-wiki graduate briefs/q3-brief.md --to raw/briefs'],
   },
   {
+    name: 'claim', group: 'Wiki access',
+    summary: 'Advisory machine-local lease on a wiki - tells concurrent sessions on this machine you are its librarian right now',
+    usage: 'tng-wiki claim [--ttl <minutes>] [--as "<holder>"] [--note "..."] [--force] [--wiki <slug>] [--json]',
+    args: [],
+    flags: [
+      { name: '--ttl', value: '<minutes>', desc: 'lease duration (default 120); expiry is the only staleness mechanism, so a dead session simply ages out' },
+      { name: '--as', value: '<holder>', desc: 'holder label (default user@host); the same holder re-claiming renews' },
+      { name: '--note', value: '<text>', desc: 'shown to other sessions alongside the holder' },
+      { name: '--force', desc: 'take over another holder\'s unexpired lease' },
+      WIKI, JSON_FLAG,
+    ],
+    examples: ['tng-wiki claim --note "ingest pass"', 'tng-wiki claim --wiki shared --ttl 30'],
+  },
+  {
+    name: 'release', group: 'Wiki access',
+    summary: 'Release the advisory lease on a wiki',
+    usage: 'tng-wiki release [--wiki <slug>] [--json]',
+    args: [], flags: [WIKI, JSON_FLAG],
+    examples: ['tng-wiki release'],
+  },
+  {
     name: 'log', group: 'Wiki access',
     summary: 'Append a correctly-formatted entry to wiki/log.md (the canonical emitter of the schema\'s log format)',
     usage: 'tng-wiki log --type <t> --desc "..." [--source <path>]... [--created <page>]... [--updated <page>]... [--author "..."] [--notes "..."] [--wiki <slug>] [--json]',
