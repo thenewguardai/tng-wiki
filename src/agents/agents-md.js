@@ -472,7 +472,7 @@ _The full CLI surface is one call away: \`tng-wiki help --json\` (every command,
 
 Run rounds when asked, or on a maintenance cadence (the user may wire it to cron or the \`schedule\` skill).
 
-**Concurrent sessions:** if other agent sessions may be active on this machine, \`tng-wiki claim\` before mutating and \`tng-wiki release\` when done - an advisory machine-local lease (\`rounds\` shows it; mutating verbs mention it). If a mutating verb reports someone ELSE's lease, stop and coordinate instead of writing. For multi-machine wikis synced over git, see the merge-conflict section of \`.tng-wiki/doctrine/grounding.md\`.
+**Concurrent sessions:** if other agent sessions may be active on this machine, \`tng-wiki claim\` before mutating and \`tng-wiki release\` when done - an advisory machine-local lease (\`rounds\` shows it; mutating verbs mention it). If a mutating verb reports someone ELSE's lease, stop and coordinate instead of writing. For multi-machine wikis synced over git, start rounds with \`tng-wiki sync\` (fast-forward pull + per-wiki arrivals report - \`_inbox/\` items to triage, new raw/ sources); on a diverged repo, see the merge-conflict section of \`.tng-wiki/doctrine/grounding.md\`.
 
 ### Ingest
 

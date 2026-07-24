@@ -125,7 +125,7 @@ Never auto-resolve a drift marker without human approval. The marker exists prec
 
 When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping", run the full maintenance bundle and report a short summary:
 
-1. If other sessions may be active on this machine, \`tng-wiki claim\` first (advisory lease; \`release\` when done). Then ingest anything pending in \`raw/\` (\`tng-wiki sources --uncompiled\`), and triage anything sitting in \`_inbox/\` when the wiki has one (the rounds dashboard counts it).
+1. If other sessions may be active on this machine, \`tng-wiki claim\` first (advisory lease; \`release\` when done). On multi-machine wikis, \`tng-wiki sync\` next - fast-forward pull plus a per-wiki arrivals report. Then ingest anything pending in \`raw/\` (\`tng-wiki sources --uncompiled\`), and triage anything sitting in \`_inbox/\` when the wiki has one (the rounds dashboard counts it).
 2. Run \`tng-wiki rounds\` for the lint counts at a glance, then \`ground\` / \`orphans\` / \`unsourced\` / \`unverified\` / \`stale\` / \`drift\` for detail.
 3. Review \`cite_content_changed\` findings - that is the per-citation re-verification queue; re-check each against the authority. Run \`tng-wiki ground --fix-moved\` to repair shifted \`#L\` anchors (safe: content unchanged).
 4. Reconcile what's safely reconcilable; surface the \`⚠️\` markers that need the user.

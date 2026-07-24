@@ -165,6 +165,11 @@ async function main() {
       await runRelease(args);
       break;
     }
+    case 'sync': {
+      const { runSync } = await import('../src/sync.js');
+      await runSync(args);
+      break;
+    }
     case 'cite': {
       const { runCite } = await import('../src/cite.js');
       await runCite(args);
