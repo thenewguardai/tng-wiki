@@ -8,9 +8,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 import {
-  resolveWiki, queryIndex, readPage, searchWiki, searchAllWikis,
+  resolveWiki, queryIndex, readPage, resolvePagePath, searchWiki, searchAllWikis,
   listSources, listStalePages, listOrphanPages,
 } from '../src/verbs.js';
+import { parseCrossRef, crossRefWiki } from '../src/crosswiki.js';
 import {
   checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages,
 } from '../src/ground.js';
@@ -77,19 +78,32 @@ server.registerTool(
   'read',
   {
     title: 'Read a wiki page',
-    description: 'Returns the full content of a specific wiki page by its path (relative to wiki/). Paths that escape the wiki directory (e.g., "../foo") are rejected.',
+    description: 'Returns the full content of a specific wiki page by its path (relative to wiki/). A qualified "slug:page" path resolves through the registry into that wiki, overriding the wiki param. Paths that escape the wiki directory (e.g., "../foo") are rejected.',
     inputSchema: {
-      path: z.string().describe('Path relative to wiki/, e.g. "entities/openai.md" or "opportunities/agents-market.md".'),
-      wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki.'),
+      path: z.string().describe('Path relative to wiki/, e.g. "entities/openai.md", or a cross-wiki reference "wiki-slug:page-name".'),
+      wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki. Ignored when path is a qualified "slug:page" reference.'),
     },
   },
-  async ({ path, wiki }) => withWiki(wiki, (w) => {
-    try {
-      return ok({ wiki: w.slug, path, content: readPage(w.path, path) });
-    } catch (e) {
-      return err(e.message);
+  async ({ path, wiki }) => {
+    const cross = parseCrossRef(path);
+    if (cross) {
+      const target = crossRefWiki(cross.slug);
+      if (!target) return err(`No wiki registered under slug "${cross.slug}" - cannot resolve "${cross.slug}:${cross.page}".`);
+      try {
+        const resolved = resolvePagePath(target.path, cross.page);
+        return ok({ wiki: cross.slug, path: resolved, cross_wiki: true, content: readPage(target.path, resolved) });
+      } catch (e) {
+        return err(e.message);
+      }
     }
-  }),
+    return withWiki(wiki, (w) => {
+      try {
+        return ok({ wiki: w.slug, path, content: readPage(w.path, path) });
+      } catch (e) {
+        return err(e.message);
+      }
+    });
+  },
 );
 
 server.registerTool(

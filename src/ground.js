@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, statSync } from 'fs';
 import { join, relative, resolve, dirname } from 'path';
 import { matchesAnyGlob } from './glob.js';
 import { resolveConfigPath, pathForm, describePathValue, insideRoot, walkMd } from './paths.js';
+import { extractCrossWikiLinks, crossRefWiki } from './crosswiki.js';
 import {
   refResolves, fileExistsAtRef, readFileAtRef, fileCommitDateAtRef, fileCommitDate,
   filesAtHead, newestCommitDate, resolveRefSha, repoIsDirty,
@@ -19,7 +20,7 @@ export { splitFrontmatter } from './frontmatter.js';
 // Warn-level findings: hygiene/convention signals, not attribution breaks.
 // Renderers color them differently and `rounds` counts them under `convention`;
 // they never change exit codes.
-export const WARN_ISSUES = new Set(['frontmatter_updated_stale', 'prose_internal_ref']);
+export const WARN_ISSUES = new Set(['frontmatter_updated_stale', 'prose_internal_ref', 'cross_wiki_broken']);
 
 // The page-count formula the index header is lint-checked against. Stated in the
 // `index_header_drift` finding so the maintaining agent fixes the header to the
@@ -318,7 +319,7 @@ function checkIndexHeader(wikiPath, allFiles) {
   };
 }
 
-export function checkGrounding(wikiPath, { page, atRef = false, updateLock = false, fixMoved = false, fixIndex = false, fixDates = false } = {}) {
+export function checkGrounding(wikiPath, { page, atRef = false, updateLock = false, fixMoved = false, fixIndex = false, fixDates = false, home } = {}) {
   const wikiDir = join(wikiPath, 'wiki');
   const allFiles = walkMd(wikiDir);
   const targets = page
@@ -408,6 +409,35 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
   const issues = [];
   const fixedDates = [];  // --fix-dates repairs, reported instead of their findings (#40)
 
+  // Cross-wiki link targets (#43), cached per run: slug -> { rels, stems } for
+  // a wiki registered (and present) on this machine, or null when it isn't -
+  // those links may simply live on another machine, so they tally into one
+  // informational warning instead of per-page findings.
+  const crossWikiTargets = new Map();
+  const crossUnregistered = new Map();
+  const crossWikiTargetFor = (slug) => {
+    if (!crossWikiTargets.has(slug)) {
+      const w = crossRefWiki(slug, home);
+      if (!w || !existsSync(join(w.path, 'wiki'))) {
+        crossWikiTargets.set(slug, null);
+      } else {
+        const rels = new Set();
+        const stems = new Set();
+        for (const f of walkMd(join(w.path, 'wiki'))) {
+          rels.add(relative(w.path, f).replace(/\\/g, '/'));
+          stems.add(f.split(/[\\/]/).pop().replace(/\.md$/, '').toLowerCase());
+        }
+        crossWikiTargets.set(slug, { rels, stems });
+      }
+    }
+    return crossWikiTargets.get(slug);
+  };
+  const crossWikiPageExists = (t, pageRef) => {
+    const p = pageRef.replace(/^wiki\//, '');
+    return t.rels.has(`wiki/${p}`) || t.rels.has(`wiki/${p}.md`)
+      || t.stems.has(p.replace(/\.md$/, '').toLowerCase());
+  };
+
   // Foot-gun guard: on a plain (non --at-ref) run, a ref'd authority is still
   // checked against its WORKING TREE — the pin only applies under --at-ref.
   // Collect one warning per such authority, but only when a code: cite actually
@@ -443,6 +473,20 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
 
     if (declared === null || declared.length === 0) {
       issues.push({ page: rel, issue: 'empty_sources' });
+    }
+
+    // Cross-wiki links (#43): [[slug:page]] resolves through the LOCAL
+    // registry. A registered slug whose target page is missing is a broken
+    // link (warn-level); an unregistered slug is not proof of anything here.
+    for (const l of extractCrossWikiLinks(body, bodyStartLine)) {
+      const target = crossWikiTargetFor(l.slug);
+      if (target === null) {
+        crossUnregistered.set(l.slug, (crossUnregistered.get(l.slug) ?? 0) + 1);
+        continue;
+      }
+      if (!crossWikiPageExists(target, l.page)) {
+        issues.push({ page: rel, issue: 'cross_wiki_broken', link: `${l.slug}:${l.page}`, line: l.line });
+      }
     }
 
     const citedRaw = cited.filter((c) => c.kind === 'raw');
@@ -824,6 +868,14 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
       cites,
       verified_ref: authState?.ref ?? null,
       verified_sha: authState?.resolved_sha ?? null,
+    });
+  }
+
+  if (crossUnregistered.size > 0) {
+    warnings.push({
+      code: 'cross_wiki_unregistered',
+      wikis: [...crossUnregistered.keys()].sort(),
+      count: [...crossUnregistered.values()].reduce((a, b) => a + b, 0),
     });
   }
 

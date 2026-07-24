@@ -7,6 +7,7 @@ import {
   checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages,
 } from './ground.js';
 import { warnIfLeased, activeLease } from './lease.js';
+import { parseCrossRef, crossRefWiki } from './crosswiki.js';
 
 function argValue(args, flag) {
   const idx = args.indexOf(flag);
@@ -66,6 +67,23 @@ export async function runRead(args) {
   if (!relPath) {
     process.stderr.write('Usage: tng-wiki read <page> [--wiki <slug>] [--json]\n');
     process.exit(1);
+  }
+  // Qualified [[slug:page]] / slug:page form resolves through the registry
+  // and wins over --wiki - the reference itself names its wiki (#43).
+  const cross = parseCrossRef(relPath);
+  if (cross) {
+    const target = crossRefWiki(cross.slug);
+    if (!target) {
+      throw new Error(`No wiki registered under slug "${cross.slug}" - cannot resolve "${cross.slug}:${cross.page}". Run \`tng-wiki list\`.`);
+    }
+    const resolved = resolvePagePath(target.path, cross.page);
+    const content = readPage(target.path, resolved);
+    if (args.includes('--json')) {
+      process.stdout.write(JSON.stringify({ wiki: cross.slug, path: resolved, cross_wiki: true, content }, null, 2) + '\n');
+    } else {
+      process.stdout.write(content);
+    }
+    return;
   }
   const wiki = wikiFromArgs(args);
   const resolved = resolvePagePath(wiki.path, relPath);
@@ -168,6 +186,7 @@ const ISSUE_LABEL = {
   index_header_drift: '`index.md` header count/date does not match the wiki',
   frontmatter_updated_stale: 'page changed after frontmatter `updated` — bump the date',
   prose_internal_ref: 'internal page referenced in prose — use a [[wikilink]]',
+  cross_wiki_broken: 'cross-wiki link target missing in that wiki',
   cited_lead_archive: 'citation resolves into a lead archive — leads are never citable sources',
   missing_lead: '`leads:` entry points at a file the archive no longer has',
   unknown_lead_archive: '`leads:` entry names an archive not registered in `.tng-wiki.json`',
@@ -210,6 +229,9 @@ export async function runGround(args) {
         const n = w.cites === 1 ? '1 citation' : `${w.cites} citations`;
         process.stderr.write(`${pc.cyan('ℹ')} authority "${w.authority}": ${n} trusted, not verifiable here${prov} — no local checkout; run \`tng-wiki localize\` to point at one\n`);
       }
+      if (w.code === 'cross_wiki_unregistered') {
+        process.stderr.write(`${pc.cyan('ℹ')} ${w.count} cross-wiki link(s) into wikis not registered here (${w.wikis.join(', ')}) - not verifiable on this machine\n`);
+      }
     }
     if (result.issues.length === 0) {
       process.stdout.write(`${pc.green('✓')} ${pc.dim(`${result.scanned} pages clean`)}\n`);
@@ -227,6 +249,7 @@ export async function runGround(args) {
           const target = i.cite
             ?? i.raw
             ?? i.matched
+            ?? i.link
             ?? i.lead
             ?? (i.authority && filePart ? `${i.authority}/${filePart}` : null)
             ?? (i.authority && i.ref ? `${i.authority}@${i.ref}` : null)

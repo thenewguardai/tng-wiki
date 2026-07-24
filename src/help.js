@@ -84,11 +84,11 @@ export const COMMANDS = [
     examples: ['tng-wiki query', 'tng-wiki query --wiki research'],
   },
   {
-    name: 'read', group: 'Wiki access', summary: 'Print a wiki page by path, [[wikilink]], or unique page stem',
+    name: 'read', group: 'Wiki access', summary: 'Print a wiki page by path, [[wikilink]], unique page stem, or cross-wiki slug:page reference',
     usage: 'tng-wiki read <page> [--wiki <slug>] [--json]',
-    args: [{ name: 'page', required: true, desc: 'path under wiki/ (`.md` optional, leading `wiki/` tolerated), a [[wikilink]], or a unique page stem' }],
+    args: [{ name: 'page', required: true, desc: 'path under wiki/ (`.md` optional, leading `wiki/` tolerated), a [[wikilink]], a unique page stem, or a qualified `<wiki-slug>:page` cross-wiki reference (resolves through the registry, overrides --wiki)' }],
     flags: [WIKI, JSON_FLAG],
-    examples: ['tng-wiki read entities/openai.md', 'tng-wiki read entities/openai', 'tng-wiki read openai', "tng-wiki read '[[openai]]'"],
+    examples: ['tng-wiki read entities/openai.md', 'tng-wiki read openai', "tng-wiki read '[[openai]]'", 'tng-wiki read shared:llama-server'],
   },
   {
     name: 'search', group: 'Wiki access', summary: 'Case-insensitive search across wiki pages',
