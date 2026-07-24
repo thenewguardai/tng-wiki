@@ -102,6 +102,23 @@ export const COMMANDS = [
     examples: ['tng-wiki graduate session-notes.md', 'tng-wiki graduate briefs/q3-brief.md --to raw/briefs'],
   },
   {
+    name: 'log', group: 'Wiki access',
+    summary: 'Append a correctly-formatted entry to wiki/log.md (the canonical emitter of the schema\'s log format)',
+    usage: 'tng-wiki log --type <t> --desc "..." [--source <path>]... [--created <page>]... [--updated <page>]... [--author "..."] [--notes "..."] [--wiki <slug>] [--json]',
+    args: [],
+    flags: [
+      { name: '--type', value: '<t>', desc: 'entry type - validated against the wiki schema\'s `Types:` line when present (e.g. ingest, query, lint)' },
+      { name: '--desc', value: '<text>', desc: 'one-line description (the entry heading)' },
+      { name: '--source', value: '<path>', desc: 'repeatable: source path(s) for the Source field' },
+      { name: '--created', value: '<page>', desc: 'repeatable: pages created' },
+      { name: '--updated', value: '<page>', desc: 'repeatable: pages updated' },
+      { name: '--author', value: '<who>', desc: 'optional attribution token (agent/model + session), pairs with lintable provenance' },
+      { name: '--notes', value: '<text>', desc: 'freeform notes field' },
+      WIKI, JSON_FLAG,
+    ],
+    examples: ['tng-wiki log --type ingest --desc "compiled Q3 brief" --source raw/briefs/q3.md --updated wiki/roadmap.md'],
+  },
+  {
     name: 'sources', group: 'Wiki access', summary: 'List raw sources',
     usage: 'tng-wiki sources [--uncompiled] [--wiki <slug>] [--json]',
     args: [], flags: [{ name: '--uncompiled', desc: 'only sources not yet marked compiled (the ingest queue)' }, WIKI, JSON_FLAG],
@@ -110,16 +127,17 @@ export const COMMANDS = [
   {
     name: 'ground', group: 'Grounding & lint',
     summary: 'Structural ground-check: attribution, dead cites, staleness, code authorities, lead archives, per-citation churn (zero-LLM)',
-    usage: 'tng-wiki ground [--page <path>] [--at-ref] [--update-lock] [--fix-moved] [--fix-index] [--wiki <slug>] [--json]',
+    usage: 'tng-wiki ground [--page <path>] [--at-ref] [--update-lock] [--fix-moved] [--fix-index] [--fix-dates] [--wiki <slug>] [--json]',
     args: [], flags: [
       { name: '--page', value: '<path>', desc: 'scope the check to a single page' },
       { name: '--at-ref', desc: "resolve code-authority citations at each authority's pinned git ref" },
       { name: '--update-lock', desc: 'record per-citation content hashes + authority SHAs in wiki/.tng-wiki.lock.json — run after verify/reconcile to bless current state' },
       { name: '--fix-moved', desc: 'rewrite #L anchors for cites whose locked content moved unchanged (the only safe auto-fix; updates the lockfile)' },
       { name: '--fix-index', desc: 'rewrite the index.md header to the measured page count and newest page date (deterministic repair of index_header_drift)' },
+      { name: '--fix-dates', desc: 'set frontmatter `updated` to the page file\'s last change date (git commit date, mtime fallback) on pages flagged frontmatter_updated_stale' },
       WIKI, JSON_FLAG,
     ],
-    examples: ['tng-wiki ground', 'tng-wiki ground --at-ref --json', 'tng-wiki ground --update-lock', 'tng-wiki ground --fix-moved', 'tng-wiki ground --fix-index'],
+    examples: ['tng-wiki ground', 'tng-wiki ground --at-ref --json', 'tng-wiki ground --update-lock', 'tng-wiki ground --fix-moved', 'tng-wiki ground --fix-index', 'tng-wiki ground --fix-dates --page systems/api.md'],
   },
   {
     name: 'cite', group: 'Grounding & lint',

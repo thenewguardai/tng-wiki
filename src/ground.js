@@ -318,7 +318,7 @@ function checkIndexHeader(wikiPath, allFiles) {
   };
 }
 
-export function checkGrounding(wikiPath, { page, atRef = false, updateLock = false, fixMoved = false, fixIndex = false } = {}) {
+export function checkGrounding(wikiPath, { page, atRef = false, updateLock = false, fixMoved = false, fixIndex = false, fixDates = false } = {}) {
   const wikiDir = join(wikiPath, 'wiki');
   const allFiles = walkMd(wikiDir);
   const targets = page
@@ -406,6 +406,7 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
   const moveFixes = [];     // cite_moved fixes to apply on --fix-moved
 
   const issues = [];
+  const fixedDates = [];  // --fix-dates repairs, reported instead of their findings (#40)
 
   // Foot-gun guard: on a plain (non --at-ref) run, a ref'd authority is still
   // checked against its WORKING TREE — the pin only applies under --at-ref.
@@ -779,12 +780,29 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
     if (updated) {
       const pageTime = fileCommitDate(wikiPath, rel) ?? statSync(file).mtime;
       if (isStaleAfterGrace(updated, pageTime)) {
-        issues.push({
+        const finding = {
           page: rel,
           issue: 'frontmatter_updated_stale',
           updated: updated.toISOString().slice(0, 10),
           last_commit: pageTime.toISOString().slice(0, 10),
-        });
+        };
+        // --fix-dates: set `updated` to the value this check measures (git
+        // commit date, mtime fallback) - deterministic and honest ("this file
+        // last changed at T"); whether the change was substantive stays a
+        // Layer 2 judgment (#40). Scoped by --page like every check here.
+        if (fixDates) {
+          const fmEnd = content.indexOf('\n---', 3);
+          const head = fmEnd === -1 ? null : content.slice(0, fmEnd);
+          const patched = head === null ? null : head.replace(/^updated:.*$/m, `updated: ${finding.last_commit}`);
+          if (patched !== null && patched !== head) {
+            writeFileSync(file, patched + content.slice(fmEnd));
+            fixedDates.push({ page: rel, from: finding.updated, to: finding.last_commit });
+          } else {
+            issues.push(finding);  // no rewritable `updated:` line - report instead
+          }
+        } else {
+          issues.push(finding);
+        }
       }
     }
 
@@ -914,6 +932,7 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
   const result = { scanned: targets.length, issues, warnings, lock: lockResult };
   if (fixMoved) result.fixed = fixed;
   if (fixedIndex) result.fixed_index = fixedIndex;
+  if (fixDates && fixedDates.length > 0) result.fixed_dates = fixedDates;
   return result;
 }
 

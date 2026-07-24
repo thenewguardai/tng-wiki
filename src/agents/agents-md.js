@@ -595,7 +595,9 @@ const LOGGING = `## Logging
 - Notes: what happened
 \`\`\`
 
-Types: \`ingest\`, \`query\`, \`lint\`, \`issue-prep\`, \`post-publish\``;
+Types: \`ingest\`, \`query\`, \`lint\`, \`issue-prep\`, \`post-publish\`
+
+\`tng-wiki log --type <t> --desc "..." [--source <p>]... [--created <pg>]... [--updated <pg>]... [--author "..."] [--notes "..."]\` emits this format - prefer it over hand-writing the entry.`;
 
 const GUARDRAILS = `## What You Never Do
 

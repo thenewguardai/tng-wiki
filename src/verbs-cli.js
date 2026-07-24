@@ -184,16 +184,17 @@ export async function runGround(args) {
   const updateLock = args.includes('--update-lock');
   const fixMoved = args.includes('--fix-moved');
   const fixIndex = args.includes('--fix-index');
+  const fixDates = args.includes('--fix-dates');
   // A mutating run must name its target: standing inside the wiki or passing
   // --wiki both count, the registered-default fallback does not (#47).
-  if ((updateLock || fixMoved || fixIndex) && wiki.via === 'default') {
-    const flag = updateLock ? '--update-lock' : fixMoved ? '--fix-moved' : '--fix-index';
+  if ((updateLock || fixMoved || fixIndex || fixDates) && wiki.via === 'default') {
+    const flag = updateLock ? '--update-lock' : fixMoved ? '--fix-moved' : fixIndex ? '--fix-index' : '--fix-dates';
     throw new Error(
       `refusing \`ground ${flag}\` via the default-wiki fallback: you are not inside a wiki, ` +
       `so this would write to "${wiki.slug}" implicitly. Pass --wiki ${wiki.slug} to target it, or run from inside the wiki.`,
     );
   }
-  const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef, updateLock, fixMoved, fixIndex });
+  const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef, updateLock, fixMoved, fixIndex, fixDates });
   maybeJson(args, { wiki: wiki.slug, ...result }, () => {
     // Warnings go to stderr (findings stay on stdout); --json carries them in
     // the top-level `warnings` array instead.
@@ -260,6 +261,12 @@ export async function runGround(args) {
     if (result.fixed_index) {
       const fi = result.fixed_index;
       process.stdout.write(`${pc.green('✓')} index header updated ${pc.dim(`(${fi.was_pages} pages, ${fi.was_date} → ${fi.pages} pages, ${fi.date})`)}\n`);
+    }
+    if (result.fixed_dates?.length) {
+      process.stdout.write(`${pc.green('✓')} bumped \`updated\` on ${result.fixed_dates.length} page(s)\n`);
+      for (const f of result.fixed_dates) {
+        process.stdout.write(`  ${pc.dim(`${f.page}: ${f.from} → ${f.to}`)}\n`);
+      }
     }
     if (result.fixed?.length) {
       process.stdout.write(`${pc.green('✓')} fixed ${result.fixed.length} moved cite anchor(s)\n`);

@@ -150,6 +150,11 @@ async function main() {
       await runGraduate(args);
       break;
     }
+    case 'log': {
+      const { runLog } = await import('../src/log-cli.js');
+      await runLog(args);
+      break;
+    }
     case 'cite': {
       const { runCite } = await import('../src/cite.js');
       await runCite(args);
