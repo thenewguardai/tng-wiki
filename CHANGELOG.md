@@ -4,7 +4,7 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.12.0] - 2026-07-29
 
 ### Added
 - **Opt-in agent-provenance lint (#45).** Frontmatter `author:` is the documented provenance convention (agent/model + session, pairing with `tng-wiki log --author`), and a wiki can require it for designated page types via `.tng-wiki.json → require_author_types: ["capture", ...]` - `ground` then flags those pages with warn-level `missing_author`. No config, no findings: zero behavior change for wikis that don't opt in.
