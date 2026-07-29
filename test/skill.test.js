@@ -41,10 +41,15 @@ test('installSkill description stays under the 1,536-char skill-listing cap', ()
   );
 });
 
-test('installSkill refuses to overwrite an existing SKILL.md without --force', () => {
+test('installSkill refreshes a stamped SKILL.md without --force, refuses unstamped files (#50)', () => {
   inHome((home) => {
     installSkill(home);
-    assert.throws(() => installSkill(home), /already exists/);
+    // stamped = tool-managed: the documented refresh path must work bare
+    assert.equal(installSkill(home).overwrote, true);
+    // strip the stamp -> not tool-managed -> guard applies
+    const file = skillFile(home);
+    writeFileSync(file, readFileSync(file, 'utf8').replace(/tng-wiki-skill-version:/g, 'stampless:'));
+    assert.throws(() => installSkill(home), /no tng-wiki version stamp/);
   });
 });
 

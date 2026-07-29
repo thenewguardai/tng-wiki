@@ -36,7 +36,7 @@ Run \`tng-wiki ground [--page <path>] [--at-ref]\`. Pure-CLI, zero-LLM. It catch
 - With a citation lockfile (\`wiki/.tng-wiki.lock.json\`, committed - see below): per-citation churn instead of per-file churn - \`cite_content_changed\` (the cited lines changed since last verified; the surgical re-verification queue), \`cite_moved\` (content identical, \`#L\` anchor shifted - repair with \`ground --fix-moved\`, the only safe auto-fix), \`cite_moved_ambiguous\` (locked content now appears in several places - fix the anchor by hand), and \`cite_unlocked\` (cite never locked)
 Apply the appropriate markers inline. Log the pass with issue counts.
 
-**The citation lockfile.** \`tng-wiki ground --update-lock\` writes \`wiki/.tng-wiki.lock.json\`: per citation, a normalized content hash of the cited range (whitespace-only changes are invisible), and per code authority, the SHA its ref resolved to. Commit it - it is verification state that travels with the wiki. With the lock in place, Layer 1 answers "**which citations** changed since they were last verified" rather than "which files were touched", so re-verification against an active branch stays affordable. \`--update-lock\` records *human-verified* state and never runs implicitly: run it at the end of an ingest or after a reconcile, never on content you haven't checked. \`cite_content_changed\` findings are never auto-fixed - they feed the Layer-2 \`⚠️ DRIFT?\` workflow below.
+**The citation lockfile.** \`tng-wiki ground --update-lock\` writes \`wiki/.tng-wiki.lock.json\`: per citation, a normalized content hash of the cited range (whitespace-only changes are invisible), and per code authority, the SHA its ref resolved to. Commit it - it is verification state that travels with the wiki. With the lock in place, Layer 1 answers "**which citations** changed since they were last verified" rather than "which files were touched", so re-verification against an active branch stays affordable. \`--update-lock\` records *human-verified* state and never runs implicitly: run it at the end of an ingest or after a reconcile, never on content you haven't checked. **Scope it**: \`ground --update-lock --page <p>\` re-locks only that page's citations and preserves every other page's entries - the "verify one thing, lock one thing" form. A full (unscoped) \`--update-lock\` blesses ALL current content, including drift you deliberately left unverified; the run warns when it re-locks \`cite_content_changed\` findings, and the recovery is restoring the lockfile from git. \`cite_content_changed\` findings are never auto-fixed - they feed the Layer-2 \`⚠️ DRIFT?\` workflow below.
 
 #### Layer 2 - Semantic re-verification (agent-driven)
 
@@ -357,10 +357,13 @@ sources:                  # trust anchors for this page - raw paths or code auth
   - code:legacy-app         # optional, when the page cites a code authority (see .tng-wiki.json)
 tags: []
 confidence: medium        # high | medium | low
+author: "<agent + session>"  # optional provenance: which agent/model wrote or last revised this page
 ---
 \`\`\`
 
 \`sources\` is the **trust anchor** of the page. Grounding workflows re-open every raw file and re-read every code authority listed here to verify the page's claims. An empty \`sources:\` list means the page has no verifiable attribution - that's an \`⚠️ UNSOURCED?\` state, not normal.
+
+\`author\` is **agent provenance**: when several agents (or several machines' sessions) maintain one wiki ecosystem, stamp who wrote or last revised the page (e.g. \`"work-machine session (claude-fable-5)"\`), and pass \`--author\` to \`tng-wiki log\` so log entries carry the same token. Optional by default; a wiki can make it required for designated page types (captures, exchange artifacts) by listing them in \`.tng-wiki.json → require_author_types\` - \`ground\` then flags those pages when \`author:\` is absent (\`missing_author\`, warn-level).
 
 ### Per-Claim Citations
 

@@ -11,7 +11,7 @@ import {
   readLock, writeLock, normalizeLines, hashLines, citeKey, rangeAnchor, rangeLabel,
   sliceRange, findContentMatches,
 } from './lock.js';
-import { splitFrontmatter, extractListKey } from './frontmatter.js';
+import { splitFrontmatter, extractListKey, parseScalars } from './frontmatter.js';
 
 // Re-exported for existing importers (cite.js, tests) - the implementation
 // moved to the shared frontmatter module.
@@ -20,7 +20,7 @@ export { splitFrontmatter } from './frontmatter.js';
 // Warn-level findings: hygiene/convention signals, not attribution breaks.
 // Renderers color them differently and `rounds` counts them under `convention`;
 // they never change exit codes.
-export const WARN_ISSUES = new Set(['frontmatter_updated_stale', 'prose_internal_ref', 'cross_wiki_broken']);
+export const WARN_ISSUES = new Set(['frontmatter_updated_stale', 'prose_internal_ref', 'cross_wiki_broken', 'missing_author']);
 
 // The page-count formula the index header is lint-checked against. Stated in the
 // `index_header_drift` finding so the maintaining agent fixes the header to the
@@ -409,6 +409,13 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
   const issues = [];
   const fixedDates = [];  // --fix-dates repairs, reported instead of their findings (#40)
 
+  // Opt-in provenance lint (#45): page types listed in the manifest's
+  // `require_author_types` must carry frontmatter `author:`. With multiple
+  // agents in one wiki ecosystem, capture/exchange-style pages without
+  // attribution have already produced a reconstructed-false-history incident.
+  const metaRequireAuthor = loadWikiMeta(wikiPath).require_author_types;
+  const requireAuthorTypes = new Set(Array.isArray(metaRequireAuthor) ? metaRequireAuthor : []);
+
   // Cross-wiki link targets (#43), cached per run: slug -> { rels, stems } for
   // a wiki registered (and present) on this machine, or null when it isn't -
   // those links may simply live on another machine, so they tally into one
@@ -473,6 +480,13 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
 
     if (declared === null || declared.length === 0) {
       issues.push({ page: rel, issue: 'empty_sources' });
+    }
+
+    if (requireAuthorTypes.size > 0) {
+      const fm = parseScalars(frontmatter);
+      if (requireAuthorTypes.has(fm.type) && !fm.author) {
+        issues.push({ page: rel, issue: 'missing_author', type: fm.type });
+      }
     }
 
     // Cross-wiki links (#43): [[slug:page]] resolves through the LOCAL
@@ -877,6 +891,21 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
       wikis: [...crossUnregistered.keys()].sort(),
       count: [...crossUnregistered.values()].reduce((a, b) => a + b, 0),
     });
+  }
+
+  // --update-lock blesses CURRENT content, including any cite_content_changed
+  // drift found this very run - re-locking drift you did not re-verify is the
+  // #49 footgun. The write still happens (the operator may have re-verified
+  // everything), but never silently.
+  if (updateLock) {
+    const relocked = issues.filter((i) => i.issue === 'cite_content_changed');
+    if (relocked.length > 0) {
+      warnings.push({
+        code: 'drift_relocked',
+        count: relocked.length,
+        cites: relocked.map((i) => ({ page: i.page, cite: i.cite })),
+      });
+    }
   }
 
   // Wiki-level check: the index.md scaffold header vs reality. Skipped on --page

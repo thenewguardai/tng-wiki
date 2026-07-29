@@ -187,6 +187,7 @@ const ISSUE_LABEL = {
   frontmatter_updated_stale: 'page changed after frontmatter `updated` — bump the date',
   prose_internal_ref: 'internal page referenced in prose — use a [[wikilink]]',
   cross_wiki_broken: 'cross-wiki link target missing in that wiki',
+  missing_author: 'page type requires `author:` provenance (`.tng-wiki.json` require_author_types)',
   cited_lead_archive: 'citation resolves into a lead archive — leads are never citable sources',
   missing_lead: '`leads:` entry points at a file the archive no longer has',
   unknown_lead_archive: '`leads:` entry names an archive not registered in `.tng-wiki.json`',
@@ -231,6 +232,9 @@ export async function runGround(args) {
       }
       if (w.code === 'cross_wiki_unregistered') {
         process.stderr.write(`${pc.cyan('ℹ')} ${w.count} cross-wiki link(s) into wikis not registered here (${w.wikis.join(', ')}) - not verifiable on this machine\n`);
+      }
+      if (w.code === 'drift_relocked') {
+        process.stderr.write(`${pc.yellow('⚠')} ${w.count} drifted citation(s) (cite_content_changed) re-locked as verified by this run - if any were NOT re-verified, restore wiki/.tng-wiki.lock.json from git and re-run scoped: ground --update-lock --page <page>\n`);
       }
     }
     if (result.issues.length === 0) {

@@ -51,7 +51,7 @@ If the user wants a *new* wiki, or to adopt the current project into one, scaffo
 - **\`tng-wiki sources [--uncompiled] [--wiki <slug>]\`** - lists \`raw/\` files. Use \`--uncompiled\` to find sources the wiki hasn't ingested yet.
 - **\`tng-wiki stale [--wiki <slug>]\`** - lint: pages with \`⚠️ STALE?\` markers.
 - **\`tng-wiki orphans [--wiki <slug>]\`** - lint: pages with no inbound \`[[wikilinks]]\`.
-- **\`tng-wiki ground [--wiki <slug>] [--page <path>] [--update-lock] [--fix-moved] [--fix-index] [--fix-dates]\`** - structural ground-check. Finds pages missing source attribution, inline citations pointing at non-existent raw files, declaration/citation mismatches, raw sources modified after the page's \`updated\` date, index-header drift, and warn-level convention findings (stale frontmatter \`updated\`, prose internal refs). When the wiki has a citation lockfile (\`wiki/.tng-wiki.lock.json\`), also reports per-citation churn: \`cite_content_changed\` (cited content edited since last verified - the surgical re-verification queue), \`cite_moved\` (content identical, line anchor shifted - fix with \`--fix-moved\`), and \`cite_unlocked\`. Run \`ground --update-lock\` after verifying/reconciling to bless current state - never run it on unverified content. Zero-LLM - a work queue for you to drive Layer 2 semantic re-verification.
+- **\`tng-wiki ground [--wiki <slug>] [--page <path>] [--update-lock] [--fix-moved] [--fix-index] [--fix-dates]\`** - structural ground-check. Finds pages missing source attribution, inline citations pointing at non-existent raw files, declaration/citation mismatches, raw sources modified after the page's \`updated\` date, index-header drift, and warn-level convention findings (stale frontmatter \`updated\`, prose internal refs). When the wiki has a citation lockfile (\`wiki/.tng-wiki.lock.json\`), also reports per-citation churn: \`cite_content_changed\` (cited content edited since last verified - the surgical re-verification queue), \`cite_moved\` (content identical, line anchor shifted - fix with \`--fix-moved\`), and \`cite_unlocked\`. Run \`ground --update-lock\` after verifying/reconciling to bless current state - never run it on unverified content, and scope it with \`--page <p>\` to re-lock only the page you actually re-verified (other pages' lock entries are preserved). Zero-LLM - a work queue for you to drive Layer 2 semantic re-verification.
 - **\`tng-wiki cite show <page> [--wiki <slug>] [--at-ref] [--cite <n|key>] [--context <lines>]\`** - claim-next-to-evidence review: prints every citation in a page with the claim sentence that carries it and the exact source lines it cites (raw and code-authority cites alike). Use it instead of hand-running \`sed -n 'X,Yp'\` against authority files.
 - **\`tng-wiki drift [--wiki <slug>]\`** - pages carrying \`⚠️ DRIFT?\` markers (semantic or external grounding output).
 - **\`tng-wiki unsourced [--wiki <slug>]\`** - pages carrying \`⚠️ UNSOURCED?\` markers.
@@ -166,12 +166,20 @@ export function skillStatus(claudeHome) {
 export function installSkill(claudeHome, { force = false } = {}) {
   const dir = skillDir(claudeHome);
   const file = skillFile(claudeHome);
-  if (existsSync(file) && !force) {
-    throw new Error(`SKILL.md already exists at ${file}. Pass --force to overwrite.`);
+  const exists = existsSync(file);
+  if (exists && !force) {
+    // The overwrite guard protects files the tool does not own. The managed
+    // footer stamp marks ownership, so a stamped file refreshes freely - the
+    // documented refresh path (doctor and the footer itself both say "refresh
+    // with: tng-wiki install-skill") must work without --force (#50).
+    const managed = readFileSync(file, 'utf8').includes('tng-wiki-skill-version:');
+    if (!managed) {
+      throw new Error(`SKILL.md already exists at ${file} and carries no tng-wiki version stamp - not tool-managed. Pass --force to overwrite.`);
+    }
   }
   mkdirSync(dir, { recursive: true });
   writeFileSync(file, SKILL_CONTENT, 'utf8');
-  return { path: file, overwrote: existsSync(file) && force };
+  return { path: file, overwrote: exists };
 }
 
 export function uninstallSkill(claudeHome) {

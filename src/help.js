@@ -164,7 +164,7 @@ export const COMMANDS = [
     summary: 'Structural ground-check: attribution, dead cites, staleness, code authorities, lead archives, per-citation churn (zero-LLM)',
     usage: 'tng-wiki ground [--page <path>] [--at-ref] [--update-lock] [--fix-moved] [--fix-index] [--fix-dates] [--wiki <slug>] [--json]',
     args: [], flags: [
-      { name: '--page', value: '<path>', desc: 'scope the check to a single page' },
+      { name: '--page', value: '<path>', desc: 'scope the check to a single page; with --update-lock, also scopes the lock update - other pages\' entries are preserved ("verify one thing, lock one thing")' },
       { name: '--at-ref', desc: "resolve code-authority citations at each authority's pinned git ref" },
       { name: '--update-lock', desc: 'record per-citation content hashes + authority SHAs in wiki/.tng-wiki.lock.json — run after verify/reconcile to bless current state' },
       { name: '--fix-moved', desc: 'rewrite #L anchors for cites whose locked content moved unchanged (the only safe auto-fix; updates the lockfile)' },
