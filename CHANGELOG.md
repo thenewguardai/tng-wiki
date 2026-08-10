@@ -4,7 +4,7 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.13.0] - 2026-08-10
 
 ### Changed
 - **The generated always-on schema is slimmed to ~40 generic lines (#52).** Measured at ~215 lines / ~5k tokens of always-on context per session, most of it identical across wikis. What remains is gotchas and invariants only: citation syntax + the sources-frontmatter invariant, confidence tags / source tiers / the inflation rule, the compact marker legend, a 3-layer grounding summary, and guardrails (raw/ immutability, never-delete/never-invent, leases, the `_inbox/` contract). Cut as derivable: the architecture tree (`ls` says it), the log entry format (`tng-wiki log` emits it), the Indexing section (`ground` explains `index_header_drift`), the role-framing preamble (now one line), the empty blank-domain placeholder, and the in-fence Evolution changelog. The software-engineering domain section now points at its on-disk templates (`_adr-template.md`, `_incident-template.md`, `_scoring-criteria.md`) instead of restating their field lists. Rollout: `tng-wiki upgrade`.
