@@ -22,7 +22,7 @@ It scaffolds a fresh wiki in one command, or adopts an existing repo as one. **T
 
 - **Verification toolchain** - the citation lockfile, `ground` / `cite`, the marker lint verbs (`drift`, `stale`, `unsourced`, `unverified`, `orphans`), and `rounds` to run the whole maintenance bundle at once.
 - **8 domain templates** - AI Research, Competitive Intel, Publication, Business Ops, Learning, Software Engineering & Architecture, Code Archaeology, or Blank. Each ships a tailored schema, directory layout, and page types.
-- **Agent-agnostic schema** - one canonical `AGENTS.md` (kept lean; the heavy grounding + marker doctrine loads on demand from `.tng-wiki/doctrine/`) with per-agent aliases (`CLAUDE.md`, `.cursorrules`) for Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and anything that reads the [agents.md](https://agents.md/) convention.
+- **Agent-agnostic schema** - one canonical `AGENTS.md` (kept lean - ~40 always-on lines plus a hand-authored `## Scope`; procedures, grounding protocol, and marker taxonomy load on demand from `.tng-wiki/doctrine/`) with per-agent aliases (`CLAUDE.md`, `.cursorrules`) for Claude Code, OpenAI Codex, Cursor, opencode, hermes-agent, OpenClaw, Aider, and anything that reads the [agents.md](https://agents.md/) convention.
 - **Multi-wiki registry** - one user, many wikis. Reach any registered wiki from any directory by slug.
 - **Wiki access verbs** - `query`, `read`, `search` (with `--include-raw` deep search), `sources` - plain text by default, `--json` for scripts and MCP.
 - **Claude Code skill** - `tng-wiki install-skill` teaches every session the verbs and when to use them. Zero token cost until invoked.
@@ -373,7 +373,7 @@ wiki/entities/openai.md  (1 marker)
 
 The agent walks each marker with the user - **accept / edit / reject / defer** - and removes it on resolution. Never auto-apply.
 
-The full Layer 2 workflow (triage order, per-claim outcomes, dependency chains between wiki pages, batching etiquette for large runs) is documented in every generated `AGENTS.md` under `## Operations → ### Grounding → Layer 2`. Agents follow that guidance directly.
+The full Layer 2 workflow (triage order, per-claim outcomes, dependency chains between wiki pages, batching etiquette for large runs) is documented in every scaffolded wiki's `.tng-wiki/doctrine/grounding.md`; the always-on `AGENTS.md` carries a compact `## Grounding` summary that points there. Agents follow that guidance directly.
 
 ### Layer 3 - authority validation (opt-in)
 
@@ -475,7 +475,7 @@ Give your agent the one-liner:
 claude "Read AGENTS.md, then do your wiki rounds"
 ```
 
-`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard - one count per category, zero-LLM - the anchor cron jobs and agents key off. When [verification-first](#two-canonical-flows) rejection logs exist (`deliverables/*_NOTES_*.md`), it adds an informational count so the audit artifact stays visible. Wikis with an `_inbox/` capture directory get an **inbox items pending triage** row (any file dropped there counts - captures are not markdown-only). The bundle is defined precisely in every generated `AGENTS.md` (`### Rounds`) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
+`tng-wiki rounds [--wiki <slug>] [--json]` prints the maintenance dashboard - one count per category, zero-LLM - the anchor cron jobs and agents key off. When [verification-first](#two-canonical-flows) rejection logs exist (`deliverables/*_NOTES_*.md`), it adds an informational count so the audit artifact stays visible. Wikis with an `_inbox/` capture directory get an **inbox items pending triage** row (any file dropped there counts - captures are not markdown-only). The bundle is defined precisely in every scaffolded wiki's `.tng-wiki/doctrine/operations.md` (`## Rounds` - the canonical procedure the schema and the skill both point at) so any session understands the phrase. Wire it to a cadence with the `schedule` skill or cron.
 
 Rounds also reports **ritual meta-health** - the maintenance loop itself can lapse while every marker reads clean. A closing line shows the age of the last `log.md` entry and the wiki repo's own uncommitted churn, and turns yellow only when both signals agree (log stale two weeks or more *and* uncommitted changes present):
 

@@ -5,7 +5,7 @@ import {
 import { basename, join, resolve } from 'path';
 import {
   generateAgentsMd, generateDoctrine, DOCTRINE_DIR, CANONICAL_SCHEMA_FILE,
-  SCHEMA_FENCE_CLOSE, SCHEMA_FENCE_OPEN_RE,
+  SCHEMA_FENCE_CLOSE, SCHEMA_FENCE_OPEN_RE, scopeSection, hasScopeSection,
 } from './agents/index.js';
 import { getTemplate, DOMAIN_KEYS } from './templates/index.js';
 import { installedVersion } from './version.js';
@@ -40,17 +40,34 @@ function headingsOf(content) {
   return [...content.matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
 }
 
+// Headings older generators emitted that the current one no longer does: the
+// 0.7.0 doctrine split moved "Marker Taxonomy" out of the schema; the 0.13.0
+// slimming (#52) retired the rest (procedures went to doctrine/operations.md,
+// derivable sections were cut). Legacy salvage must keep treating them as
+// generated, or every pre-slim wiki would carry stale generated prose forward
+// as if it were hand-authored.
+const RETIRED_HEADINGS = new Set([
+  'Marker Taxonomy',
+  'What This Is',
+  'Architecture',
+  'Page Conventions',
+  'Operations',
+  'Indexing',
+  'Logging',
+  'What You Never Do',
+  'Evolution',
+]);
+
 // Is `heading` one the generator has ever owned? The live set is derived from
 // the freshly generated schema (which automatically covers the current domain
 // section and conditional blocks like "Leads, Never Sources"), plus:
 //   - every `Domain: ...` heading, so re-domaining a wiki (--domain) treats the
 //     OLD domain's section as generated rather than salvaging it;
-//   - headings older generators emitted that the current one no longer does
-//     (the 0.7.0 doctrine split moved "Marker Taxonomy" out of the schema).
+//   - headings older generators emitted that the current one no longer does.
 function isGeneratedHeading(heading, currentHeadings) {
   if (currentHeadings.has(heading)) return true;
   if (/^Domain: /.test(heading)) return true;
-  return heading === 'Marker Taxonomy';
+  return RETIRED_HEADINGS.has(heading);
 }
 
 // Legacy (unfenced) salvage: return the full text of every `##` section whose
@@ -168,6 +185,16 @@ export function upgradeWiki(root, { domain: domainOverride = null, dryRun = fals
     }
   }
 
+  // Required Scope section (#52): hand-authored, below-fence, never rewritten.
+  // When the wiki doesn't have one yet, append a scaffold seeded from the
+  // manifest description (or the fill-me-in placeholder). `hasScopeSection`
+  // checks the merged result, so a user's existing Scope - above or below the
+  // fence, any heading level - is never duplicated.
+  const scopeAdded = !hasScopeSection(merged);
+  if (scopeAdded) {
+    merged = merged.trimEnd() + '\n' + scopeSection(manifest.description);
+  }
+
   // Alias plan: symlinks flow automatically; byte-identical copies are
   // refreshed; anything else was user-customized and is left alone (reported).
   const aliases = [];
@@ -185,7 +212,7 @@ export function upgradeWiki(root, { domain: domainOverride = null, dryRun = fals
   }
   if (legacyClaudeIsSource) aliases.push({ file: 'CLAUDE.md', action: 'converted-to-alias' });
 
-  const doctrine = generateDoctrine({ wikiName });
+  const doctrine = generateDoctrine({ wikiName, domain });
   const schemaVersion = installedVersion();
 
   // Post-merge sanity: the result must contain exactly one open + one close
@@ -202,6 +229,7 @@ export function upgradeWiki(root, { domain: domainOverride = null, dryRun = fals
     previousDomain,
     domainChanged: domainOverride !== null && domainOverride !== previousDomain,
     salvaged: salvaged.map((s) => s.heading),
+    scopeAdded,
     backup: oldContent !== null ? BACKUP_REL : null,
     doctrine: Object.keys(doctrine).map((f) => join(DOCTRINE_DIR, f)),
     aliases,
@@ -334,6 +362,9 @@ export async function runUpgrade(args) {
   if (result.salvaged.length > 0) {
     console.log(`  ${pc.cyan('Kept:')}     ${result.salvaged.length} hand-authored section(s) moved below the managed block:`);
     for (const h of result.salvaged) console.log(`             ${pc.dim('##')} ${h}`);
+  }
+  if (result.scopeAdded) {
+    console.log(`  ${pc.cyan('Scope:')}    ${verb} a \`## Scope\` section below the fence ${pc.dim('(hand-authored - replace the placeholder with one sentence on what this wiki covers)')}`);
   }
   console.log(`  ${pc.cyan('Doctrine:')} ${verb} ${result.doctrine.join(', ')}`);
   for (const a of result.aliases) {

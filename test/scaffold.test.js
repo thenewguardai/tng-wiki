@@ -38,11 +38,31 @@ test('scaffoldWiki creates the full base layout and writes AGENTS.md as canonica
   });
 });
 
+// #52: the Scope section is hand-authored, below-fence, and required.
+test('scaffoldWiki writes a below-fence Scope section: the given sentence, or the fill-me-in placeholder', () => {
+  inTmp((root) => {
+    scaffoldWiki(root, { domain: 'blank', agent: 'codex', wikiName: 'S', scope: 'Runbooks for host X.' });
+    const md = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+    const closeIdx = md.indexOf('<!-- /tng-wiki:schema -->');
+    const scopeIdx = md.indexOf('\n## Scope\n');
+    assert.ok(scopeIdx > closeIdx, 'Scope must sit below the closing fence (user territory)');
+    assert.match(md, /## Scope\n\nRunbooks for host X\.\n/);
+    // the scope sentence doubles as the manifest description (surfaced by connect)
+    const meta = JSON.parse(readFileSync(join(root, '.tng-wiki.json'), 'utf8'));
+    assert.equal(meta.description, 'Runbooks for host X.');
+  });
+  inTmp((root) => {
+    scaffoldWiki(root, { domain: 'blank', agent: 'codex', wikiName: 'S' });
+    const md = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+    assert.match(md, /## Scope\n\n_Fill this in/);
+  });
+});
+
 test('scaffoldWiki writes on-demand doctrine into .tng-wiki/doctrine/ and AGENTS.md points to it', () => {
   inTmp((root) => {
     scaffoldWiki(root, { domain: 'ai-research', agent: 'claude-code', wikiName: 'Demo' });
 
-    for (const name of ['grounding.md', 'markers.md']) {
+    for (const name of ['operations.md', 'grounding.md', 'markers.md']) {
       assert.ok(existsSync(join(root, '.tng-wiki', 'doctrine', name)), `missing doctrine file: ${name}`);
     }
 

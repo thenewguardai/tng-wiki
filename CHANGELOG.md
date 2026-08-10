@@ -4,6 +4,16 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **The generated always-on schema is slimmed to ~40 generic lines (#52).** Measured at ~215 lines / ~5k tokens of always-on context per session, most of it identical across wikis. What remains is gotchas and invariants only: citation syntax + the sources-frontmatter invariant, confidence tags / source tiers / the inflation rule, the compact marker legend, a 3-layer grounding summary, and guardrails (raw/ immutability, never-delete/never-invent, leases, the `_inbox/` contract). Cut as derivable: the architecture tree (`ls` says it), the log entry format (`tng-wiki log` emits it), the Indexing section (`ground` explains `index_header_drift`), the role-framing preamble (now one line), the empty blank-domain placeholder, and the in-fence Evolution changelog. The software-engineering domain section now points at its on-disk templates (`_adr-template.md`, `_incident-template.md`, `_scoring-criteria.md`) instead of restating their field lists. Rollout: `tng-wiki upgrade`.
+- **Procedures move to `.tng-wiki/doctrine/operations.md` (#52), single-sourcing the rounds protocol (#53).** Rounds / Ingest / Query / Lint (and the publication domain's Issue Prep / Post-Publish) now live in a third doctrine file, read when performing the operation rather than in every session's context. The rounds procedure was previously defined divergently - 7 steps in the skill (lockfile-aware) vs 5 in the schema (not) - the reconciled 7-step form (claim/sync → ingest+triage → lint → cite queue → reconcile → scoped `--update-lock` → index/log/report) is now stated once, in `operations.md`; the schema's Layout section and the skill's Rounds section point there and explicitly defer to it. The skill's grounding-layers summary likewise shrank to three lines + pointer. The `Types:` log-vocabulary line moved with the procedures; `schemaLogTypes` now falls back to `operations.md`, so a hand-authored `Types:` line below the AGENTS.md fence overrides the default.
+- **The `_inbox/` capture contract is generated, not hand-ported (#52).** Previously the contract existed only as a hand-authored below-fence section, ported by hand into each wiki that wanted it (four production copies had already drifted in three places). `operations.md` now carries the canonical contract (capture is cheap and owes nothing; librarian sessions triage to empty; the filing-destinations table; graduate-before-citing) and the schema's Guardrails keep a two-line summary + pointer.
+
+### Added
+- **Required hand-authored `## Scope` section (#52).** The audit's inversion finding: the generated block was byte-identical across wikis while the one thing only an always-on wiki file can provide - what the wiki is about - existed in one wiki out of four. `init` now prompts for a one-sentence scope (headless: `--scope`), writes it below the schema fence where upgrades never touch it, and seeds the manifest `description` (surfaced by `connect`) from the same sentence. `upgrade` appends the section when missing, seeded from the manifest description or a fill-me-in placeholder that tells the first agent session to ask the human for the real one.
+
 ## [0.12.0] - 2026-07-29
 
 ### Added

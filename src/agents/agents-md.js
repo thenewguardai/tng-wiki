@@ -1,4 +1,3 @@
-import { today } from '../templates/shared.js';
 import { installedVersion } from '../version.js';
 
 const DOMAIN_SECTIONS = {
@@ -243,6 +242,29 @@ export function schemaFenceOpen(domain) {
 // false-positive.
 export const SCHEMA_FENCE_OPEN_RE = /^<!-- tng-wiki:schema\b[^\n]*-->[ \t]*$/m;
 
+// The `## Scope` section lives BELOW the schema fence - hand-authored territory
+// the generator never rewrites. It's the one thing only this wiki's humans can
+// say: what the wiki is about and where its boundary sits (#52). init seeds it
+// from the scope prompt / --scope flag, upgrade appends it when missing, and
+// the placeholder tells the first session to demand a real one.
+export const SCOPE_PLACEHOLDER = '_Fill this in: one or two sentences on what this wiki covers and where its boundary sits. Agents: if this placeholder is still here, ask the human for the scope and write it - it is the one line only they can author._';
+
+export function scopeSection(scope) {
+  return `\n## Scope\n\n${(scope ?? '').trim() || SCOPE_PLACEHOLDER}\n`;
+}
+
+// Does `content` already carry a hand-authored Scope heading (any level)?
+export function hasScopeSection(content) {
+  return /^#{1,6} Scope\b/m.test(content);
+}
+
+// The always-on schema is deliberately lean (~40 generic lines): gotchas and
+// invariants only. Procedures (rounds / ingest / query / lint, the _inbox/
+// contract) live in .tng-wiki/doctrine/operations.md; the full grounding
+// protocol in doctrine/grounding.md; the marker taxonomy in doctrine/markers.md.
+// Everything derivable from the filesystem or the CLI itself (directory tree,
+// log entry format, index header semantics) is not restated here - `ls`,
+// `tng-wiki log`, and `tng-wiki ground` are their own single source.
 export function generateAgentsMd({ domain, wikiName, template, leadArchives = [] }) {
   const domainSchema = (DOMAIN_SECTIONS[domain] || blankSchema)();
   return `${schemaFenceOpen(domain)}
@@ -251,24 +273,16 @@ export function generateAgentsMd({ domain, wikiName, template, leadArchives = []
 
 ${PREAMBLE}
 
-${ARCHITECTURE(domain)}
+${LAYOUT}
 
-${PAGE_CONVENTIONS}
+${CITATIONS}
 
 ${MARKER_LEGEND}
 
-${domainSchema}
-
-${OPERATIONS(domain)}
-${leadArchives.length > 0 ? `\n${LEAD_ARCHIVES(leadArchives)}\n` : ''}
-${INDEXING}
-
-${LOGGING}
+${GROUNDING_SUMMARY}
 
 ${GUARDRAILS}
-
-${EVOLUTION}
-
+${domainSchema ? `\n${domainSchema}\n` : ''}${leadArchives.length > 0 ? `\n${LEAD_ARCHIVES(leadArchives)}\n` : ''}
 ${SCHEMA_FENCE_CLOSE}
 `;
 }
@@ -281,8 +295,9 @@ ${SCHEMA_FENCE_CLOSE}
 // dot-directories) - doctrine is operating instructions, not wiki content.
 export const DOCTRINE_DIR = '.tng-wiki/doctrine';
 
-export function generateDoctrine({ wikiName }) {
+export function generateDoctrine({ wikiName, domain = 'blank' }) {
   return {
+    'operations.md': OPERATIONS_DOCTRINE(domain, wikiName),
     'grounding.md': `# Grounding & Reconcile Doctrine - ${wikiName}
 
 _On-demand doctrine referenced from \`AGENTS.md\`. Read this before a Layer 2 (semantic) or Layer 3 (authority) grounding pass, or an interactive reconcile. Layer 1 (\`tng-wiki ground\`) needs nothing here._
@@ -310,106 +325,34 @@ ${MARKER_TAXONOMY}
   };
 }
 
-// --- Shared sections ---
+// --- Shared sections (always-on schema) ---
 
-const PREAMBLE = `## What This Is
+const PREAMBLE = `_An LLM-maintained knowledge base. You - the agent - maintain it: compile, cross-reference, lint, index, log. The human curates sources and directs analysis. The wiki is a persistent, compounding artifact - you never write from scratch, you build on what's already compiled._`;
 
-This is an LLM-maintained knowledge base. You - the LLM agent - maintain the wiki. The human curates sources, directs analysis, and asks questions. You do everything else: summarizing, cross-referencing, filing, linting, flagging contradictions, maintaining indexes, and keeping the knowledge base healthy.
+const LAYOUT = `## Layout & Doctrine
 
-**The wiki is a persistent, compounding artifact.** Every source ingested and every query answered makes it richer. You never write from scratch - you build on what's already compiled.
+- \`raw/\` - immutable source material. You read it, never modify it (one exception: set \`compiled: true\` in a source's frontmatter after ingesting it).
+- \`wiki/\` - the compiled knowledge base; you own it entirely. \`wiki/index.md\` is the master catalog - read it first for every query, keep it current. \`wiki/log.md\` is append-only; \`tng-wiki log\` emits the entry format.
+- \`.tng-wiki/doctrine/\` - on-demand operating doctrine; read the file for the operation you're about to perform: \`operations.md\` (rounds / ingest / query / lint procedures and the \`_inbox/\` contract - "do your rounds" means the Rounds procedure there), \`grounding.md\` (the Layer 2/3 verification + reconcile protocol), \`markers.md\` (full marker taxonomy).
+- The full CLI surface is one call away: \`tng-wiki help --json\` (every verb, flag, example) and \`tng-wiki doctor\` (this wiki's state + recommended next step). \`tng-wiki rounds\` is the maintenance dashboard.`;
 
-Obsidian is the IDE. You are the programmer. The wiki is the codebase.`;
+const CITATIONS = `## Citations
 
-function ARCHITECTURE(domain) {
-  return `## Architecture
-
-\`\`\`
-raw/          ← Immutable source material - you read, never modify
-wiki/         ← LLM-compiled, LLM-maintained - you own this entirely
-  index.md    ← Master table of contents (read first for every query)
-  log.md      ← Append-only operation log
-  meta/       ← Wiki health, coverage gaps, source stats
-output/       ← Query results, drafts, visualizations
-.tng-wiki/doctrine/  ← On-demand grounding + marker doctrine (read when you ground or reconcile)
-\`\`\`
-
-**Three layers:**
-- **Raw sources** - immutable. Articles, papers, transcripts, images. Your source of truth.
-- **The wiki** - your domain. Summaries, entity pages, concept pages, cross-references. You create, update, and maintain everything here.
-- **This schema** - operating instructions. Co-evolved by you and the human over time.`;
-}
-
-const PAGE_CONVENTIONS = `## Page Conventions
-
-### Frontmatter
-
-Every wiki page uses YAML frontmatter:
-
-\`\`\`yaml
----
-title: "Page Title"
-type: entity              # varies by domain - see domain-specific section
-created: ${today()}
-updated: ${today()}
-sources:                  # trust anchors for this page - raw paths or code authorities
-  - raw/papers/foo.md
-  - raw/announcements/bar.md
-  - code:legacy-app         # optional, when the page cites a code authority (see .tng-wiki.json)
-tags: []
-confidence: medium        # high | medium | low
-author: "<agent + session>"  # optional provenance: which agent/model wrote or last revised this page
----
-\`\`\`
-
-\`sources\` is the **trust anchor** of the page. Grounding workflows re-open every raw file and re-read every code authority listed here to verify the page's claims. An empty \`sources:\` list means the page has no verifiable attribution - that's an \`⚠️ UNSOURCED?\` state, not normal.
-
-\`author\` is **agent provenance**: when several agents (or several machines' sessions) maintain one wiki ecosystem, stamp who wrote or last revised the page (e.g. \`"work-machine session (claude-fable-5)"\`), and pass \`--author\` to \`tng-wiki log\` so log entries carry the same token. Optional by default; a wiki can make it required for designated page types (captures, exchange artifacts) by listing them in \`.tng-wiki.json → require_author_types\` - \`ground\` then flags those pages when \`author:\` is absent (\`missing_author\`, warn-level).
-
-### Per-Claim Citations
-
-Every factual claim must cite at least one authority inline using footnote-style syntax. Two citation forms are supported:
-
-**Raw-source citation** - the primary trust chain for \`raw/\`-derived claims:
+Every factual claim cites its authority inline, and every cited path also appears in the page's frontmatter \`sources:\` list (raw as \`raw/<path>\`, code as \`code:<authority>\`) - the invariant \`tng-wiki ground\` checks. Two citation forms, stackable:
 
 \`\`\`markdown
+---
+sources:                  # trust anchors - grounding re-reads everything listed here
+  - raw/announcements/2026-anthropic-series-f.md
+  - code:legacy-app       # when the page cites a code authority (.tng-wiki.json)
+---
 Anthropic raised $8B in Series F.[^raw/announcements/2026-anthropic-series-f.md]
+The login flow has no PKCE.[^raw/prd-auth.md][^code:legacy-app/src/auth/oauth.ts#L42-L58]
 \`\`\`
 
-**Code-authority citation** - for claims derived from or verified against a local code authority (see \`.tng-wiki.json → code_authorities\` and Layer 3B grounding):
+Raw is where the page *learned* a claim; \`code:<name>/<path>#L<start>-L<end>\` is the ground truth that *verifies* it (line anchor optional). An empty \`sources:\` list is an \`⚠️ UNSOURCED?\` state, not normal. \`author:\` frontmatter is optional agent provenance (pairs with \`tng-wiki log --author\`). Internal cross-references use \`[[wikilinks]]\` (lint-enforced). Cross-wiki links - \`[[<slug>:page]]\`, resolved via \`tng-wiki read <slug>:<page>\` - are references, never evidence: citations stay in-wiki.
 
-\`\`\`markdown
-The login flow uses OAuth2 implicit grant - no PKCE.[^code:legacy-app/src/auth/oauth.ts#L42-L58]
-\`\`\`
-
-- \`code:<authority>\` names a registered code authority.
-- \`<path>\` is the file within that authority's tree.
-- \`#L<start>-L<end>\` is a GitHub-style line anchor (optional; omit for whole-file claims, single-line: \`#L42\`). VS Code jumps to the line when the cite is a real link.
-
-Multiple citations stack: \`[^raw/a.md][^code:legacy-app/src/x.ts#L10-L20]\`. Pair raw + code when both apply - raw is where the page *learned* the claim, code is the ground truth that *verifies* it.
-
-Every path or authority cited inline must also appear in the frontmatter \`sources:\` list (raw as \`raw/<path>\`, code as \`code:<authority>\`) - that's the invariant \`tng-wiki ground\` checks. Claims without a citation are subject to \`⚠️ UNSOURCED?\` marking.
-
-### Writing Style
-
-- **Dense and scannable.** Use headers. Use tables. No fluff.
-- **Show your work.** Every claim cites at least one source or is marked as inference.
-- **Confidence markers** (inline, paired with the claim):
-  - \`[confirmed]\` - multiple Tier 1-2 sources agree
-  - \`[reported]\` - single Tier 1-2 source, or multiple Tier 3 sources
-  - \`[inference]\` - logical deduction from cited evidence
-  - \`[rumor]\` - Tier 4 only, treat with extreme caution
-- **Numbers always have sources.** Never state a figure without attribution.
-- Use Obsidian-style \`[[wikilinks]]\` for all internal cross-references. Lint-enforced: \`tng-wiki ground\` flags prose references to wiki pages - \`page.md\` inline-code tokens or markdown links - as \`prose_internal_ref\` with the wikilink to use instead.
-- **Cross-wiki links:** \`[[<wiki-slug>:page]]\` references a page in another registered wiki (resolve with \`tng-wiki read <slug>:<page>\`). The slug resolves through each machine's registry, so keep slugs consistent across machines - registering from the wiki's manifest name (the default) does this. \`ground\` flags a registered slug whose target page is missing (\`cross_wiki_broken\`, warn-level) and tallies links into wikis not registered locally as one informational note. Cross-wiki links do NOT count as inbound links for \`orphans\`, and they are references, never evidence: citations stay in-wiki (\`raw/\` or \`code:\`) - a cross-wiki cite is \`unknown_cite_root\`.
-
-### Source Quality Tiers
-
-- **Tier 1 - Primary:** Official announcements, filings, court docs, peer-reviewed papers
-- **Tier 2 - Quality reporting:** Established press with named sources, detailed expert analysis
-- **Tier 3 - Commentary:** Newsletters, substacks, credible practitioner social media
-- **Tier 4 - Aggregation/rumor:** Forums, anonymous sources, unverified claims
-
-Prefer Tier 1-2 for factual claims. Tier 3-4 inform narrative and sentiment - mark them as such. A \`[confirmed]\` tag on a claim whose only cited source is Tier 3/4 is confidence inflation - mark it \`⚠️ UNVERIFIED?\` during your Layer 2 grounding pass. (Judging a source's tier is a semantic call, so the structural \`tng-wiki ground\` command cannot flag this for you.)`;
+**Confidence tags**, inline with the claim: \`[confirmed]\` multiple Tier 1-2 sources agree / \`[reported]\` single Tier 1-2, or several Tier 3 / \`[inference]\` deduction from cited evidence / \`[rumor]\` Tier 4 only. **Source tiers:** 1 primary (official announcements, filings, papers) / 2 quality reporting / 3 newsletters, commentary / 4 forums, rumor. A \`[confirmed]\` backed only by Tier 3/4 is confidence inflation - mark it \`⚠️ UNVERIFIED?\` (a Layer 2 judgment; the structural pass cannot make it). Numbers always have sources.`;
 
 const MARKER_LEGEND = `## Markers
 
@@ -456,29 +399,45 @@ Inline markers make wiki health visible without running tools. Each has a specif
 
 Never auto-apply a \`⚠️ DRIFT?\` resolution without human approval. The marker exists precisely because the agent is uncertain which side is correct.`;
 
-function OPERATIONS(domain) {
+const GROUNDING_SUMMARY = `## Grounding
+
+Three layers, escalating in cost - run cheap before expensive:
+
+1. **Layer 1 - Structural (zero-LLM):** \`tng-wiki ground [--page <path>] [--at-ref]\` - attribution, citation, and index checks; with the committed citation lockfile (\`wiki/.tng-wiki.lock.json\`) it reports per-citation churn (\`cite_content_changed\` is the re-verification queue; \`ground --fix-moved\` repairs shifted anchors). \`ground --update-lock --page <p>\` records re-verified state - "verify one thing, lock one thing"; never bless content you haven't checked.
+2. **Layer 2 - Semantic (agent-driven):** you re-read each cited source against its claim; divergence becomes a \`⚠️ DRIFT?\` marker carrying its own evidence. This layer also owns confidence-tier judgment (\`⚠️ UNVERIFIED?\`).
+3. **Layer 3 - Authority validation (opt-in, scoped):** 3A web authorities (only URLs cited in the raw source or the per-wiki \`trusted_authorities\` allow-list - never free-range \`WebSearch\`) and 3B code authorities (a local codebase as advisory ground truth, cited \`[^code:<name>/<path>#L<start>-L<end>]\`).
+
+**Read \`.tng-wiki/doctrine/grounding.md\` before any Layer 2/3 or reconcile pass** - it carries the full protocol: the per-claim verification procedure and its outcomes, the \`⚠️ DRIFT?\` evidence format, ref-pinning, the verification-first flow and rejection log, and the interactive accept / edit / reject / defer reconcile loop.`;
+
+// Emitted into .tng-wiki/doctrine/operations.md - the canonical home of every
+// step-list procedure (#52/#53). AGENTS.md and the installed skill point here
+// instead of restating; when a procedure changes, it changes HERE only.
+function OPERATIONS_DOCTRINE(domain, wikiName) {
   const isPublication = domain === 'publication';
-  const hasOpportunities = ['ai-research', 'publication', 'competitive-intel'].includes(domain);
 
-  let ops = `## Operations
+  let ops = `# Operations - ${wikiName}
 
-_The full CLI surface is one call away: \`tng-wiki help --json\` (every command, flag, example) and \`tng-wiki doctor\` (this directory's state + recommended next step). Reach for those instead of probing each verb with \`--help\`._
+_On-demand doctrine referenced from \`AGENTS.md\` and the tng-wiki skill. This is the canonical procedure list - read the section for the operation you're about to perform. The full CLI surface: \`tng-wiki help --json\`; this wiki's state + recommended next step: \`tng-wiki doctor\`._
 
-### Rounds
+Every operation appends a \`wiki/log.md\` entry - \`tng-wiki log --type <t> --desc "..."\` emits the format. The type vocabulary (a wiki can override it with its own \`Types:\` line in \`AGENTS.md\`, below the fence):
+
+Types: \`ingest\`, \`query\`, \`lint\`, \`issue-prep\`, \`post-publish\`
+
+## Rounds
 
 "Rounds" is the named maintenance bundle. When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping", run it end to end and report a short summary:
 
-1. **Ingest** anything pending in \`raw/\` (uncompiled sources - \`tng-wiki sources --uncompiled\`).
-2. **Lint + ground**: run \`tng-wiki ground\`, \`orphans\`, \`unsourced\`, \`unverified\`, \`stale\`, \`drift\` (or \`tng-wiki rounds\` for every count at a glance).
-3. **Reconcile** what's safely reconcilable; leave the \`⚠️\` markers that need human judgment and surface them.
-4. **Update** \`wiki/index.md\` and append a \`wiki/log.md\` entry summarizing what changed.
-5. **Report** a short human-readable summary of what you did and what still needs the human.
+1. **Coordinate.** If other agent sessions may be active on this machine, \`tng-wiki claim\` first (advisory machine-local lease; \`release\` when done); if a mutating verb reports someone ELSE's lease, stop and coordinate instead of writing. On multi-machine wikis, \`tng-wiki sync\` next - fast-forward pull plus a per-wiki arrivals report; on a diverged repo, see the merge-conflict section of \`grounding.md\`.
+2. **Ingest** anything pending in \`raw/\` (\`tng-wiki sources --uncompiled\`), and triage anything sitting in \`_inbox/\` when the wiki has one (see the Inbox contract below; the rounds dashboard counts it).
+3. **Lint + ground:** \`tng-wiki rounds\` for every count at a glance, then \`ground\` / \`orphans\` / \`unsourced\` / \`unverified\` / \`stale\` / \`drift\` for detail.
+4. **Work the citation queue.** \`cite_content_changed\` findings are the per-citation re-verification queue - re-check each against its authority (\`tng-wiki cite show <page>\` puts each claim next to the exact lines it cites). \`tng-wiki ground --fix-moved\` repairs shifted \`#L\` anchors (safe: content unchanged).
+5. **Reconcile** what's safely reconcilable; leave the \`⚠️\` markers that need human judgment and surface them.
+6. **Re-lock.** After reconciling, \`tng-wiki ground --update-lock\` records the newly verified state in the lockfile - scope it with \`--page <p>\` when you only re-verified some pages ("verify one thing, lock one thing"; never bless content you haven't checked).
+7. **Close out.** Update \`wiki/index.md\`, append a \`wiki/log.md\` entry, and report what changed and what still needs the human.
 
 Run rounds when asked, or on a maintenance cadence (the user may wire it to cron or the \`schedule\` skill).
 
-**Concurrent sessions:** if other agent sessions may be active on this machine, \`tng-wiki claim\` before mutating and \`tng-wiki release\` when done - an advisory machine-local lease (\`rounds\` shows it; mutating verbs mention it). If a mutating verb reports someone ELSE's lease, stop and coordinate instead of writing. For multi-machine wikis synced over git, start rounds with \`tng-wiki sync\` (fast-forward pull + per-wiki arrivals report - \`_inbox/\` items to triage, new raw/ sources); on a diverged repo, see the merge-conflict section of \`.tng-wiki/doctrine/grounding.md\`.
-
-### Ingest
+## Ingest
 
 When the human drops a new source into \`raw/\` and asks you to process it:
 
@@ -495,7 +454,7 @@ The human prefers to ingest one source at a time and stay involved unless they s
 
 Some templates ship a **scaffold demo source** in \`raw/\` (marked \`compiled: false\`, opening with a \`> **Scaffold demo source.**\` note). It arrived with the scaffold, not via the human's clipper. Treat it like any pending source: compile it as your first ingest, or delete it if it is not relevant to this wiki - \`tng-wiki sources --uncompiled\` will keep surfacing it until you do one or the other.
 
-### Query
+## Query
 
 When the human asks a question:
 
@@ -505,7 +464,7 @@ When the human asks a question:
 4. **Choose the right format:** Quick answer in chat, substantial analysis in \`output/\`, comparison tables, Marp slides, or matplotlib charts.
 5. **File valuable outputs back.** If the answer is durable knowledge, ask: "Worth filing into the wiki?"
 
-### Lint
+## Lint
 
 When asked to health-check the wiki:
 
@@ -519,20 +478,25 @@ When asked to health-check the wiki:
 
 Output a lint report. Suggest specific actions.
 
-### Grounding
+## Inbox (\`_inbox/\` capture contract)
 
-Ground-truth the wiki against its sources. Three layers, escalating in cost - run them in order so cheap structural checks catch the easy problems before you pay for semantic re-reading:
+For wikis with an \`_inbox/\` directory - the cross-session capture surface:
 
-1. **Layer 1 - Structural (cheap, zero-LLM):** \`tng-wiki ground [--page <path>] [--at-ref] [--update-lock] [--fix-moved]\`. Catches missing/empty \`sources:\`, inline cites pointing at nonexistent raw files, declaration/citation mismatches, raw sources changed after a page's \`updated\` date, unknown/missing/excluded code authorities, out-of-range code anchors, \`index_header_drift\`, and - with a committed citation lockfile - per-citation churn (\`cite_content_changed\`, \`cite_moved\`, \`cite_moved_ambiguous\`, \`cite_unlocked\`). Apply the markers it implies and log the pass.
-2. **Layer 2 - Semantic (agent-driven):** you re-read each cited source and compare it against the claim; where they diverge, write a \`⚠️ DRIFT?\` marker that carries its own evidence. This layer also owns confidence-tier judgment (\`⚠️ UNVERIFIED?\`) - the structural pass cannot make it.
-3. **Layer 3 - Authority validation (opt-in, scoped):** 3A web authorities (only URLs cited in the raw source, or a per-wiki \`trusted_authorities\` allow-list - never free-range \`WebSearch\`) and 3B code authorities (a local codebase as advisory ground truth for reverse-engineering / porting / M&A wikis, cited \`[^code:<name>/<path>#L<start>-L<end>]\`).
+- **Capture is cheap.** Any session, opened anywhere, may drop a NEW file into \`_inbox/\` - a capture owes no grounding, no index entry, no log line. That is the entire point: zero friction at capture time.
+- **Filing is careful.** A session opened *in this wiki* is its librarian: triage \`_inbox/\` before finishing - distill verifiable claims into grounded \`wiki/\` pages, send dated point-in-time write-ups to \`deliverables/\` (wikis that keep one), move immutable captures to \`raw/\`. \`_inbox/\` should be empty when you leave, or carry only items you logged as deferred.
+- **Never a citable root.** A page that needs an inbox artifact as evidence graduates it first: \`tng-wiki graduate <item>\` moves it to \`raw/\` and prints the citable path (\`ground\` flags \`_inbox/\` cites as \`unknown_cite_root\`).
 
-**Read \`.tng-wiki/doctrine/grounding.md\` before any Layer 2/3 or reconcile pass.** It carries the full protocol Layer 1 does not: the per-claim verification procedure and its four outcomes, the \`⚠️ DRIFT?\` evidence format, ref-pinning (branch-track vs tag/SHA-pin) and the lockfile's \`resolved_sha\`, the verification-first flow and rejection log, dependency-chain rules, the web-authority priority order and failure modes, the code-authority scope filter (implementation only - ignore comments/docstrings/JSDoc), and the interactive accept / edit / reject / defer reconcile loop.`;
+| Content | Destination |
+|---|---|
+| Evergreen, verifiable knowledge | \`wiki/\` (grounded page, cited) |
+| Dated, point-in-time, or externally shared documents | \`deliverables/\` (wikis that keep one) |
+| Immutable inputs: captures, fixtures, specs | \`raw/\` (\`tng-wiki graduate\`) |
+| Unsure, or a capture arriving mid-session | leave in \`_inbox/\` for a later librarian session |`;
 
   if (isPublication) {
     ops += `
 
-### Issue Prep
+## Issue Prep
 
 When preparing a new issue:
 
@@ -544,7 +508,7 @@ When preparing a new issue:
 6. Generate a structured briefing of what moved, what matters, what's new
 7. Flag potential deep dive topics
 
-### Post-Publish
+## Post-Publish
 
 After publishing an issue:
 
@@ -589,46 +553,13 @@ A lead archive is **search surface, not trust surface** - typically AI-generated
   Form: \`<archive-name>:<relative-path-within-archive>\`. Purely informational ("distilled from lead X"). \`leads:\` entries are exempt from the \`sources:\` invariants - they need no inline citation and never count as attribution. \`tng-wiki ground\` warns (never errors) with \`missing_lead\` when the referenced file no longer exists (archives evolve) and \`unknown_lead_archive\` when the archive name isn't registered.`;
 }
 
-const INDEXING = `## Indexing
+const GUARDRAILS = `## Guardrails
 
-\`wiki/index.md\` is your primary navigation tool. It's a catalog of every page with a link, one-line summary, and metadata. Organized by category.
-
-**Always read \`index.md\` first** when answering queries. At moderate scale (~100s of pages), this is sufficient without embedding-based search.
-
-The scaffold header line (\`_Last updated: <date> | Total pages: <N> | Total sources: <M>_\`) is lint-checked: \`tng-wiki ground\` flags \`index_header_drift\` when the date or page count falls behind reality - page count = all \`wiki/**/*.md\` except \`index.md\`, \`log.md\`, and \`_\`-prefixed files (\`wiki/meta/*\` pages count).
-
-If QMD is available, use \`qmd query "..."\` via CLI or MCP for larger wikis.`;
-
-const LOGGING = `## Logging
-
-\`wiki/log.md\` is append-only. Format:
-
-\`\`\`markdown
-## [YYYY-MM-DDTHH:MM] type | Description
-- Source: path/to/source
-- Pages created: list
-- Pages updated: list
-- Notes: what happened
-\`\`\`
-
-Types: \`ingest\`, \`query\`, \`lint\`, \`issue-prep\`, \`post-publish\`
-
-\`tng-wiki log --type <t> --desc "..." [--source <p>]... [--created <pg>]... [--updated <pg>]... [--author "..."] [--notes "..."]\` emits this format - prefer it over hand-writing the entry.`;
-
-const GUARDRAILS = `## What You Never Do
-
-- **Never modify files in \`raw/\`.** Exception: setting \`compiled: true\` in frontmatter after processing.
-- **Never delete wiki pages.** Update with corrections. Archive if truly obsolete.
-- **Never invent sources.** Mark unsourced claims as \`[inference]\` or \`[unverified]\`.
-- **Never skip the log.** Every operation gets a \`log.md\` entry.
-- **Never skip the index.** Every new or changed page gets an \`index.md\` update.`;
-
-const EVOLUTION = `## Evolution
-
-This schema is a living document. As patterns emerge, suggest changes. Document agreed changes below.
-
-### Changelog
-- **${today()}:** Initial schema generated by tng-wiki CLI.`;
+- **Never delete wiki pages** - update with corrections, archive if truly obsolete. **Never invent sources** - an uncited claim is \`[inference]\` at best.
+- **Never skip the index or the log.** Every operation updates \`wiki/index.md\` and appends a \`wiki/log.md\` entry.
+- **Concurrent sessions:** \`tng-wiki claim\` before mutating, \`tng-wiki release\` when done (advisory machine-local lease); someone ELSE's lease means stop and coordinate. Multi-machine wikis: start with \`tng-wiki sync\`.
+- **\`_inbox/\` (when present):** any session may drop NEW captures - capture is cheap and owes no grounding, index, or log. A librarian session (opened in this wiki) triages it to empty. Never a citable root - \`tng-wiki graduate <item>\` moves a capture to \`raw/\` and prints the citable path. Full contract: \`.tng-wiki/doctrine/operations.md\`.
+- The \`## Scope\` section below the schema fence is hand-authored and load-bearing - the one thing only this wiki's humans can say. Keep it to a sentence or two, and keep it true.`;
 
 // --- Domain-specific sections ---
 
@@ -713,39 +644,17 @@ function businessOpsSchema() {
 function softwareEngineeringSchema() {
   return `## Domain: Software Engineering & Architecture
 
-### Page Types
+Page types. Where a type names an on-disk template or exemplar, that file is the source for the page's structure - read it before writing the page type; don't work from memory:
 
-**Decision pages** (\`wiki/decisions/\`) - Architecture Decision Records (ADRs). Each page uses the ADR template (\`wiki/decisions/_adr-template.md\`). Include: **status** (\`proposed\` → \`accepted\` → \`deprecated\` or \`superseded\`), **context** (forces and constraints), **decision** (what was chosen, with citations), **consequences** (positive / negative / neutral), **alternatives considered**, **links**. Track relationships via \`supersedes:\` and \`superseded-by:\` frontmatter fields so the lineage is queryable.
+- **Decision pages** (\`wiki/decisions/\`) - ADRs, structured per \`wiki/decisions/_adr-template.md\`. One decision per ADR; cross-link related ones. Statuses are intentional, not decorative: \`proposed\` → \`accepted\` → \`deprecated\` or \`superseded\`; track lineage with \`supersedes:\` / \`superseded-by:\` frontmatter (back-links bidirectional). Never delete an ADR - deprecation and supersession preserve the context that made the decision reasonable at the time.
+- **Component pages** (\`wiki/components/\`) - services, libraries, modules: purpose, API surface, dependencies, SLOs, linked runbooks, known tech debt. Ownership lives in \`wiki/meta/ownership.md\`, not per-page.
+- **System pages** (\`wiki/systems/\`) - component groupings: boundaries, data flow, failure modes.
+- **Pattern pages** (\`wiki/patterns/\`) - reusable approaches: when to use / when not to, tradeoffs, known instances.
+- **Incident pages** (\`wiki/incidents/\`) - postmortems per \`wiki/incidents/_incident-template.md\`; severity per \`wiki/meta/severity-taxonomy.md\`. Incidents always produce tech-debt entries for latent issues exposed, even when the immediate fix landed.
+- **Runbook pages** (\`wiki/runbooks/\`) - trigger, prerequisites, numbered copy-pastable steps, verification, rollback. Runbooks age fast - add \`⚠️ STALE?\` proactively if unexercised for two quarters.
+- **Tech debt pages** (\`wiki/tech-debt/\`) - scored on the impact × effort grid per \`wiki/tech-debt/_scoring-criteria.md\`.
 
-**Component pages** (\`wiki/components/\`) - Services, libraries, modules. Include: **purpose**, **API surface**, **upstream/downstream dependencies**, **data stores**, **SLOs** (availability / latency / throughput), **linked runbooks**, **known tech debt**, **recent decisions** that shaped the component. Ownership lives in \`wiki/meta/ownership.md\`, not per-page.
-
-**System pages** (\`wiki/systems/\`) - Higher-level groupings of components. Include: boundary definitions, data flow, cross-component interactions, failure modes.
-
-**Pattern pages** (\`wiki/patterns/\`) - Reusable approaches. Include: description, **when to use** / **when not to use**, **tradeoffs**, example implementations, known instances in the codebase.
-
-**Incident pages** (\`wiki/incidents/\`) - Postmortems following the incident template (\`wiki/incidents/_incident-template.md\`). Include: **severity** (P0-P3, see \`wiki/meta/severity-taxonomy.md\`), **timeline**, **root cause**, **contributing factors**, **resolution**, **action items** table with owners and status, links to any tech-debt items the incident exposed.
-
-**Runbook pages** (\`wiki/runbooks/\`) - Operational procedures for humans or agents. Include: **trigger** (when to run this), **prerequisites**, **steps** (numbered, copy-pastable), **verification**, **rollback**. Link from the owning component.
-
-**Tech debt pages** (\`wiki/tech-debt/\`) - Known compromises scored on the impact × effort grid (\`wiki/tech-debt/_scoring-criteria.md\`). Include: **impact** (Critical/High/Medium/Low), **effort** (S/M/L/XL), **what's blocked**, links to decisions that created or would resolve it.
-
-### ADR Status Lifecycle
-
-ADR statuses are intentional, not decorative:
-
-- \`proposed\` - under review. No downstream code/docs should depend on the outcome yet.
-- \`accepted\` - in effect. Record the acceptance date in the Status section.
-- \`deprecated\` - no longer the preferred approach, but not yet replaced. New work should avoid it.
-- \`superseded\` - replaced by a later ADR. Both ADRs get \`supersedes:\` / \`superseded-by:\` entries, and \`tng-wiki ground\` can verify the back-link is bidirectional.
-
-Never delete an ADR. Deprecation and supersession preserve the historical context that made the original decision reasonable at the time.
-
-### Operational Conventions
-
-- **One decision per ADR.** If a review generates multiple decisions, file multiple ADRs that cross-link.
-- **Cite the evidence.** Every ADR claim gets a \`[^raw/rfcs/...]\` or \`[^raw/prs/...]\` citation so grounding catches drift when the evidence moves.
-- **Incidents always produce tech-debt entries** for latent issues exposed, even when the immediate fix is landed - future-you needs the trail.
-- **Runbooks age fast.** Add \`⚠️ STALE?\` proactively if a runbook hasn't been exercised in two quarters.`;
+Cite the evidence: every ADR claim gets a \`[^raw/rfcs/...]\` or \`[^raw/prs/...]\` citation so grounding catches drift when the evidence moves.`;
 }
 
 function codeArchaeologySchema() {
@@ -852,10 +761,8 @@ function learningSchema() {
 **Question pages** (\`wiki/questions/\`) - Open questions to investigate. Include: the question, current best understanding, what would resolve it, priority.`;
 }
 
+// The blank domain adds nothing - structure should emerge from content, and an
+// empty "define your own page types" placeholder was pure boilerplate (#52).
 function blankSchema() {
-  return `## Domain: Custom
-
-### Page Types
-
-Define your own page types as the wiki grows. Start with simple topic pages and let structure emerge from the content.`;
+  return '';
 }

@@ -2,9 +2,11 @@
 // The generated schema specifies the shape (## [YYYY-MM-DDTHH:MM] type | desc
 // plus Source / Pages created / Pages updated / Notes); this helper appends a
 // correctly-formatted entry so librarian sessions stop hand-assembling it.
-// Valid types are domain-specific, so they are read from the wiki's own
-// AGENTS.md (`Types: ...` line) rather than hardcoded here; a wiki whose
-// schema omits the line accepts any type.
+// Valid types are wiki-declarable, so they are read from the wiki's own files
+// (`Types: ...` line) rather than hardcoded here: AGENTS.md / CLAUDE.md first
+// (a hand-authored line below the schema fence overrides), then the generated
+// .tng-wiki/doctrine/operations.md default (#52 moved it there). A wiki
+// declaring no line anywhere accepts any type.
 import { existsSync, readFileSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import pc from 'picocolors';
@@ -45,13 +47,14 @@ function positionals(args) {
 // The wiki schema's log-type vocabulary, or null when the schema doesn't
 // declare one (custom schema, stripped section) - null means accept anything.
 export function schemaLogTypes(wikiPath) {
-  for (const name of ['AGENTS.md', 'CLAUDE.md']) {
+  const candidates = ['AGENTS.md', 'CLAUDE.md', join('.tng-wiki', 'doctrine', 'operations.md')];
+  for (const name of candidates) {
     const p = join(wikiPath, name);
     if (!existsSync(p)) continue;
     let text;
     try { text = readFileSync(p, 'utf8'); } catch { continue; }
     const m = text.match(/^Types:\s*(.+)$/m);
-    if (!m) return null;
+    if (!m) continue; // no declaration in this file - try the next one
     const types = [...m[1].matchAll(/`([^`]+)`/g)].map((t) => t[1]);
     return types.length > 0 ? types : null;
   }

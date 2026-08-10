@@ -11,9 +11,55 @@ const ctx = { domain: 'ai-research', wikiName: 'Test Wiki', template: {} };
 test('generateAgentsMd produces an agent-neutral schema with no per-agent header', () => {
   const out = generateAgentsMd(ctx);
   assert.match(out, /^<!-- tng-wiki:schema /);
-  assert.match(out, /# Test Wiki\n\n## What This Is/);
+  assert.match(out, /# Test Wiki\n\n_An LLM-maintained knowledge base\./);
   assert.ok(!out.includes('designed for OpenAI Codex'));
   assert.ok(!out.includes('designed for Cursor'));
+});
+
+// #52: the always-on block is gotchas and invariants only. Procedures live in
+// doctrine/operations.md; derivable content (directory tree, log format,
+// indexing semantics) is not restated; the empty blank-domain placeholder and
+// the self-admitted-boilerplate Evolution changelog are gone.
+test('generateAgentsMd stays lean: no step-list procedures, no derivable sections (#52)', () => {
+  const out = generateAgentsMd({ ...ctx, domain: 'blank' });
+  for (const gone of ['## What This Is', '## Architecture', '## Page Conventions', '## Operations',
+    '## Indexing', '## Logging', '## Evolution', '## Domain: Custom', '### Rounds', '### Ingest']) {
+    assert.ok(!out.includes(gone), `retired section leaked back into the schema: ${gone}`);
+  }
+  // pointers to the operations doctrine and the maintenance trigger survive
+  assert.match(out, /\.tng-wiki\/doctrine\/operations\.md/);
+  assert.match(out, /do your rounds/);
+  // generic block stays lean - the whole point of the slimming
+  const lines = out.split('\n').length;
+  assert.ok(lines < 75, `blank-domain schema is ${lines} lines; the #52 budget is ~40 content lines (<75 raw)`);
+});
+
+test('generateDoctrine operations.md carries the canonical procedures (#52/#53)', () => {
+  const ops = generateDoctrine(ctx)['operations.md'];
+  for (const section of ['## Rounds', '## Ingest', '## Query', '## Lint', '## Inbox']) {
+    assert.ok(ops.includes(section), `operations.md missing ${section}`);
+  }
+  // the reconciled rounds procedure is the 7-step form: it knows about the
+  // lockfile blessing step and the cite_content_changed queue (#53)
+  assert.match(ops, /cite_content_changed/);
+  assert.match(ops, /--update-lock/);
+  assert.match(ops, /verify one thing, lock one thing/);
+  assert.match(ops, /tng-wiki claim/);
+  assert.match(ops, /tng-wiki sync/);
+  // the _inbox capture contract, absorbed from the hand-ported section (#52)
+  assert.match(ops, /Capture is cheap/);
+  assert.match(ops, /tng-wiki graduate <item>/);
+  assert.match(ops, /\| Content \| Destination \|/);
+  // the log-type vocabulary line schemaLogTypes parses
+  assert.match(ops, /^Types: `ingest`/m);
+});
+
+test('generateDoctrine operations.md carries publication ops only for the publication domain', () => {
+  const pub = generateDoctrine({ wikiName: 'P', domain: 'publication' })['operations.md'];
+  assert.match(pub, /## Issue Prep/);
+  assert.match(pub, /## Post-Publish/);
+  const plain = generateDoctrine(ctx)['operations.md'];
+  assert.ok(!plain.includes('## Issue Prep'));
 });
 
 test('generateAgentsMd fences the whole schema as a managed region', () => {
@@ -66,7 +112,7 @@ test('generateAgentsMd documents per-claim citations and sources as a path list'
 
 test('generateAgentsMd keeps a compact 3-layer grounding summary and defers the protocol to doctrine', () => {
   const out = generateAgentsMd(ctx);
-  assert.match(out, /### Grounding/);
+  assert.match(out, /## Grounding/);
   assert.match(out, /Layer 1 - Structural/);
   assert.match(out, /Layer 2 - Semantic/);
   assert.match(out, /Layer 3 - Authority validation/);
@@ -158,14 +204,18 @@ test('generateDoctrine grounding.md Layer 1 lists unknown_code_authority and mis
   assert.match(g, /missing_code_file/);
 });
 
-test('generateAgentsMd software-engineering domain has ADR + component + incident page types', () => {
+test('generateAgentsMd software-engineering domain points page types at their on-disk templates', () => {
   const out = generateAgentsMd({ ...ctx, domain: 'software-engineering' });
   assert.match(out, /Domain: Software Engineering & Architecture/);
   assert.match(out, /Decision pages.*wiki\/decisions/s);
   assert.match(out, /Component pages.*wiki\/components/s);
   assert.match(out, /Incident pages.*wiki\/incidents/s);
-  assert.match(out, /ADR Status Lifecycle/);
   assert.match(out, /supersedes/);
+  // #52: the templates are the source for page structure - the schema points,
+  // it does not restate their field lists
+  assert.match(out, /_adr-template\.md/);
+  assert.match(out, /_incident-template\.md/);
+  assert.match(out, /_scoring-criteria\.md/);
 });
 
 test('generateAgentsMd code-archaeology domain teaches the verification-first story', () => {

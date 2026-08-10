@@ -64,7 +64,7 @@ test('upgradeWiki (fenced) replaces the managed block and preserves user content
     assert.ok(upgraded.includes('## Repository-Specific Contract'), 'suffix below the fence must survive');
     assert.ok(upgraded.includes('| RCAs    | deliverables/ |'), 'suffix content byte-preserved');
     // regenerated block is present exactly once
-    assert.equal(upgraded.match(/## What This Is/g).length, 1);
+    assert.equal(upgraded.match(/## Guardrails/g).length, 1);
     // backup of the pre-upgrade file exists
     assert.equal(readFileSync(join(dir, result.backup), 'utf8').includes('## Repository-Specific Contract'), true);
     // manifest stamped
@@ -104,12 +104,12 @@ test('upgradeWiki (legacy) rebuilds generated sections and carries hand-authored
 
     const result = upgradeWiki(dir);
     assert.equal(result.mode, 'legacy');
-    assert.deepEqual(result.salvaged, ['Repository-Specific Contract']);
+    assert.deepEqual(result.salvaged, ['Scope', 'Repository-Specific Contract']);
 
     const upgraded = readFileSync(schemaPath, 'utf8');
     // now fenced, generated content exactly once, contract after the close marker
     assert.match(upgraded, SCHEMA_FENCE_OPEN_RE);
-    assert.equal(upgraded.match(/## What This Is/g).length, 1);
+    assert.equal(upgraded.match(/## Guardrails/g).length, 1);
     const closeIdx = upgraded.indexOf(SCHEMA_FENCE_CLOSE);
     assert.ok(upgraded.indexOf('## Repository-Specific Contract') > closeIdx, 'salvaged section sits below the managed block');
   } finally {
@@ -126,7 +126,7 @@ test('upgradeWiki (legacy) treats historical generator headings as generated, no
       + '\n## Marker Taxonomy\n\nOld inlined taxonomy text.\n';
     writeFileSync(schemaPath, legacy, 'utf8');
     const result = upgradeWiki(dir);
-    assert.deepEqual(result.salvaged, []);
+    assert.deepEqual(result.salvaged, ['Scope']);
     assert.ok(!readFileSync(schemaPath, 'utf8').includes('Old inlined taxonomy text.'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -183,7 +183,7 @@ test('upgradeWiki --dry-run reports the plan and writes nothing', () => {
     const result = upgradeWiki(dir, { dryRun: true });
     assert.equal(result.dryRun, true);
     assert.equal(result.mode, 'legacy');
-    assert.deepEqual(result.salvaged, ['Repository-Specific Contract']);
+    assert.deepEqual(result.salvaged, ['Scope', 'Repository-Specific Contract']);
 
     assert.equal(readFileSync(schemaPath, 'utf8'), before, 'schema untouched');
     assert.equal(readFileSync(join(dir, '.tng-wiki.json'), 'utf8'), manifestBefore, 'manifest untouched');
@@ -243,7 +243,7 @@ test('upgradeWiki converts a pre-AGENTS.md wiki (CLAUDE.md as the schema) to can
 
     const result = upgradeWiki(dir);
     assert.equal(result.mode, 'legacy');
-    assert.deepEqual(result.salvaged, ['Repository-Specific Contract']);
+    assert.deepEqual(result.salvaged, ['Scope', 'Repository-Specific Contract']);
     assert.ok(existsSync(join(dir, 'AGENTS.md')), 'canonical schema created');
     const claudeStat = lstatSync(join(dir, 'CLAUDE.md'));
     const claudeContent = readFileSync(join(dir, 'CLAUDE.md'), 'utf8');
@@ -336,10 +336,57 @@ test('upgradeWiki falls back to legacy salvage when the close marker was deleted
     writeFileSync(schemaPath, noClose, 'utf8');
     const result = upgradeWiki(dir);
     assert.equal(result.mode, 'legacy');
-    assert.deepEqual(result.salvaged, ['Repository-Specific Contract']);
+    assert.deepEqual(result.salvaged, ['Scope', 'Repository-Specific Contract']);
     const upgraded = readFileSync(schemaPath, 'utf8');
-    assert.equal(upgraded.match(/## What This Is/g).length, 1, 'no duplicated generated sections');
+    assert.equal(upgraded.match(/## Guardrails/g).length, 1, 'no duplicated generated sections');
     assert.equal(upgradeWiki(dir).fenceAnomaly, null, 'repaired file is clean on the next run');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- Scope (#52): required, hand-authored, appended when missing ---
+
+test('upgradeWiki appends a Scope section (seeded from manifest description) when the wiki has none', () => {
+  const dir = makeWiki();
+  try {
+    const schemaPath = join(dir, 'AGENTS.md');
+    // simulate a pre-Scope wiki: strip the scaffolded Scope section, keep a contract
+    const noScope = readFileSync(schemaPath, 'utf8').replace(/\n## Scope\n\n[^\n]*\n/, '') + '\n' + CONTRACT;
+    writeFileSync(schemaPath, noScope, 'utf8');
+    const m = manifest(dir);
+    m.description = 'Engineering decisions for the payments stack.';
+    writeFileSync(join(dir, '.tng-wiki.json'), JSON.stringify(m, null, 2) + '\n', 'utf8');
+
+    const result = upgradeWiki(dir);
+    assert.equal(result.scopeAdded, true);
+    const upgraded = readFileSync(schemaPath, 'utf8');
+    assert.match(upgraded, /## Scope\n\nEngineering decisions for the payments stack\.\n/);
+    assert.ok(upgraded.indexOf('\n## Scope\n') > upgraded.indexOf(SCHEMA_FENCE_CLOSE), 'Scope sits below the fence');
+    assert.ok(upgraded.indexOf('## Repository-Specific Contract') < upgraded.indexOf('\n## Scope\n'), 'existing user suffix preserved ahead of the appended Scope');
+
+    // second run: Scope exists, nothing appended, run is idempotent
+    const again = upgradeWiki(dir);
+    assert.equal(again.scopeAdded, false);
+    assert.equal(readFileSync(schemaPath, 'utf8'), upgraded);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('upgradeWiki does not duplicate an existing hand-authored Scope, and dry-run reports scopeAdded without writing', () => {
+  const dir = makeWiki();
+  try {
+    const schemaPath = join(dir, 'AGENTS.md');
+    const result = upgradeWiki(dir); // scaffold already carries Scope
+    assert.equal(result.scopeAdded, false);
+    assert.equal(readFileSync(schemaPath, 'utf8').match(/^## Scope$/gm).length, 1);
+
+    const noScope = readFileSync(schemaPath, 'utf8').replace(/\n## Scope\n\n[^\n]*\n/, '');
+    writeFileSync(schemaPath, noScope, 'utf8');
+    const dry = upgradeWiki(dir, { dryRun: true });
+    assert.equal(dry.scopeAdded, true);
+    assert.equal(readFileSync(schemaPath, 'utf8'), noScope, 'dry run writes nothing');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

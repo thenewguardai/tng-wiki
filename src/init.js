@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { resolve, join, isAbsolute } from 'path';
 import { mkdirSync, existsSync, writeFileSync, readFileSync, readdirSync, symlinkSync } from 'fs';
-import { generateAgentsMd, generateDoctrine, schemaLayout, CANONICAL_SCHEMA_FILE } from './agents/index.js';
+import { generateAgentsMd, generateDoctrine, schemaLayout, scopeSection, CANONICAL_SCHEMA_FILE } from './agents/index.js';
 import { getTemplate } from './templates/index.js';
 import { setupGit } from './integrations/git.js';
 import { setupQmd } from './integrations/qmd.js';
@@ -47,7 +47,7 @@ export function writeSchemaAlias(root, aliasName, canonical = CANONICAL_SCHEMA_F
   }
 }
 
-export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = [], leadArchives = [], intoExisting = false }) {
+export function scaffoldWiki(root, { domain, agent, wikiName, scope = '', codeAuthorities = [], leadArchives = [], intoExisting = false }) {
   const template = getTemplate(domain);
   const skipped = [];
 
@@ -66,16 +66,18 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
     mkdirSync(join(root, dir), { recursive: true });
   }
 
-  const schemaContent = generateAgentsMd({ domain, wikiName, template, leadArchives });
+  const schemaContent = generateAgentsMd({ domain, wikiName, template, leadArchives })
+    + scopeSection(scope);
   const { canonical, aliases } = schemaLayout(agent);
 
   putFile(canonical, schemaContent);
   const aliasResults = aliases.map(a => writeSchemaAlias(root, a, canonical, schemaContent));
 
-  // On-demand doctrine (grounding + markers) lives under .tng-wiki/doctrine/ so
-  // the always-on AGENTS.md stays lean and just points here. Committed and cloned
-  // with the wiki (not gitignored); skipped by search/ground (dot-directory).
-  for (const [name, content] of Object.entries(generateDoctrine({ wikiName }))) {
+  // On-demand doctrine (operations + grounding + markers) lives under
+  // .tng-wiki/doctrine/ so the always-on AGENTS.md stays lean and just points
+  // here. Committed and cloned with the wiki (not gitignored); skipped by
+  // search/ground (dot-directory).
+  for (const [name, content] of Object.entries(generateDoctrine({ wikiName, domain }))) {
     putFile(join('.tng-wiki', 'doctrine', name), content);
   }
 
@@ -112,8 +114,9 @@ export function scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities = 
       // re-stamps it; `tng-wiki doctor` compares it against the installed CLI.
       schema_version: installedVersion(),
       // One-line summary of what this wiki covers. Surfaced by `tng-wiki connect`
-      // into other repos' agent files. Empty by default — fill it in.
-      description: '',
+      // into other repos' agent files. Seeded from the init scope prompt/--scope;
+      // fill it in if empty (the AGENTS.md `## Scope` section is its long form).
+      description: (scope ?? '').trim(),
       created: new Date().toISOString(),
       // Web domains whose trust chain is authorized for Layer 3A authority validation.
       // Empty by default — agents can only fetch URLs already cited in raw sources
@@ -212,6 +215,7 @@ export function parseInitArgs(args) {
       case '--agent': opts.agent = value().trim(); break;
       case '--dir': opts.dir = value().trim(); break;
       case '--name': opts.name = value(); break;
+      case '--scope': opts.scope = value(); break;
       case '--code-authority': opts.codeAuthorities.push(value().trim()); break;
       case '--lead': opts.lead.push(value().trim()); break; // repeatable: --lead <name>=<path>
       default: opts.unknown.push(a);
@@ -259,7 +263,7 @@ async function runInitNonInteractive(opts) {
     console.error(pc.yellow('Warning:'), warning);
   }
 
-  const { canonical, skipped } = scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities, leadArchives, intoExisting: opts.intoExisting });
+  const { canonical, skipped } = scaffoldWiki(root, { domain, agent, wikiName, scope: opts.scope ?? '', codeAuthorities, leadArchives, intoExisting: opts.intoExisting });
 
   if (opts.git) await setupGit(root);
   if (opts.qmd) await setupQmd(root, wikiName);
@@ -333,6 +337,14 @@ async function runInitWizard(opts) {
   });
   if (p.isCancel(wikiName)) throw new Error('CANCELLED');
 
+  // --- Scope (#52): the one thing only a hand-authored line can say ---
+  const scope = await p.text({
+    message: 'One sentence: what does this wiki cover, and where does it stop? (written as the hand-authored Scope section in AGENTS.md)',
+    placeholder: 'e.g. "Runbooks, incidents, and OS knowledge for this host. Portable LLM knowledge goes to the shared wiki."',
+    defaultValue: '',
+  });
+  if (p.isCancel(scope)) throw new Error('CANCELLED');
+
   // --- Optional integrations ---
   const extras = await p.multiselect({
     message: 'Set up integrations?',
@@ -376,7 +388,7 @@ async function runInitWizard(opts) {
 
   s.start('Scaffolding wiki...');
 
-  const { template, canonical, aliases } = scaffoldWiki(root, { domain, agent, wikiName, codeAuthorities, leadArchives });
+  const { template, canonical, aliases } = scaffoldWiki(root, { domain, agent, wikiName, scope, codeAuthorities, leadArchives });
 
   s.message('Setting up integrations...');
 

@@ -1,11 +1,13 @@
 import {
   generateAgentsMd, generateDoctrine, DOCTRINE_DIR,
   SCHEMA_FENCE_CLOSE, SCHEMA_FENCE_OPEN_RE, schemaFenceOpen,
+  SCOPE_PLACEHOLDER, scopeSection, hasScopeSection,
 } from './agents-md.js';
 
 export {
   generateAgentsMd, generateDoctrine, DOCTRINE_DIR,
   SCHEMA_FENCE_CLOSE, SCHEMA_FENCE_OPEN_RE, schemaFenceOpen,
+  SCOPE_PLACEHOLDER, scopeSection, hasScopeSection,
 };
 
 const AGENT_ALIASES = {

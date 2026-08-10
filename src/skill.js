@@ -90,15 +90,9 @@ Lead hits are tagged \`[lead:<name>]\` in plain output and \`source:"lead", arch
 
 ## Grounding and drift reconciliation
 
-Wikis compound over time, which means claims drift - sources update, context changes, confidence inflates. tng-wiki ships a grounding pipeline:
+Wikis compound over time, which means claims drift - sources update, context changes, confidence inflates. Three escalating layers: **Layer 1 structural** (\`tng-wiki ground\` - zero-LLM pre-flight; with a committed lockfile it reports per-citation churn), **Layer 2 semantic** (you re-read each cited source against its claim; divergence becomes a \`⚠️ DRIFT?\` marker carrying its own evidence - never auto-applied), **Layer 3 authority validation** (opt-in: a web allow-list, or local \`code_authorities\` as advisory ground truth - never free-range web search).
 
-- **Layer 1 (structural, cheap):** \`tng-wiki ground\` finds attribution problems without reading semantically. Trust it as a pre-flight before bigger operations. Catches both raw-source issues and code-authority issues (\`unknown_code_authority\`, \`missing_code_file\`).
-- **Layer 2 (semantic):** You (the agent) re-read each raw source a page cites and compare against the wiki's claims. Where they diverge, write \`⚠️ DRIFT?\` markers with evidence: \`⚠️ DRIFT? [source: <path> says "<quote>"; wiki says "<claim>"; suggested: "<fix>"]\`. Never auto-apply the suggested fix - the marker is the surface for human review.
-- **Layer 3 (authority validation):** Two flavors, both opt-in:
-  - **3A - web:** When the user asks you to verify against live web authority. Use only URLs cited within the raw source, or a per-wiki \`trusted_authorities\` allow-list. **Never use free-range web search** - that's where confident-wrong comes from.
-  - **3B - code (filesystem):** For wikis built around a real codebase (reverse-engineering, porting, M&A integration). The wiki's \`.tng-wiki.json\` lists \`code_authorities\`; treat each as advisory ground truth. Use \`Read\` / \`Grep\` / \`Glob\` (or \`git show <ref>:<file>\` when the authority has a \`ref\` field set). Disregard comments / docstrings / JSDoc / markdown inside the tree - implementation only is authoritative. Cite with \`[^code:<authority>/<path>#L<start>-L<end>]\`. Disagreement always surfaces as \`⚠️ DRIFT?\` for human reconcile, never auto-applied.
-
-**Full protocol per wiki.** Each scaffolded wiki carries the complete grounding + reconcile doctrine - per-claim procedure, \`⚠️ DRIFT?\` evidence format, ref-pinning, verification-first flow - in \`.tng-wiki/doctrine/grounding.md\`. When you \`cd\` into a wiki to ground or reconcile, read that first; the wiki's \`AGENTS.md\` carries only a compact summary.
+**The full protocol lives in each wiki, not here:** \`.tng-wiki/doctrine/grounding.md\` carries the per-claim procedure, the \`⚠️ DRIFT?\` evidence format, ref-pinning, and the verification-first flow. When you \`cd\` into a wiki to ground or reconcile, read that first; the wiki's \`AGENTS.md\` carries only a compact summary.
 
 ### When to reach for grounding
 
@@ -109,31 +103,11 @@ Wikis compound over time, which means claims drift - sources update, context cha
 
 ### Reconcile workflow (when handling \`⚠️ DRIFT?\` markers)
 
-1. \`tng-wiki drift\` (or \`unsourced\` / \`unverified\`) to enumerate work
-2. For each page, \`tng-wiki read <path>\` to fetch content
-3. \`tng-wiki cite show <path>\` to see each claim next to the exact lines it cites - add \`--cite <n>\` to focus one citation and \`--at-ref\` to pin code authorities to their refs. This replaces re-hunting every cite by hand.
-4. For each marker, present to the user:
-   - The source evidence (already embedded in the marker, verifiable via \`cite show\`)
-   - The current wiki claim
-   - Your suggested fix (already embedded)
-5. Ask the user: **accept / edit / reject / defer**
-6. Apply the chosen action, remove the marker, bump \`updated\`, log to \`log.md\`
-
-Never auto-resolve a drift marker without human approval. The marker exists precisely because the wiki and the source disagree.
+Enumerate work with \`tng-wiki drift\` (or \`unsourced\` / \`unverified\`), fetch pages with \`read\`, and use \`tng-wiki cite show <page> [--cite <n>] [--at-ref]\` to see each claim next to the exact lines it cites instead of re-hunting by hand. Present each marker's evidence + current claim + suggested fix; the user chooses **accept / edit / reject / defer**. Never auto-resolve a drift marker without human approval - the full loop is in \`.tng-wiki/doctrine/grounding.md\`.
 
 ## Rounds (wiki maintenance)
 
-When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping", run the full maintenance bundle and report a short summary:
-
-1. If other sessions may be active on this machine, \`tng-wiki claim\` first (advisory lease; \`release\` when done). On multi-machine wikis, \`tng-wiki sync\` next - fast-forward pull plus a per-wiki arrivals report. Then ingest anything pending in \`raw/\` (\`tng-wiki sources --uncompiled\`), and triage anything sitting in \`_inbox/\` when the wiki has one (the rounds dashboard counts it).
-2. Run \`tng-wiki rounds\` for the lint counts at a glance, then \`ground\` / \`orphans\` / \`unsourced\` / \`unverified\` / \`stale\` / \`drift\` for detail.
-3. Review \`cite_content_changed\` findings - that is the per-citation re-verification queue; re-check each against the authority. Run \`tng-wiki ground --fix-moved\` to repair shifted \`#L\` anchors (safe: content unchanged).
-4. Reconcile what's safely reconcilable; surface the \`⚠️\` markers that need the user.
-5. After reconcile, finish with \`tng-wiki ground --update-lock\` to record the newly verified state in the lockfile.
-6. Update \`wiki/index.md\` and append a \`wiki/log.md\` entry.
-7. Report what changed and what still needs human judgment.
-
-Each wiki's \`AGENTS.md\` defines rounds precisely - \`cd\` into the wiki dir (from \`tng-wiki list\`) and follow it for the maintenance steps.
+When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping": the canonical procedure is the **Rounds section of the wiki's \`.tng-wiki/doctrine/operations.md\`** - \`cd\` into the wiki (path from \`tng-wiki list\`), read it, run it end to end, and report a short summary. In brief: coordinate (\`claim\` / \`sync\`) → ingest pending \`raw/\` and triage \`_inbox/\` → \`tng-wiki rounds\` dashboard plus lint verbs → work the \`cite_content_changed\` queue → reconcile → \`ground --update-lock\` (scoped \`--page\` when only some pages were re-verified) → update index, append log, report. Where this summary and the wiki's \`operations.md\` disagree, the doctrine file wins - it is the single source.
 
 **Schema upgrades.** When \`tng-wiki doctor\` reports a wiki's schema was generated by an older CLI, suggest \`tng-wiki upgrade --dry-run --wiki <slug>\` (then the real run). It regenerates \`AGENTS.md\` + \`.tng-wiki/doctrine/\` while preserving hand-authored sections; the previous schema is backed up to \`.tng-wiki/backup/AGENTS.md\`. Have the user review \`git diff\` before committing.
 
