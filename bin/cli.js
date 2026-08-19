@@ -130,6 +130,11 @@ async function main() {
       await runUpgrade(args);
       break;
     }
+    case 'split': {
+      const { runSplit } = await import('../src/split.js');
+      await runSplit(args);
+      break;
+    }
     case 'localize': {
       const { runLocalize } = await import('../src/localize.js');
       await runLocalize(args);

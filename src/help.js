@@ -221,6 +221,23 @@ export const COMMANDS = [
     examples: ['tng-wiki upgrade --dry-run', 'tng-wiki upgrade', 'tng-wiki upgrade --wiki research --domain code-archaeology'],
   },
   {
+    name: 'split', group: 'Scaffolding',
+    summary: 'Analyze extracting a subset of a wiki into its own wiki (dry-run only: what moves, which lock entries transplant, which links go cross-wiki)',
+    usage: 'tng-wiki split --pages <glob|zone> [--pages ...] --into <path> [--name <slug>] [--wiki <slug>] --dry-run [--json]',
+    args: [],
+    flags: [
+      { name: '--pages', value: '<glob|zone>', desc: 'repeatable: pages to extract, matched against paths under wiki/ - a page path, a stem path, or a zone directory (zones/compliance, entities/acme.md, systems/**)' },
+      { name: '--into', value: '<path>', desc: 'destination directory for the new wiki (need not exist; must be outside the source wiki)' },
+      { name: '--name', value: '<slug>', desc: 'registry slug for the destination (default: derived from the --into basename); used to preview [[slug:page]] rewrites' },
+      { name: '--dry-run', desc: 'required in this version - split only reports; the mutating split is not implemented yet' },
+      WIKI, JSON_FLAG,
+    ],
+    examples: [
+      'tng-wiki split --pages zones/compliance --into ../compliance-wiki --dry-run',
+      'tng-wiki split --pages "systems/kpom*" --pages entities/acme.md --into ~/wikis/kpom --name kpom --dry-run --json',
+    ],
+  },
+  {
     name: 'localize', group: 'Scaffolding',
     summary: 'Reconcile a shared wiki with THIS machine: remap or trust code authorities whose paths differ',
     usage: 'tng-wiki localize [path] [--wiki <slug>] [--set <name>=<path>]... [--trust <name>]... [--clear <name>]... [--yes] [--json]',

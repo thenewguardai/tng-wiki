@@ -126,6 +126,10 @@ tng-wiki upgrade    [path] [--wiki <slug>] [--domain <d>] [--dry-run] [--json]
 tng-wiki localize   [path] [--wiki <slug>] [--set <name>=<path>]... [--trust <name>]...
                                     # Reconcile a shared wiki with this machine:
                                     #   remap or trust code authorities (see Sharing)
+tng-wiki split      --pages <glob|zone> --into <path> --dry-run [--wiki <slug>] [--json]
+                                    # Analyze extracting a subset into its own wiki:
+                                    #   what moves, which lock entries transplant,
+                                    #   which links go cross-wiki (dry-run only)
 
 # Registry
 tng-wiki register [path]            # Register an existing wiki
