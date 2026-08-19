@@ -35,8 +35,20 @@ jobs:
       - run: npm ci
 
       # prepublishOnly gates on the full test suite + smoke; provenance
-      # attestation is generated automatically under trusted publishing
-      - run: npm publish
+      # attestation is generated automatically under trusted publishing.
+      # A local `npm publish` can beat this workflow to the registry (it did
+      # for v0.11.0-v0.13.0: the version landed on npm seconds after the tag
+      # push, before npm ci here even finished). Publishing over an existing
+      # version is impossible, so detect that case and skip cleanly - the
+      # point is that github-release below must still run either way.
+      - run: |
+          PKG=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -n "$(npm view "$PKG@$VERSION" version 2>/dev/null)" ]; then
+            echo "$PKG@$VERSION is already on npm - skipping publish"
+          else
+            npm publish
+          fi
 
   # Keep GitHub Releases in lockstep with npm: after a successful publish,
   # create the release for this tag with its CHANGELOG section as the notes.

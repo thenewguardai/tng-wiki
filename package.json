@@ -21,7 +21,7 @@
   ],
   "author": "The New Guard <hello@thenewguard.ai>",
   "license": "MIT",
-  "homepage": "https://thenewguard.ai/features/llm-wiki-guide",
+  "homepage": "https://thenewguard.ai/projects/tng-wiki/",
   "repository": {
     "type": "git",
     "url": "https://github.com/thenewguardai/tng-wiki"
