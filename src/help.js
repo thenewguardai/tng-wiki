@@ -106,6 +106,19 @@ export const COMMANDS = [
     examples: ['tng-wiki search "openai"', 'tng-wiki search "PKCE" --include-raw', 'tng-wiki search "quantization" --all-wikis'],
   },
   {
+    name: 'dismiss', group: 'Wiki access',
+    summary: 'Record that a raw/ source was reviewed and nothing was worth compiling (leaves the ingest queue)',
+    usage: 'tng-wiki dismiss raw/<path> --reason "<why>" [--by <who>] [--undo] [--wiki <slug>] [--json]',
+    args: [{ name: 'raw/<path>', required: true, desc: 'the source, as listed by tng-wiki sources' }],
+    flags: [
+      { name: '--reason', value: '"<why>"', desc: 'required: why nothing was worth compiling (recorded in .tng-wiki/dismissals.json)' },
+      { name: '--by', value: '<who>', desc: 'optional attribution (agent/session or human)' },
+      { name: '--undo', desc: 'remove the dismissal - the source returns to the ingest queue' },
+      WIKI, JSON_FLAG,
+    ],
+    examples: ['tng-wiki dismiss raw/captures/dup-notes.md --reason "superseded by the 08-14 capture"'],
+  },
+  {
     name: 'graduate', group: 'Wiki access',
     summary: 'Move an _inbox/ capture into raw/ so pages can cite it (_inbox/ is not a citable root)',
     usage: 'tng-wiki graduate <inbox-item> [--to raw/<dir>] [--as <filename>] [--wiki <slug>] [--json]',
@@ -156,9 +169,9 @@ export const COMMANDS = [
     examples: ['tng-wiki log --type ingest --desc "compiled Q3 brief" --source raw/briefs/q3.md --updated wiki/roadmap.md'],
   },
   {
-    name: 'sources', group: 'Wiki access', summary: 'List raw sources, each annotated with how many pages actually cite it',
+    name: 'sources', group: 'Wiki access', summary: 'List raw sources; compiled-state is derived from citations, never a flag',
     usage: 'tng-wiki sources [--uncompiled] [--wiki <slug>] [--json]',
-    args: [], flags: [{ name: '--uncompiled', desc: 'only sources not yet marked compiled; cited-by counts separate the real ingest queue from bookkeeping lag' }, WIKI, JSON_FLAG],
+    args: [], flags: [{ name: '--uncompiled', desc: 'only pending sources (cited by no page, not dismissed) - the ingest queue' }, WIKI, JSON_FLAG],
     examples: ['tng-wiki sources --uncompiled'],
   },
   {

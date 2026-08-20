@@ -331,7 +331,7 @@ const PREAMBLE = `_An LLM-maintained knowledge base. You - the agent - maintain 
 
 const LAYOUT = `## Layout & Doctrine
 
-- \`raw/\` - immutable source material. You read it, never modify it (one exception: set \`compiled: true\` in a source's frontmatter after ingesting it).
+- \`raw/\` - immutable source material. You read it, never modify it - no exceptions. A source counts as compiled the moment a page cites it (state is derived, not stamped); \`tng-wiki dismiss\` records the reviewed-but-nothing-worth-compiling verdict.
 - \`wiki/\` - the compiled knowledge base; you own it entirely. \`wiki/index.md\` is the master catalog - read it first for every query, keep it current. \`wiki/log.md\` is append-only; \`tng-wiki log\` emits the entry format.
 - \`.tng-wiki/doctrine/\` - on-demand operating doctrine; read the file for the operation you're about to perform: \`operations.md\` (rounds / ingest / query / lint procedures and the \`_inbox/\` contract - "do your rounds" means the Rounds procedure there), \`grounding.md\` (the Layer 2/3 verification + reconcile protocol), \`markers.md\` (full marker taxonomy).
 - The full CLI surface is one call away: \`tng-wiki help --json\` (every verb, flag, example) and \`tng-wiki doctor\` (this wiki's state + recommended next step). \`tng-wiki rounds\` is the maintenance dashboard.`;
@@ -452,7 +452,9 @@ When the human drops a new source into \`raw/\` and asks you to process it:
 
 The human prefers to ingest one source at a time and stay involved unless they say otherwise.
 
-Some templates ship a **scaffold demo source** in \`raw/\` (marked \`compiled: false\`, opening with a \`> **Scaffold demo source.**\` note). It arrived with the scaffold, not via the human's clipper. Treat it like any pending source: compile it as your first ingest, or delete it if it is not relevant to this wiki - \`tng-wiki sources --uncompiled\` will keep surfacing it until you do one or the other.
+There is no compiled flag to stamp and \`raw/\` is never edited: the citations you added in step 4 are what mark the source compiled (\`tng-wiki sources\` derives state from them). If a source turns out to have nothing worth compiling - redundant, superseded, out of scope - record that verdict instead: \`tng-wiki dismiss raw/<path> --reason "<why>"\`. It leaves the ingest queue without pretending it was compiled, and \`--undo\` reverses it. A \`compiled:\` flag you find in older sources is inert history - never consult it, never remove it.
+
+Some templates ship a **scaffold demo source** in \`raw/\` (opening with a \`> **Scaffold demo source.**\` note). It arrived with the scaffold, not via the human's clipper. Treat it like any pending source: compile it as your first ingest, or delete it if it is not relevant to this wiki - \`tng-wiki sources --uncompiled\` will keep surfacing it until you do one or the other.
 
 ## Query
 

@@ -214,28 +214,50 @@ export function rawCiters(wikiPath) {
   return citers;
 }
 
-// The flag and the citations disagree in both directions in the wild (#55):
-// each source carries both facts plus the quadrant they land in, so the
-// renderer (and rounds) can separate the real ingest queue from bookkeeping
-// lag and surface flagged-but-load-bearing-nothing sources.
+// #54 (design decision, 2026-08-20): compiled-state is DERIVED, not stored. A
+// source is compiled iff a groundable page cites it - the fact the engine can
+// verify - never because a frontmatter flag says so. The one state citations
+// cannot express ("reviewed, nothing worth compiling") lives in a small
+// explicit sidecar written only by `tng-wiki dismiss`. Legacy in-file
+// `compiled:` flags are inert history: surfaced as `legacy_flag` for triage,
+// never consulted for status, never cleaned up (that would be raw/ churn).
+export const DISMISSALS_RELPATH = '.tng-wiki/dismissals.json';
+
+// The dismissed map (raw rel path -> {reason, date, by?}). Absent file = no
+// dismissals; a corrupt file throws with the path rather than silently
+// resurrecting every dismissed source into the queue.
+export function readDismissals(wikiPath) {
+  const p = join(wikiPath, DISMISSALS_RELPATH);
+  if (!existsSync(p)) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(p, 'utf8'));
+  } catch (err) {
+    throw new Error(`${DISMISSALS_RELPATH} is not valid JSON (${err.message}) - fix or delete it.`);
+  }
+  return parsed?.dismissed ?? {};
+}
+
 export function listSources(wikiPath, { uncompiledOnly = false } = {}) {
   const rawDir = join(wikiPath, 'raw');
   const citers = rawCiters(wikiPath);
+  const dismissals = readDismissals(wikiPath);
   const results = [];
   for (const file of walkMd(rawDir)) {
     const content = readFileSync(file, 'utf8');
     const fm = parseScalars(splitFrontmatter(content).frontmatter);
-    const compiled = fm.compiled === true;
-    if (uncompiledOnly && compiled) continue;
     const rel = relative(wikiPath, file);
     const citedBy = citers.get(rel)?.size ?? 0;
+    const dismissed = dismissals[rel] ?? null;
+    const status = citedBy > 0 ? 'compiled' : dismissed ? 'dismissed' : 'pending';
+    if (uncompiledOnly && status !== 'pending') continue;
     results.push({
       path: rel,
-      compiled,
+      status,
+      compiled: status === 'compiled',
       cited_by: citedBy,
-      status: compiled
-        ? (citedBy > 0 ? 'ok' : 'flagged_uncited')
-        : (citedBy > 0 ? 'cited_unflagged' : 'pending'),
+      dismissed,
+      legacy_flag: typeof fm.compiled === 'boolean' ? fm.compiled : null,
       title: fm.title ?? null,
       type: fm.type ?? null,
     });
@@ -374,13 +396,15 @@ export function roundsReport(wikiPath) {
   // bucket so `ground` stays the hard-failure count.
   const convention = ground.issues.filter((i) => WARN_ISSUES.has(i.issue) || i.level === 'warn').length;
   const inboxItems = listInboxItems(wikiPath);
-  const uncompiledSources = listSources(wikiPath, { uncompiledOnly: true });
+  // #54/#55: `uncompiled` counts pending sources under the DERIVED definition
+  // (uncited and not dismissed) - the real ingest queue, not the flag's belief.
+  const pendingSources = listSources(wikiPath, { uncompiledOnly: true });
   return {
     scanned: ground.scanned,
-    uncompiled: uncompiledSources.length,
-    // #55: how many of those are already cited by pages - bookkeeping lag, not
-    // ingest work. The dashboard number read twice its real size without this.
-    uncompiled_cited: uncompiledSources.filter((s) => s.cited_by > 0).length,
+    uncompiled: pendingSources.length,
+    // rollout triage signal: pending sources whose legacy in-file flag claims
+    // compiled - someone marked them done, yet no page rests on them.
+    pending_flagged: pendingSources.filter((s) => s.legacy_flag === true).length,
     // null = wiki has no _inbox/ capture dir (most domains); a number = pending triage
     inbox: inboxItems === null ? null : inboxItems.length,
     ground: ground.issues.length - convention,

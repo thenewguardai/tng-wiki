@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import pc from 'picocolors';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, relative, resolve } from 'path';
-import { resolveWiki, listInboxItems, ritualReport } from './verbs.js';
+import { resolveWiki, listInboxItems, ritualReport, listSources } from './verbs.js';
 import { walkMd } from './paths.js';
 import { isGroundable } from './ground.js';
 
@@ -43,7 +43,9 @@ export function computeStatus(root) {
   }
 
   const staleCount = countPattern(join(root, 'wiki'), /⚠️ STALE\?/g);
-  const uncompiledCount = countPattern(join(root, 'raw'), /compiled: false/g);
+  // #54: derived pending count (uncited + not dismissed), same definition as
+  // rounds - the in-file compiled: flag is inert history.
+  const uncompiledCount = listSources(root, { uncompiledOnly: true }).length;
   // Pending capture-dir triage (null = wiki has no _inbox/); mirrors rounds
   const inboxItems = listInboxItems(root);
   const inboxCount = inboxItems === null ? null : inboxItems.length;

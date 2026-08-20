@@ -40,7 +40,6 @@ export const publicationTemplate = {
       date: '2026-04-03',
       clipped: today(),
       type: 'social',
-      compiled: false,
       tags: ['knowledge-management', 'llm-tooling', 'karpathy'],
     })}
 # LLM Knowledge Bases - Andrej Karpathy

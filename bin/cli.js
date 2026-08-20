@@ -150,6 +150,11 @@ async function main() {
       await runGround(args);
       break;
     }
+    case 'dismiss': {
+      const { runDismiss } = await import('../src/dismiss.js');
+      await runDismiss(args);
+      break;
+    }
     case 'graduate': {
       const { runGraduate } = await import('../src/graduate.js');
       await runGraduate(args);

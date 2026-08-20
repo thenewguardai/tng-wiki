@@ -38,7 +38,6 @@ export const aiResearchTemplate = {
       date: '2026-04-03',
       clipped: today(),
       type: 'social',
-      compiled: false,
       tags: ['knowledge-management', 'obsidian', 'llm-tooling', 'karpathy'],
     })}
 # LLM Knowledge Bases - Andrej Karpathy

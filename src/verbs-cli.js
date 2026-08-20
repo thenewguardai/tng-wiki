@@ -140,26 +140,25 @@ export async function runSources(args) {
   const wiki = wikiFromArgs(args);
   const sources = listSources(wiki.path, { uncompiledOnly: args.includes('--uncompiled') });
   maybeJson(args, { wiki: wiki.slug, sources }, () => {
-    // #55: the flag records belief, citations record use - annotate every line
-    // with the verifiable fact so the two can be told apart at a glance.
+    // #54: compiled-state is derived - a source is compiled iff a page cites
+    // it, dismissed iff a recorded verdict says nothing was worth compiling,
+    // pending otherwise. The legacy in-file flag is inert history, surfaced
+    // only where it disagrees with reality (a pending source that claims done).
     for (const s of sources) {
-      const status = s.compiled ? pc.dim('[compiled]  ') : pc.yellow('[uncompiled]');
-      const cited = s.status === 'flagged_uncited'
-        ? `  ${pc.yellow('⚠ cited by nothing — marked compiled but no page rests on it')}`
-        : s.status === 'cited_unflagged'
-          ? `  ${pc.cyan(`cited by ${s.cited_by} page${s.cited_by === 1 ? '' : 's'} — flag lags reality`)}`
-          : s.cited_by > 0 ? `  ${pc.dim(`cited by ${s.cited_by}`)}` : '';
+      const tag = s.status === 'compiled' ? pc.dim('[compiled] ')
+        : s.status === 'dismissed' ? pc.cyan('[dismissed]')
+        : pc.yellow('[pending]  ');
+      const note = s.status === 'compiled' ? `  ${pc.dim(`cited by ${s.cited_by}`)}`
+        : s.status === 'dismissed' ? `  ${pc.dim(`${s.dismissed.date}: ${s.dismissed.reason}`)}`
+        : s.legacy_flag === true ? `  ${pc.yellow('⚠ legacy compiled: flag, but no page cites it — compile or dismiss')}` : '';
       const title = s.title ? `  ${pc.dim('-')} ${s.title}` : '';
-      process.stdout.write(`${status} ${s.path}${title}${cited}\n`);
+      process.stdout.write(`${tag} ${s.path}${title}${note}\n`);
     }
     const pending = sources.filter((s) => s.status === 'pending').length;
-    const lag = sources.filter((s) => s.status === 'cited_unflagged').length;
-    const uncited = sources.filter((s) => s.status === 'flagged_uncited').length;
-    if (sources.length > 0 && (lag > 0 || uncited > 0)) {
-      const parts = [`${pending} pending (real ingest queue)`];
-      if (lag > 0) parts.push(`${lag} cited but unflagged (bookkeeping lag)`);
-      if (uncited > 0) parts.push(`${uncited} flagged compiled but cited by nothing`);
-      process.stdout.write(pc.dim(`\n${parts.join(' · ')}\n`));
+    const flagged = sources.filter((s) => s.status === 'pending' && s.legacy_flag === true).length;
+    if (sources.length > 0 && pending > 0) {
+      const legacy = flagged > 0 ? ` · ${flagged} carry a legacy compiled: flag no citation backs` : '';
+      process.stdout.write(pc.dim(`\n${pending} pending (ingest queue)${legacy}\n`));
     }
   });
 }
@@ -353,12 +352,12 @@ export async function runRounds(args) {
       const count = n > 0 ? pc.yellow(String(n).padStart(3)) : pc.green('  0');
       process.stdout.write(`  ${count}  ${label}${n > 0 ? pc.dim(`  ${hint}`) : ''}\n`);
     };
-    // #55: split bookkeeping lag out of the headline so the real ingest queue
-    // reads at its true size (a flag-only count measured 2x reality in the wild).
-    const ingestHint = r.uncompiled_cited > 0
-      ? `${r.uncompiled_cited} already cited (flag lag) · tng-wiki sources --uncompiled`
+    // #54: the count is derived (uncited + not dismissed), so it IS the real
+    // queue; the hint flags legacy compiled: claims no citation backs.
+    const ingestHint = r.pending_flagged > 0
+      ? `${r.pending_flagged} claim a legacy compiled: flag · tng-wiki sources --uncompiled`
       : 'tng-wiki sources --uncompiled';
-    row('uncompiled sources (ingest)', r.uncompiled, ingestHint);
+    row('pending sources (ingest)', r.uncompiled, ingestHint);
     // Only wikis with an _inbox/ capture dir get the row — r.inbox is null elsewhere
     if (r.inbox !== null) row('inbox items pending triage (_inbox/)', r.inbox, 'file into wiki/ · deliverables/ · raw/');
     row('ground issues', r.ground, 'tng-wiki ground');

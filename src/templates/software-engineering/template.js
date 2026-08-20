@@ -39,7 +39,6 @@ export const softwareEngineeringTemplate = {
       date: '2026-04-14',
       clipped: today(),
       type: 'rfc',
-      compiled: false,
       tags: ['rfc', 'schema', 'agents-md', 'scaffold-demo'],
     })}
 # RFC: Adopt AGENTS.md as the canonical agent schema

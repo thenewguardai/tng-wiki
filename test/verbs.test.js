@@ -309,50 +309,76 @@ test('searchWiki with regex interprets the pattern', () => {
 
 // --- listSources ---
 
-test('listSources returns raw files with compiled/title/type parsed from frontmatter', () => {
+test('listSources parses title/type and surfaces the legacy flag as inert history', () => {
   const dir = makeWiki();
   try {
     writePage(dir, 'raw/papers/alpha.md', '---\ntitle: Alpha Paper\ncompiled: false\ntype: paper\n---\nbody');
     writePage(dir, 'raw/papers/beta.md', '---\ntitle: Beta Paper\ncompiled: true\n---\nbody');
+    writePage(dir, 'raw/papers/gamma.md', '---\ntitle: Gamma\n---\nbody');
     const all = listSources(dir);
-    assert.equal(all.length, 2);
+    assert.equal(all.length, 3);
     const alpha = all.find(s => s.path.endsWith('alpha.md'));
-    assert.equal(alpha.compiled, false);
     assert.equal(alpha.title, 'Alpha Paper');
     assert.equal(alpha.type, 'paper');
+    assert.equal(alpha.legacy_flag, false);
+    assert.equal(all.find(s => s.path.endsWith('beta.md')).legacy_flag, true);
+    assert.equal(all.find(s => s.path.endsWith('gamma.md')).legacy_flag, null);
 
-    const uncompiled = listSources(dir, { uncompiledOnly: true });
-    assert.equal(uncompiled.length, 1);
-    assert.ok(uncompiled[0].path.endsWith('alpha.md'));
+    // #54: nothing is cited, so ALL are pending - the legacy flag decides nothing
+    assert.equal(listSources(dir, { uncompiledOnly: true }).length, 3);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-// #55: the flag records belief, citations record use - listSources carries
-// both facts plus the quadrant, so the flag can no longer lie unobserved.
-test('listSources cross-references citations: cited_by counts and the four statuses (#55)', () => {
+// #54: compiled-state is derived - compiled iff cited by a groundable page,
+// dismissed iff a recorded verdict exists, pending otherwise. A citation
+// outranks both the legacy flag and a dismissal.
+test('listSources derives status from citations and the dismissals sidecar (#54)', () => {
   const dir = makeWiki();
   try {
-    writePage(dir, 'raw/a-pending.md', '---\ntitle: A\ncompiled: false\n---\nbody');
-    writePage(dir, 'raw/b-lag.md', '---\ntitle: B\ncompiled: false\n---\nbody');
-    writePage(dir, 'raw/c-uncited.md', '---\ntitle: C\ncompiled: true\n---\nbody');
-    writePage(dir, 'raw/d-ok.md', '---\ntitle: D\ncompiled: true\n---\nbody');
-    writePage(dir, 'wiki/p1.md', '---\ntitle: P1\nsources:\n  - raw/b-lag.md\n---\nclaim.[^raw/b-lag.md] more.[^raw/d-ok.md]');
-    writePage(dir, 'wiki/p2.md', '---\ntitle: P2\nsources:\n  - raw/b-lag.md\n---\nclaim.[^raw/b-lag.md]');
+    writePage(dir, 'raw/a-pending.md', '---\ntitle: A\n---\nbody');
+    writePage(dir, 'raw/b-cited.md', '---\ntitle: B\ncompiled: false\n---\nbody');
+    writePage(dir, 'raw/c-legacy.md', '---\ntitle: C\ncompiled: true\n---\nbody');
+    writePage(dir, 'raw/d-dismissed.md', '---\ntitle: D\n---\nbody');
+    writePage(dir, 'raw/e-dismissed-then-cited.md', '---\ntitle: E\n---\nbody');
+    writePage(dir, '.tng-wiki/dismissals.json', JSON.stringify({
+      version: 1,
+      dismissed: {
+        'raw/d-dismissed.md': { reason: 'superseded', date: '2026-08-20' },
+        'raw/e-dismissed-then-cited.md': { reason: 'stale verdict', date: '2026-08-01' },
+      },
+    }));
+    writePage(dir, 'wiki/p1.md', '---\ntitle: P1\nsources:\n  - raw/b-cited.md\n---\nclaim.[^raw/b-cited.md] more.[^raw/e-dismissed-then-cited.md]');
+    writePage(dir, 'wiki/p2.md', '---\ntitle: P2\nsources:\n  - raw/b-cited.md\n---\nclaim.[^raw/b-cited.md]');
     // a template page's citations are examples, not use - never counted
     writePage(dir, 'wiki/_template.md', 'example.[^raw/a-pending.md]');
 
     const byPath = Object.fromEntries(listSources(dir).map((s) => [s.path, s]));
     assert.deepEqual(
-      ['raw/a-pending.md', 'raw/b-lag.md', 'raw/c-uncited.md', 'raw/d-ok.md'].map((p) => [byPath[p].status, byPath[p].cited_by]),
-      [['pending', 0], ['cited_unflagged', 2], ['flagged_uncited', 0], ['ok', 1]],
+      ['raw/a-pending.md', 'raw/b-cited.md', 'raw/c-legacy.md', 'raw/d-dismissed.md', 'raw/e-dismissed-then-cited.md']
+        .map((p) => [byPath[p].status, byPath[p].cited_by]),
+      [['pending', 0], ['compiled', 2], ['pending', 0], ['dismissed', 0], ['compiled', 1]],
     );
+    assert.equal(byPath['raw/d-dismissed.md'].dismissed.reason, 'superseded');
+    assert.equal(byPath['raw/b-cited.md'].compiled, true);
 
-    // rounds separates bookkeeping lag from the real ingest queue
+    // the queue is pending-only; rounds counts it and flags legacy claims
+    assert.deepEqual(listSources(dir, { uncompiledOnly: true }).map((s) => s.path).sort(),
+      ['raw/a-pending.md', 'raw/c-legacy.md']);
     const r = roundsReport(dir);
     assert.equal(r.uncompiled, 2);
-    assert.equal(r.uncompiled_cited, 1);
+    assert.equal(r.pending_flagged, 1); // c-legacy claims compiled, nothing cites it
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readDismissals throws a clear error on a corrupt sidecar instead of resurrecting the queue', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, '.tng-wiki/dismissals.json', '{not json');
+    assert.throws(() => listSources(dir), /dismissals\.json is not valid JSON/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

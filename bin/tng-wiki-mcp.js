@@ -134,10 +134,10 @@ server.registerTool(
   'sources',
   {
     title: 'List raw sources',
-    description: 'Enumerates files under raw/ with compiled status, title, and type parsed from YAML frontmatter. Use uncompiled_only=true to find sources the wiki has not yet ingested.',
+    description: 'Enumerates files under raw/ with derived compiled status (compiled iff a wiki page cites it, dismissed iff a recorded verdict says nothing was worth compiling, pending otherwise), plus title/type from frontmatter. Use uncompiled_only=true for the ingest queue.',
     inputSchema: {
       wiki: z.string().optional().describe('Registry slug of the target wiki. Omit to use the default wiki.'),
-      uncompiled_only: z.boolean().optional().describe('Only return sources with `compiled: false` in frontmatter. Default: false.'),
+      uncompiled_only: z.boolean().optional().describe('Only return pending sources (cited by no page, not dismissed). Default: false.'),
     },
   },
   async ({ wiki, uncompiled_only }) => withWiki(wiki, (w) => ok({

@@ -64,7 +64,9 @@ test('computeStatus counts markdown files, ops, stale markers, and uncompiled so
   assert.equal(s.hasSchema, true);
   assert.equal(s.hasIndex, true);
   assert.equal(s.staleCount, 3);
-  assert.equal(s.uncompiledCount, 2);
+  // #54: derived - none of the 3 raw sources is cited, so all are pending;
+  // b.md's compiled: true flag is inert history.
+  assert.equal(s.uncompiledCount, 3);
   assert.equal(s.inboxCount, null); // no _inbox/ — this wiki doesn't use one
 });
 
