@@ -4,7 +4,7 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.14.0] - 2026-08-20
 
 ### Changed
 - **Compiled-state is derived from citations, not stored in `raw/` frontmatter (#54, closing the design decision; builds on #55).** A source is `compiled` iff a groundable page cites it - the fact the engine can verify - `dismissed` iff an explicit verdict says nothing was worth compiling, and `pending` otherwise. The `compiled:` flag recorded belief and lied in both directions; it is now inert history (surfaced as `legacy_flag`, never consulted, never cleaned up - no `raw/` churn, ever). New verb: `tng-wiki dismiss raw/<path> --reason "<why>" [--by] [--undo]` writes the one non-derivable state to `.tng-wiki/dismissals.json` (rare writes, so no merge hotspot; a cited source is refused - the citation outranks any verdict; `--reason` is required). The generated schema's guardrail is now absolute - "`raw/` ... never modify it - no exceptions" - and the operations doctrine teaches cite-is-compile plus `dismiss`; rollout via `tng-wiki upgrade`. `sources` / `rounds` / `status` all count the same derived queue (a pending source claiming a legacy `compiled:` flag is called out: compile it or dismiss it), scaffold seeds no longer ship the dead flag, and MCP `sources` inherits the new semantics. Migration is nothing: cited sources are compiled the moment the definition switches; the only triage is legacy flagged-but-uncited sources, which the annotations name.
