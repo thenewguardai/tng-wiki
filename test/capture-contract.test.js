@@ -108,6 +108,48 @@ test('graduate accepts the _inbox/ prefix, honors --to under raw/, rejects escap
   }
 });
 
+test('graduate --as renames on the way in, records graduated_from:, and prefills collisions (#57)', () => {
+  const root = makeWiki();
+  try {
+    // collision error carries a ready-to-run --as suggestion
+    mkdirSync(join(root, 'raw', 'captures'), { recursive: true });
+    writeFileSync(join(root, 'raw', 'captures', 'capture.md'), 'the earlier capture\n');
+    const clash = spawnSync('node', [CLI, 'graduate', 'capture.md'], { cwd: root, encoding: 'utf8' });
+    assert.equal(clash.status, 1);
+    assert.match(clash.stderr, /Refusing to overwrite/);
+    assert.match(clash.stderr, /tng-wiki graduate capture\.md --as capture-2\.md/);
+
+    // --as resolves it: file lands under the new name with provenance stamped
+    const renamed = spawnSync('node', [CLI, 'graduate', 'capture.md', '--as', 'capture-addendum.md', '--json'], { cwd: root, encoding: 'utf8' });
+    assert.equal(renamed.status, 0, renamed.stderr);
+    assert.deepEqual(JSON.parse(renamed.stdout), {
+      wiki: null, from: '_inbox/capture.md', to: 'raw/captures/capture-addendum.md', renamed: true,
+    });
+    const content = readFileSync(join(root, 'raw', 'captures', 'capture-addendum.md'), 'utf8');
+    assert.match(content, /^---\ngraduated_from: _inbox\/capture\.md\n---\n# Captured\n$/);
+    assert.ok(!existsSync(join(root, '_inbox', 'capture.md')));
+
+    // existing frontmatter gains the key instead of a second block
+    writeFileSync(join(root, '_inbox', 'fm.md'), '---\ntitle: FM\n---\nbody\n');
+    const fm = spawnSync('node', [CLI, 'graduate', 'fm.md', '--as', 'fm-renamed.md'], { cwd: root, encoding: 'utf8' });
+    assert.equal(fm.status, 0, fm.stderr);
+    assert.equal(readFileSync(join(root, 'raw', 'captures', 'fm-renamed.md'), 'utf8'),
+      '---\ntitle: FM\ngraduated_from: _inbox/fm.md\n---\nbody\n');
+
+    // non-markdown files rename without a stamp; --as never takes a path
+    writeFileSync(join(root, '_inbox', 'shot.png'), 'not-really-a-png');
+    const bin = spawnSync('node', [CLI, 'graduate', 'shot.png', '--as', 'shot-2.png'], { cwd: root, encoding: 'utf8' });
+    assert.equal(bin.status, 0, bin.stderr);
+    assert.equal(readFileSync(join(root, 'raw', 'captures', 'shot-2.png'), 'utf8'), 'not-really-a-png');
+    writeFileSync(join(root, '_inbox', 'x.md'), 'x\n');
+    const pathy = spawnSync('node', [CLI, 'graduate', 'x.md', '--as', 'sub/x.md'], { cwd: root, encoding: 'utf8' });
+    assert.equal(pathy.status, 1);
+    assert.match(pathy.stderr, /--as takes a bare filename/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('graduate refuses the default-wiki fallback', () => {
   const root = makeWiki();
   const home = mkdtempSync(join(tmpdir(), 'tng-wiki-capture-home-'));

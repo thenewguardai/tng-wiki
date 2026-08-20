@@ -108,13 +108,14 @@ export const COMMANDS = [
   {
     name: 'graduate', group: 'Wiki access',
     summary: 'Move an _inbox/ capture into raw/ so pages can cite it (_inbox/ is not a citable root)',
-    usage: 'tng-wiki graduate <inbox-item> [--to raw/<dir>] [--wiki <slug>] [--json]',
+    usage: 'tng-wiki graduate <inbox-item> [--to raw/<dir>] [--as <filename>] [--wiki <slug>] [--json]',
     args: [{ name: 'inbox-item', required: true, desc: 'file under _inbox/, with or without the _inbox/ prefix' }],
     flags: [
       { name: '--to', value: '<raw/dir>', desc: 'destination directory under raw/ (default: raw/captures)' },
+      { name: '--as', value: '<filename>', desc: 'rename on the way in (collisions are expected: capturing sessions cannot see raw/); records graduated_from: frontmatter' },
       WIKI, JSON_FLAG,
     ],
-    examples: ['tng-wiki graduate session-notes.md', 'tng-wiki graduate briefs/q3-brief.md --to raw/briefs'],
+    examples: ['tng-wiki graduate session-notes.md', 'tng-wiki graduate briefs/q3-brief.md --to raw/briefs', 'tng-wiki graduate 2026-08-04-notes.md --as 2026-08-06-routing-addendum.md'],
   },
   {
     name: 'claim', group: 'Wiki access',
