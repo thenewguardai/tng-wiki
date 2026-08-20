@@ -329,6 +329,35 @@ test('listSources returns raw files with compiled/title/type parsed from frontma
   }
 });
 
+// #55: the flag records belief, citations record use - listSources carries
+// both facts plus the quadrant, so the flag can no longer lie unobserved.
+test('listSources cross-references citations: cited_by counts and the four statuses (#55)', () => {
+  const dir = makeWiki();
+  try {
+    writePage(dir, 'raw/a-pending.md', '---\ntitle: A\ncompiled: false\n---\nbody');
+    writePage(dir, 'raw/b-lag.md', '---\ntitle: B\ncompiled: false\n---\nbody');
+    writePage(dir, 'raw/c-uncited.md', '---\ntitle: C\ncompiled: true\n---\nbody');
+    writePage(dir, 'raw/d-ok.md', '---\ntitle: D\ncompiled: true\n---\nbody');
+    writePage(dir, 'wiki/p1.md', '---\ntitle: P1\nsources:\n  - raw/b-lag.md\n---\nclaim.[^raw/b-lag.md] more.[^raw/d-ok.md]');
+    writePage(dir, 'wiki/p2.md', '---\ntitle: P2\nsources:\n  - raw/b-lag.md\n---\nclaim.[^raw/b-lag.md]');
+    // a template page's citations are examples, not use - never counted
+    writePage(dir, 'wiki/_template.md', 'example.[^raw/a-pending.md]');
+
+    const byPath = Object.fromEntries(listSources(dir).map((s) => [s.path, s]));
+    assert.deepEqual(
+      ['raw/a-pending.md', 'raw/b-lag.md', 'raw/c-uncited.md', 'raw/d-ok.md'].map((p) => [byPath[p].status, byPath[p].cited_by]),
+      [['pending', 0], ['cited_unflagged', 2], ['flagged_uncited', 0], ['ok', 1]],
+    );
+
+    // rounds separates bookkeeping lag from the real ingest queue
+    const r = roundsReport(dir);
+    assert.equal(r.uncompiled, 2);
+    assert.equal(r.uncompiled_cited, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // --- listStalePages ---
 
 test('listStalePages reports pages with ⚠️ STALE? markers and the match count', () => {

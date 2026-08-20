@@ -156,9 +156,9 @@ export const COMMANDS = [
     examples: ['tng-wiki log --type ingest --desc "compiled Q3 brief" --source raw/briefs/q3.md --updated wiki/roadmap.md'],
   },
   {
-    name: 'sources', group: 'Wiki access', summary: 'List raw sources',
+    name: 'sources', group: 'Wiki access', summary: 'List raw sources, each annotated with how many pages actually cite it',
     usage: 'tng-wiki sources [--uncompiled] [--wiki <slug>] [--json]',
-    args: [], flags: [{ name: '--uncompiled', desc: 'only sources not yet marked compiled (the ingest queue)' }, WIKI, JSON_FLAG],
+    args: [], flags: [{ name: '--uncompiled', desc: 'only sources not yet marked compiled; cited-by counts separate the real ingest queue from bookkeeping lag' }, WIKI, JSON_FLAG],
     examples: ['tng-wiki sources --uncompiled'],
   },
   {

@@ -2,7 +2,7 @@ import { readFileSync, existsSync, statSync, readdirSync } from 'fs';
 import { basename, dirname, join, relative, resolve, sep } from 'path';
 import { loadRegistry, getDefault, getWiki, listWikis } from './registry.js';
 import { insideRoot, walkMd } from './paths.js';
-import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives } from './ground.js';
+import { isGroundable, checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages, loadLeadArchives, extractCitations } from './ground.js';
 import { workingTreeCounts, fileCommitDate } from './git-read.js';
 import { splitFrontmatter, parseScalars } from './frontmatter.js';
 
@@ -196,17 +196,46 @@ export function searchWiki(wikiPath, query, { regex = false, includeRaw = false,
   return hits;
 }
 
+// #55: which raw/ paths the wiki actually rests on. The `compiled:` flag
+// records an agent's belief that it processed a source; body citations record
+// verifiable use. Returns raw rel path -> Set of citing groundable page rels.
+export function rawCiters(wikiPath) {
+  const citers = new Map();
+  for (const file of walkMd(join(wikiPath, 'wiki'))) {
+    const rel = relative(wikiPath, file);
+    if (!isGroundable(rel)) continue;
+    const { body, bodyStartLine } = splitFrontmatter(readFileSync(file, 'utf8'));
+    for (const c of extractCitations(body, bodyStartLine)) {
+      if (c.kind !== 'raw') continue;
+      if (!citers.has(c.path)) citers.set(c.path, new Set());
+      citers.get(c.path).add(rel);
+    }
+  }
+  return citers;
+}
+
+// The flag and the citations disagree in both directions in the wild (#55):
+// each source carries both facts plus the quadrant they land in, so the
+// renderer (and rounds) can separate the real ingest queue from bookkeeping
+// lag and surface flagged-but-load-bearing-nothing sources.
 export function listSources(wikiPath, { uncompiledOnly = false } = {}) {
   const rawDir = join(wikiPath, 'raw');
+  const citers = rawCiters(wikiPath);
   const results = [];
   for (const file of walkMd(rawDir)) {
     const content = readFileSync(file, 'utf8');
     const fm = parseScalars(splitFrontmatter(content).frontmatter);
     const compiled = fm.compiled === true;
     if (uncompiledOnly && compiled) continue;
+    const rel = relative(wikiPath, file);
+    const citedBy = citers.get(rel)?.size ?? 0;
     results.push({
-      path: relative(wikiPath, file),
+      path: rel,
       compiled,
+      cited_by: citedBy,
+      status: compiled
+        ? (citedBy > 0 ? 'ok' : 'flagged_uncited')
+        : (citedBy > 0 ? 'cited_unflagged' : 'pending'),
       title: fm.title ?? null,
       type: fm.type ?? null,
     });
@@ -345,9 +374,13 @@ export function roundsReport(wikiPath) {
   // bucket so `ground` stays the hard-failure count.
   const convention = ground.issues.filter((i) => WARN_ISSUES.has(i.issue) || i.level === 'warn').length;
   const inboxItems = listInboxItems(wikiPath);
+  const uncompiledSources = listSources(wikiPath, { uncompiledOnly: true });
   return {
     scanned: ground.scanned,
-    uncompiled: listSources(wikiPath, { uncompiledOnly: true }).length,
+    uncompiled: uncompiledSources.length,
+    // #55: how many of those are already cited by pages - bookkeeping lag, not
+    // ingest work. The dashboard number read twice its real size without this.
+    uncompiled_cited: uncompiledSources.filter((s) => s.cited_by > 0).length,
     // null = wiki has no _inbox/ capture dir (most domains); a number = pending triage
     inbox: inboxItems === null ? null : inboxItems.length,
     ground: ground.issues.length - convention,
