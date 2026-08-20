@@ -7,6 +7,7 @@ import { detectObsidian as realDetectObsidian } from './integrations/obsidian.js
 import { loadRegistry, listWikis } from './registry.js';
 import { skillStatus } from './skill.js';
 import { loadCodeAuthorities } from './ground.js';
+import { splitFrontmatter, parseScalars } from './frontmatter.js';
 import { resolveConfigPath, pathForm, describePathValue, isTempPath } from './paths.js';
 import {
   installedVersion, fetchLatestVersion, readPinnedVersion, buildVersionReport, compareSemver,
@@ -27,6 +28,50 @@ function realTrimCmd(cmd) {
   } catch {
     return '';
   }
+}
+
+// #56: wikis scaffolded before 0.11.0 (07c9e9b) carry seed demo sources that
+// do not declare themselves, and `upgrade` never touches raw/. The SE seed is
+// the dangerous one: it documents a real commit in this project's own history,
+// so the documented "scaffold filler or real source?" test comes back "real"
+// - and its "deletes ~100 lines" claim is refuted by its own citation
+// (9668e6e is net +43; the deleted wrappers were 7 lines each). Detection is
+// by known path + missing declaration note; stamping the note (or replacing /
+// deleting the seed) clears the check, so a deliberate keep just needs to
+// declare itself.
+const SEED_NOTE = '**Scaffold demo source.**';
+const LEGACY_SEEDS = [
+  {
+    path: 'raw/rfcs/2026-04-15-adr-template-demo.md',
+    domain: 'software-engineering',
+    refuted: 'its "deletes ~100 lines" claim is refuted by its own citation (9668e6e is net +43)',
+  },
+  {
+    path: 'raw/announcements/2026-04-04-karpathy-llm-knowledge-bases.md',
+    domain: 'ai-research / publication',
+    refuted: null,
+  },
+];
+
+export function legacySeedChecks(root) {
+  const checks = [];
+  for (const seed of LEGACY_SEEDS) {
+    let content;
+    try {
+      content = readFileSync(join(root, seed.path), 'utf8');
+    } catch { continue; }
+    if (content.includes(SEED_NOTE)) continue; // declared - a current-generation seed
+    const compiled = parseScalars(splitFrontmatter(content).frontmatter).compiled === true;
+    const refuted = seed.refuted ? `; ${seed.refuted}` : '';
+    checks.push({
+      name: 'Legacy scaffold seed',
+      ok: false,
+      detail: compiled
+        ? `${seed.path} — undeclared pre-0.11.0 seed demo (${seed.domain} template), already compiled as real knowledge${refuted}. Review the citing page(s), then stamp a "> ${SEED_NOTE}" note on the seed`
+        : `${seed.path} — undeclared pre-0.11.0 seed demo (${seed.domain} template); it reads like a real source and defeats the scaffold-filler test${refuted}. Stamp a "> ${SEED_NOTE}" note, replace it with the current seed, or delete it`,
+    });
+  }
+  return checks;
 }
 
 export function runChecks(root, deps = {}) {
@@ -96,6 +141,8 @@ export function runChecks(root, deps = {}) {
       ok: hasSchema,
       detail: hasSchema ? 'found' : 'missing — run tng-wiki init',
     });
+
+    checks.push(...legacySeedChecks(root));
 
     // One row per code authority (issue #16): how the path is written
     // (relative / ~ / absolute) + whether it exists on THIS machine. Optional —

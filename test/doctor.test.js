@@ -183,6 +183,55 @@ test('runChecks emits no authority rows without .tng-wiki.json or code_authoriti
 
 // --- recommendNextStep (the orientation an onboarding agent reads) ---
 
+// #56: pre-0.11.0 scaffold seeds never got the declaration note and upgrade
+// does not touch raw/ - doctor is the migration path's cheapest layer.
+test('runChecks flags an undeclared legacy scaffold seed, harder once compiled (#56)', () => {
+  const wiki = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  try {
+    mkdirSync(join(wiki, 'wiki'));
+    mkdirSync(join(wiki, 'raw', 'rfcs'), { recursive: true });
+    writeFileSync(join(wiki, 'CLAUDE.md'), '# schema');
+    const seedPath = join(wiki, 'raw', 'rfcs', '2026-04-15-adr-template-demo.md');
+
+    // undeclared + uncompiled: the trap is still ahead
+    writeFileSync(seedPath, '---\ntitle: ADR demo\ncompiled: false\n---\nlooks like a real RFC\n');
+    let row = checkByName(runChecks(wiki, fakeDeps()), 'Legacy scaffold seed');
+    assert.ok(row && !row.ok && !row.optional);
+    assert.match(row.detail, /pre-0\.11\.0 seed demo/);
+    assert.match(row.detail, /~100 lines/);
+    assert.match(row.detail, /Stamp a "> \*\*Scaffold demo source\.\*\*" note/);
+
+    // undeclared + compiled: the trap already sprang - message shifts to review
+    writeFileSync(seedPath, '---\ntitle: ADR demo\ncompiled: true\n---\nlooks like a real RFC\n');
+    row = checkByName(runChecks(wiki, fakeDeps()), 'Legacy scaffold seed');
+    assert.match(row.detail, /already compiled as real knowledge/);
+    assert.match(row.detail, /net \+43/);
+
+    // declared (current-generation or hand-stamped): quiet
+    writeFileSync(seedPath, '---\ntitle: ADR demo\ncompiled: false\n---\n> **Scaffold demo source.** Shipped with the template.\n\nbody\n');
+    assert.equal(checkByName(runChecks(wiki, fakeDeps()), 'Legacy scaffold seed'), undefined);
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+  }
+});
+
+test('runChecks flags the undeclared karpathy seed without the refuted-claim pointer (#56)', () => {
+  const wiki = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  try {
+    mkdirSync(join(wiki, 'wiki'));
+    mkdirSync(join(wiki, 'raw', 'announcements'), { recursive: true });
+    writeFileSync(join(wiki, 'CLAUDE.md'), '# schema');
+    writeFileSync(join(wiki, 'raw', 'announcements', '2026-04-04-karpathy-llm-knowledge-bases.md'),
+      '---\ntitle: Karpathy post\ncompiled: false\n---\nthe post\n');
+    const row = checkByName(runChecks(wiki, fakeDeps()), 'Legacy scaffold seed');
+    assert.ok(row && !row.ok);
+    assert.match(row.detail, /ai-research \/ publication/);
+    assert.doesNotMatch(row.detail, /~100 lines/);
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+  }
+});
+
 test('recommendNextStep: no wikis, not a wiki dir -> create or adopt', () => {
   const r = recommendNextStep({ root: '/tmp/x', isWiki: false, wikis: [] });
   assert.match(r, /No wikis registered/);
