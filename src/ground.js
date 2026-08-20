@@ -538,8 +538,11 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
       }
     }
 
-    // per-citation lock churn for raw cites: the hash input is the whole
-    // (normalized) raw file. Moves don't apply — there is no line anchor.
+    // per-citation lock churn for raw cites: the hash input is the raw file's
+    // BODY below the frontmatter block (#54) — frontmatter is bookkeeping
+    // (compiled:, author:, title fixes), not evidence, and hashing it made the
+    // one sanctioned raw/ edit fire false cite_content_changed on every citing
+    // page. Moves don't apply — there is no line anchor.
     if (trackLock) {
       for (const c of citedRaw) {
         const key = citeKey(c);
@@ -547,9 +550,14 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
         lockSeen.add(key);
         const raw = readFileSafe(join(wikiPath, c.path));
         if (raw == null) continue;  // missing_raw already flagged above
-        const currentHash = hashLines(normalizeLines(raw));
+        const currentHash = hashLines(normalizeLines(splitFrontmatter(raw).body));
         const entry = lockEntryFor(rel, key);
-        if (entry?.hash && entry.hash !== currentHash) {
+        // Legacy grace: pre-#54 lockfiles hashed the whole file. A whole-file
+        // match means the cited evidence is unchanged — not drift; the entry
+        // migrates to the body hash on the next --update-lock. Without the
+        // grace, the migration itself would fire the false wave it kills.
+        if (entry?.hash && entry.hash !== currentHash
+            && hashLines(normalizeLines(raw)) !== entry.hash) {
           issues.push({
             page: rel, issue: 'cite_content_changed', cite: key, file: c.path,
             range: null, locked_sha: entry.hash, current_sha: currentHash,

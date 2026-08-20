@@ -10,7 +10,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { scaffoldWiki } from '../src/init.js';
 import { checkGrounding } from '../src/ground.js';
-import { readLock, LOCK_RELPATH } from '../src/lock.js';
+import { readLock, LOCK_RELPATH, hashLines, normalizeLines } from '../src/lock.js';
 import { roundsReport } from '../src/verbs.js';
 
 function makeWiki() {
@@ -274,6 +274,57 @@ test('whole-file and raw/ cites hash and verify; content change -> cite_content_
     const churn = issues.filter((i) => i.issue === 'cite_content_changed');
     assert.deepEqual(churn.map((i) => i.cite).sort(), ['code:app/src/whole.ts', 'raw/specs/spec.md']);
     assert.ok(churn.every((i) => i.range === null));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// #54: raw-cite hashes cover the body below frontmatter, so the one
+// sanctioned raw/ edit (stamping compiled:) no longer reads as evidence drift.
+test('frontmatter-only raw/ edit (compiled: stamp) is invisible; body edit still fires (#54)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'raw/specs/spec.md', '---\ntitle: Spec\ncompiled: false\n---\nthe evidence\n');
+    writeFile(dir, 'wiki/entities/w.md',
+      '---\ntitle: W\nupdated: 2099-01-01\nsources:\n  - raw/specs/spec.md\n---\nClaim.[^raw/specs/spec.md]');
+    checkGrounding(dir, { updateLock: true });
+
+    // the sanctioned stamp, plus an author: addition (#45's convention)
+    writeFile(dir, 'raw/specs/spec.md', '---\ntitle: Spec\ncompiled: true\nauthor: agent\n---\nthe evidence\n');
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/w.md' }).issues, []);
+
+    // an actual evidence change still fires
+    writeFile(dir, 'raw/specs/spec.md', '---\ntitle: Spec\ncompiled: true\nauthor: agent\n---\nrewritten evidence\n');
+    const { issues } = checkGrounding(dir, { page: 'entities/w.md' });
+    assert.deepEqual(issues.filter((i) => i.issue === 'cite_content_changed').map((i) => i.cite), ['raw/specs/spec.md']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('legacy whole-file lock hashes get grace on an unchanged file and migrate on --update-lock (#54)', () => {
+  const dir = makeWiki();
+  try {
+    writeFile(dir, 'raw/specs/spec.md', '---\ntitle: Spec\ncompiled: false\n---\nthe evidence\n');
+    writeFile(dir, 'wiki/entities/w.md',
+      '---\ntitle: W\nupdated: 2099-01-01\nsources:\n  - raw/specs/spec.md\n---\nClaim.[^raw/specs/spec.md]');
+    checkGrounding(dir, { updateLock: true });
+
+    // rewrite the lock entry to the pre-#54 form: whole-file hash
+    const lockPath = join(dir, LOCK_RELPATH);
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
+    const legacy = hashLines(normalizeLines(readFileSync(join(dir, 'raw/specs/spec.md'), 'utf8')));
+    lock.citations['wiki/entities/w.md']['raw/specs/spec.md'].hash = legacy;
+    writeFileSync(lockPath, JSON.stringify(lock, null, 2));
+
+    // unchanged file: whole-file match = grace, no false drift
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/w.md' }).issues, []);
+
+    // --update-lock migrates the entry to the body hash
+    checkGrounding(dir, { page: 'entities/w.md', updateLock: true });
+    const migrated = JSON.parse(readFileSync(lockPath, 'utf8'));
+    assert.notEqual(migrated.citations['wiki/entities/w.md']['raw/specs/spec.md'].hash, legacy);
+    assert.deepEqual(checkGrounding(dir, { page: 'entities/w.md' }).issues, []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
