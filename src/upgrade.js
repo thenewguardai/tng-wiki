@@ -9,7 +9,7 @@ import {
 } from './agents/index.js';
 import { getTemplate, DOMAIN_KEYS } from './templates/index.js';
 import { installedVersion } from './version.js';
-import { loadRegistry, saveRegistry } from './registry.js';
+import { loadRegistry, saveRegistry, listWikis } from './registry.js';
 import { resolveWiki } from './verbs.js';
 
 // `tng-wiki upgrade` regenerates a wiki's schema in place after a CLI update,
@@ -333,7 +333,37 @@ export function resolveUpgradeRoot(args, { cwd = process.cwd(), home } = {}) {
   return { root: wiki.path, slug: wiki.slug };
 }
 
+// `upgrade --all` targets: every registered wiki whose directory exists on this
+// machine (a registry entry can outlive its checkout); the rest are reported.
+export function upgradeTargets({ home } = {}) {
+  const targets = [];
+  const skipped = [];
+  for (const w of listWikis(loadRegistry(home))) {
+    if (existsSync(w.path)) targets.push({ slug: w.slug, root: w.path });
+    else skipped.push({ slug: w.slug, reason: 'path missing' });
+  }
+  return { targets, skipped };
+}
+
+async function runUpgradeAll(args) {
+  if (argValue(args, '--domain')) throw new Error('--all cannot re-domain: --domain applies to one wiki. Run it per wiki with --wiki <slug>.');
+  if (args.includes('--wiki') || firstPositional(args)) throw new Error('--all targets every registered wiki; drop --wiki / the path, or drop --all.');
+  const dryRun = args.includes('--dry-run');
+  const { targets, skipped } = upgradeTargets();
+  const results = targets.map(({ slug, root }) => ({ slug, root, result: upgradeWiki(root, { dryRun }) }));
+  if (args.includes('--json')) {
+    process.stdout.write(JSON.stringify({
+      wikis: results.map(({ slug, result }) => ({ wiki: slug, ...result })),
+      skipped,
+    }, null, 2) + '\n');
+    return;
+  }
+  for (const { slug, root, result } of results) renderUpgrade(slug, root, result);
+  for (const s of skipped) console.log(pc.dim(`  ○ ${s.slug}: ${s.reason} - skipped`));
+}
+
 export async function runUpgrade(args) {
+  if (args.includes('--all')) return runUpgradeAll(args);
   const { root, slug } = resolveUpgradeRoot(args);
   const result = upgradeWiki(root, {
     domain: argValue(args, '--domain'),
@@ -344,7 +374,10 @@ export async function runUpgrade(args) {
     process.stdout.write(JSON.stringify({ wiki: slug, ...result }, null, 2) + '\n');
     return;
   }
+  renderUpgrade(slug, root, result);
+}
 
+function renderUpgrade(slug, root, result) {
   const verb = result.dryRun ? 'would write' : 'wrote';
   console.log('');
   console.log(`  ${pc.bold('Schema upgrade')}  ${pc.dim(slug ? `${slug} · ${root}` : root)}${result.dryRun ? pc.yellow('  (dry run)') : ''}`);

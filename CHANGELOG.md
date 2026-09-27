@@ -9,6 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 ### Added
 
 - **`tng-wiki inbox`** - pending `_inbox/` captures across every registered wiki (or `--wiki <slug>`), with title, age, origin host (`captured_on`) and `also:` hints. Replaces the per-hub `ls` loops agents hand-rolled to answer "anything waiting?". Mirrored as the `inbox` MCP tool.
+- **`tng-wiki upgrade --all`** - one sweep over every registered wiki present on this machine after a CLI update, instead of a per-wiki changelog-and-upgrade ritual (four such sessions in the 2026-09 audit). Registered paths that are missing are reported and skipped; `--domain` stays per-wiki.
 
 ### Fixed
 

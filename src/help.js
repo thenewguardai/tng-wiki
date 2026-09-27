@@ -230,15 +230,16 @@ export const COMMANDS = [
   {
     name: 'upgrade', group: 'Scaffolding',
     summary: 'Regenerate a wiki\'s schema + doctrine after a CLI update, preserving hand-authored sections',
-    usage: 'tng-wiki upgrade [path] [--wiki <slug>] [--domain <d>] [--dry-run] [--json]',
+    usage: 'tng-wiki upgrade [path] [--wiki <slug> | --all] [--domain <d>] [--dry-run] [--json]',
     args: [{ name: 'path', required: false, desc: 'explicit wiki directory (default: the wiki the cwd is inside, else the registered default)' }],
     flags: [
       WIKI,
       { name: '--domain', value: '<d>', desc: 're-domain the wiki while upgrading (e.g. software-engineering → code-archaeology); updates .tng-wiki.json and the registry' },
+      { name: '--all', desc: 'upgrade every registered wiki present on this machine (registered-but-missing paths are reported and skipped; not combinable with --wiki, a path, or --domain)' },
       { name: '--dry-run', desc: 'report what would change without writing anything' },
       JSON_FLAG,
     ],
-    examples: ['tng-wiki upgrade --dry-run', 'tng-wiki upgrade', 'tng-wiki upgrade --wiki research --domain code-archaeology'],
+    examples: ['tng-wiki upgrade --dry-run', 'tng-wiki upgrade', 'tng-wiki upgrade --all --dry-run', 'tng-wiki upgrade --wiki research --domain code-archaeology'],
   },
   {
     name: 'split', group: 'Scaffolding',

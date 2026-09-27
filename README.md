@@ -120,7 +120,7 @@ One schema, every agent. Edit `AGENTS.md`; every alias sees the change.
 ```bash
 # Scaffolding
 tng-wiki init                       # Scaffold a new wiki (interactive; --yes for headless)
-tng-wiki upgrade    [path] [--wiki <slug>] [--domain <d>] [--dry-run] [--json]
+tng-wiki upgrade    [path] [--wiki <slug> | --all] [--domain <d>] [--dry-run] [--json]
                                     # Regenerate schema + doctrine after a CLI update
                                     #   (hand-authored sections survive; see below)
 tng-wiki localize   [path] [--wiki <slug>] [--set <name>=<path>]... [--trust <name>]...
@@ -509,6 +509,7 @@ $ tng-wiki upgrade --dry-run     # report what would change, write nothing
 $ tng-wiki upgrade               # the wiki the cwd is inside, else the registered default
 $ tng-wiki upgrade --wiki research
 $ tng-wiki upgrade --domain code-archaeology   # re-domain while upgrading
+$ tng-wiki upgrade --all --dry-run             # every registered wiki on this machine
 ```
 
 How it preserves your content:
