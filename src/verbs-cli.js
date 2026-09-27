@@ -284,7 +284,9 @@ export async function runGround(args) {
             ? pc.dim(` [${i.old_range} → ${i.new_range}]`)
             : i.issue === 'cite_moved_ambiguous'
               ? pc.dim(` [at ${i.candidate_ranges.join(', ')}]`)
-              : '';
+              : i.suggested_range
+                ? pc.dim(` [likely now ${i.suggested_range}${i.suggested_edited ? ', edited' : ''} - re-verify there, then repoint the anchor]`)
+                : '';
           const stamp = i.source_mtime ?? i.source_commit;
           const ts = stamp ? pc.dim(` (page ${i.page_updated}, source ${stamp})`) : '';
           const fmStale = i.issue === 'frontmatter_updated_stale'

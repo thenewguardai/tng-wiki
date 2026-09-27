@@ -474,3 +474,57 @@ test('roundsReport counts the new per-citation findings in its ground total', ()
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- repoint suggestions for moved-and-edited code cites ---
+
+test('cite_content_changed carries a suggested_range when the authority is a git repo', () => {
+  const dir = makeWiki();
+  try {
+    codeFixture(dir);
+    initRepo(join(dir, 'authority-src'));
+    commitAll(join(dir, 'authority-src'), 'init');
+    checkGrounding(dir, { updateLock: true });
+
+    // three lines inserted at the top, and line 10 of the original rewritten
+    const lines = numberedLines(20).split('\n');
+    lines[9] = 'REWRITTEN';
+    writeFile(dir, 'authority-src/src/f.sql', ['new-a', 'new-b', 'new-c', ...lines].join('\n'));
+
+    const { issues } = checkGrounding(dir, { page: 'entities/p.md' });
+    const changed = issues.find((i) => i.issue === 'cite_content_changed' && i.cite === 'code:app/src/f.sql#L10-L11');
+    assert.ok(changed, JSON.stringify(issues, null, 2));
+    assert.equal(changed.suggested_range, 'L13-L14');
+    assert.equal(changed.suggested_edited, true);
+    // the untouched sibling moved cleanly: cite_moved, not a suggestion
+    assert.ok(issues.some((i) => i.issue === 'cite_moved' && i.new_range === 'L5-L6'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('no suggested_range without git history, or when the lock was taken on uncommitted content', () => {
+  const dir = makeWiki();
+  try {
+    codeFixture(dir);
+    checkGrounding(dir, { updateLock: true });  // authority is not a git repo
+    const lines = numberedLines(20).split('\n');
+    lines[1] = 'EDITED';
+    writeFile(dir, 'authority-src/src/f.sql', lines.join('\n'));
+    let changed = checkGrounding(dir, { page: 'entities/p.md' }).issues.find((i) => i.issue === 'cite_content_changed');
+    assert.equal(changed.suggested_range, undefined);
+
+    // git repo, but the locked content was never committed: the base does not
+    // reproduce the locked hash, so there is nothing trustworthy to diff from
+    initRepo(join(dir, 'authority-src'));
+    writeFile(dir, 'authority-src/src/f.sql', numberedLines(20));
+    commitAll(join(dir, 'authority-src'), 'init');
+    writeFile(dir, 'authority-src/src/f.sql', numberedLines(20).replace('line-2\n', 'DIRTY\n'));
+    checkGrounding(dir, { updateLock: true });
+    writeFile(dir, 'authority-src/src/f.sql', numberedLines(20).replace('line-2\n', 'AGAIN\n'));
+    changed = checkGrounding(dir, { page: 'entities/p.md' }).issues.find((i) => i.issue === 'cite_content_changed');
+    assert.ok(changed);
+    assert.equal(changed.suggested_range, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

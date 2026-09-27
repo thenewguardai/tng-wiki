@@ -9,6 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 ### Added
 
 - **`tng-wiki inbox`** - pending `_inbox/` captures across every registered wiki (or `--wiki <slug>`), with title, age, origin host (`captured_on`) and `also:` hints. Replaces the per-hub `ls` loops agents hand-rolled to answer "anything waiting?". Mirrored as the `inbox` MCP tool.
+- **Repoint suggestions on `cite_content_changed` code findings.** When the cited lines both moved and changed, `ground` now maps the locked range through the authority's `git diff -U0` since the lock (`hashed_at_sha`) and attaches `suggested_range` / `suggested_edited`, rendered as "likely now L150-L170, edited". Agents had been writing throwaway scripts to relocate these anchors. The suggestion is only offered when the locked range at that SHA reproduces the locked hash, is never applied automatically, and the rounds doctrine says to re-verify at the suggested lines before repointing.
 - **`tng-wiki upgrade --all`** - one sweep over every registered wiki present on this machine after a CLI update, instead of a per-wiki changelog-and-upgrade ritual (four such sessions in the 2026-09 audit). Registered paths that are missing are reported and skipped; `--domain` stays per-wiki.
 
 ### Fixed

@@ -12,6 +12,7 @@ import {
   sliceRange, findContentMatches,
 } from './lock.js';
 import { splitFrontmatter, extractListKey, parseScalars } from './frontmatter.js';
+import { suggestRepoint } from './repoint.js';
 
 // Re-exported for existing importers (cite.js, tests) - the implementation
 // moved to the shared frontmatter module.
@@ -759,11 +760,20 @@ export function checkGrounding(wikiPath, { page, atRef = false, updateLock = fal
               candidate_ranges: matches.map(rangeLabel),
             });
           } else {
-            issues.push({
+            const issue = {
               page: rel, issue: 'cite_content_changed', cite: key, file: c.file,
               range: c.range ? rangeLabel(c.range) : null,
               locked_sha: entry.hash, current_sha: currentHash,
+            };
+            const suggestion = suggestRepoint({
+              repoDir: repoAbs, file: c.file, range: c.range, lockedHash: entry.hash,
+              fromSha: entry.hashed_at_sha, toRef: useRef ? authority.ref : null,
             });
+            if (suggestion) {
+              issue.suggested_range = rangeLabel(suggestion.range);
+              issue.suggested_edited = suggestion.edited;
+            }
+            issues.push(issue);
           }
         } else if (lockActive && !entry) {
           // info-level: lockfile exists but this cite was never locked

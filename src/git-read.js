@@ -148,3 +148,15 @@ export function newestCommitDate(repoDir, files) {
   }
   return newest;
 }
+
+// `git diff -U0` of `file` from `fromRef` to `toRef` (the working tree when
+// `toRef` is null), as text, or null when either side is unresolvable. Feeds
+// repoint suggestions; "no change" is the empty string, not null.
+export function diffUnifiedZero(repoDir, fromRef, toRef, file) {
+  try {
+    const range = toRef ? [fromRef, toRef] : [fromRef];
+    return git(repoDir, ['diff', '-U0', '--no-color', '--no-ext-diff', ...range, '--', file], { capture: true });
+  } catch {
+    return null;
+  }
+}
