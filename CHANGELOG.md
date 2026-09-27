@@ -8,6 +8,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ### Fixed
 
+- **Host stamps compare case-insensitively, and `TNG_WIKI_HOST` overrides the machine name.** `os.hostname()` returns `Legion-Ubuntu` or `LEGION5090` while stamps are typed lowercase, so a `sharing: host:legion-ubuntu` wiki read as another host's wiki on its own machine. Comparison now lives in `src/host.js` and is shared by every committed host field.
+
 - **`cite show` resolves pages the way `read` does.** It kept its own strict resolver, so only `dir/page.md` worked and agents burned retries on `dir/page`, a bare stem, or a `[[wikilink]]` (observed repeatedly in the 2026-09 friction audit). It now uses the shared resolver: same forms, same ambiguity and escape errors.
 
 ## [0.14.0] - 2026-08-20

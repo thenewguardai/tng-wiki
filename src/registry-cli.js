@@ -8,7 +8,7 @@ import {
 } from './registry.js';
 import { isTempPath } from './paths.js';
 import { readSharing, stampSharing, relationTo } from './sharing.js';
-import { hostname } from 'os';
+import { localHost } from './host.js';
 import { readdirSync } from 'fs';
 
 export function readWikiMetadata(root) {
@@ -34,7 +34,7 @@ function registerOne(root, { nameOverride, domainOverride, stamp, force }) {
   const relation = relationTo(sharing);
   if (relation === 'other-host' && !force) {
     throw new Error(
-      `${root} is stamped "host:${sharing.host}" and this machine is "${hostname()}" - ` +
+      `${root} is stamped "host:${sharing.host}" and this machine is "${localHost()}" - ` +
       `it is another host's wiki. Pass --force to register it anyway.`,
     );
   }
@@ -73,7 +73,7 @@ export async function runRegister(args) {
 
   const shared = args.includes('--shared');
   const hostIdx = args.indexOf('--host');
-  const hostVal = hostIdx === -1 ? null : (argValue(args, '--host') ?? hostname());
+  const hostVal = hostIdx === -1 ? null : (argValue(args, '--host') ?? localHost());
   if (shared && hostVal) throw new Error('--shared and --host are mutually exclusive.');
   const stamp = shared ? 'shared' : hostVal ? `host:${hostVal}` : null;
 

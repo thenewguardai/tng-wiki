@@ -6,8 +6,8 @@
 //   "host:<name>"   - specific to one host; other machines should not register it
 // An absent field means unstamped - no behavior changes.
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { hostname } from 'os';
 import { join } from 'path';
+import { localHost, sameHost } from './host.js';
 
 // Parsed `sharing` value: null | {mode:'shared'} | {mode:'host', host}.
 export function readSharing(wikiPath) {
@@ -35,8 +35,8 @@ export function stampSharing(wikiPath, value) {
 
 // This machine's relationship to a wiki: null (unstamped) | 'shared' | 'mine'
 // | 'other-host'.
-export function relationTo(sharing, localHost = hostname()) {
+export function relationTo(sharing, thisHost = localHost()) {
   if (!sharing) return null;
   if (sharing.mode === 'shared') return 'shared';
-  return sharing.host === localHost ? 'mine' : 'other-host';
+  return sameHost(sharing.host, thisHost) ? 'mine' : 'other-host';
 }
