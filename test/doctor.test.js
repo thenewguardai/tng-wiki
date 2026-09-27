@@ -352,3 +352,23 @@ test('runDoctor --json flags a stale installed skill', async () => {
     rmSync(claudeHome, { recursive: true, force: true });
   }
 });
+
+test('runDoctor --json carries the non-interactive PATH check with its fix', async () => {
+  const wiki = mkdtempSync(join(tmpdir(), 'tng-wiki-doc-'));
+  const claudeHome = mkdtempSync(join(tmpdir(), 'tng-wiki-home-'));
+  try {
+    const out = await doctorJson(wiki, {
+      ...fakeDeps(),
+      installed: '0.4.2',
+      fetchLatest: () => null,
+      claudeHome,
+      nonInteractiveCheck: () => ({ ok: false, detail: 'not found', fix: ['tng-wiki doctor --install-shim'] }),
+    });
+    const check = out.checks.find((c) => c.name === 'CLI in non-interactive shells');
+    assert.deepEqual(check, { name: 'CLI in non-interactive shells', ok: false, detail: 'not found', optional: false, fix: ['tng-wiki doctor --install-shim'] });
+    assert.ok(Array.isArray(out.outbox));
+  } finally {
+    rmSync(wiki, { recursive: true, force: true });
+    rmSync(claudeHome, { recursive: true, force: true });
+  }
+});

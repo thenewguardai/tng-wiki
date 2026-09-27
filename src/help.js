@@ -337,8 +337,12 @@ export const COMMANDS = [
   {
     name: 'doctor', group: 'Diagnostics',
     summary: 'Environment + registry check with the recommended next step (orient here)',
-    usage: 'tng-wiki doctor [path] [--json]', args: [{ name: 'path', required: false, desc: 'directory to inspect (default: current)' }], flags: [JSON_FLAG],
-    examples: ['tng-wiki doctor', 'tng-wiki doctor --json'],
+    usage: 'tng-wiki doctor [path] [--install-shim] [--json]', args: [{ name: 'path', required: false, desc: 'directory to inspect (default: current)' }],
+    flags: [
+      { name: '--install-shim', desc: 'write ~/.local/bin/tng-wiki: a wrapper with absolute node + CLI paths, so non-interactive shells (ssh host cmd, agent harnesses) and nvm version switches still find the CLI' },
+      JSON_FLAG,
+    ],
+    examples: ['tng-wiki doctor', 'tng-wiki doctor --json', 'tng-wiki doctor --install-shim'],
   },
   {
     name: 'help', group: 'Diagnostics',
