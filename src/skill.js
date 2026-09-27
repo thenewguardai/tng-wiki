@@ -37,6 +37,7 @@ The user may have several wikis (research, competitive intel, learning, etc.). S
 
 If the user wants a *new* wiki, or to adopt the current project into one, scaffold it yourself - \`init\` has a non-interactive mode, so you don't need a TTY:
 
+- **\`tng-wiki: command not found\`?** Non-interactive shells often miss an nvm-managed PATH. Run \`npx -y @thenewguard/tng-wiki <verb> ...\` for this session and tell the user; \`tng-wiki doctor\` (run where it resolves) prints the permanent fix.
 - **See the whole surface in one call:** \`tng-wiki help --json\` lists every command, flag, and example. \`tng-wiki doctor\` reports this directory's state and the recommended next command. Reach for these instead of probing each verb with \`--help\`.
 - **Create a new wiki:** \`tng-wiki init --yes --dir <path> --domain <d> --agent claude-code --name "<name>"\` (domains: ai-research, competitive-intel, publication, business-ops, learning, software-engineering, code-archaeology, blank).
 - **Adopt an existing repo/dir:** \`tng-wiki init --yes --dir . --into-existing --no-integrations\` - never overwrites existing files; merges \`.gitignore\`.
@@ -56,6 +57,9 @@ If the user wants a *new* wiki, or to adopt the current project into one, scaffo
 - **\`tng-wiki drift [--wiki <slug>]\`** - pages carrying \`⚠️ DRIFT?\` markers (semantic or external grounding output).
 - **\`tng-wiki unsourced [--wiki <slug>]\`** - pages carrying \`⚠️ UNSOURCED?\` markers.
 - **\`tng-wiki unverified [--wiki <slug>]\`** - pages carrying \`⚠️ UNVERIFIED?\` markers.
+- **\`tng-wiki inbox [--wiki <slug>]\`** - pending \`_inbox/\` captures across every registered wiki, with age, origin host, and \`also:\` routing hints. The answer to "anything waiting anywhere?".
+- **\`tng-wiki librarian [--wiki <slug>]\`** - shows this machine's seat: the wiki's librarian host files, grounds and publishes it; every other machine is a capturer (compiled-state writes refuse there unless \`--off-host\`).
+- **\`tng-wiki sync [--push] [--quiet]\`** - pulls the repos behind registered wikis and reports arrivals plus unpublished local commits; \`--push\` is the librarian's publish step (rebases over incoming captures, pushes).
 - **\`tng-wiki rounds [--wiki <slug>]\`** - maintenance dashboard: counts of uncompiled sources, \`_inbox/\` items pending triage (librarian-style wikis), plus ground / convention warnings / orphans / unsourced / unverified / stale / drift, and a ritual meta-health line (days since the last \`log.md\` entry + the wiki repo's uncommitted churn - a lapsed maintenance loop is a finding even when every marker reads clean). The anchor for "do your rounds".
 
 ## Typical flow
@@ -66,6 +70,19 @@ If the user wants a *new* wiki, or to adopt the current project into one, scaffo
 4. Synthesize an answer citing specific wiki pages by path
 
 If the topic isn't covered, say so clearly - the user may want to add it to the wiki. Don't fabricate coverage.
+
+## Capturing what you learned
+
+When a session produces durable knowledge, capture it - one command, no filing decisions:
+
+\`\`\`bash
+tng-wiki capture --wiki <best-fit-slug> --file /path/to/note.md   # or pipe the note on stdin
+tng-wiki capture --wiki research --also infra --file note.md       # another wiki should hear about it too
+\`\`\`
+
+- **One wiki, once.** Pick the best fit from each wiki's \`## Scope\` (\`tng-wiki capture\` with no \`--wiki\` prints them all); name others with \`--also\`. Never write the same finding into several wikis - the librarian fans it out.
+- **No commit or push decisions.** \`capture\` publishes the note to the wiki repo's upstream without touching the index or working tree other sessions are using, and queues it if the network is down. Don't \`git add\` / commit / push the wiki yourself as a capturer, and don't run \`ground\` for a capture.
+- **Give it a title** (\`# Heading\` or \`--title\`); frontmatter (\`date\`, \`captured_on\`, \`also\`) is filled in for you. Pass \`--trailer "<line>"\` for attribution lines your commit conventions require.
 
 ## When to search deep (include raw sources)
 
@@ -107,7 +124,7 @@ Enumerate work with \`tng-wiki drift\` (or \`unsourced\` / \`unverified\`), fetc
 
 ## Rounds (wiki maintenance)
 
-When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping": the canonical procedure is the **Rounds section of the wiki's \`.tng-wiki/doctrine/operations.md\`** - \`cd\` into the wiki (path from \`tng-wiki list\`), read it, run it end to end, and report a short summary. In brief: coordinate (\`claim\` / \`sync\`) → ingest pending \`raw/\` and triage \`_inbox/\` → \`tng-wiki rounds\` dashboard plus lint verbs → work the \`cite_content_changed\` queue → reconcile → \`ground --update-lock\` (scoped \`--page\` when only some pages were re-verified) → update index, append log, report. Where this summary and the wiki's \`operations.md\` disagree, the doctrine file wins - it is the single source.
+When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping": the canonical procedure is the **Rounds section of the wiki's \`.tng-wiki/doctrine/operations.md\`** - \`cd\` into the wiki (path from \`tng-wiki list\`), read it, run it end to end, and report a short summary. In brief: on the librarian host (\`tng-wiki librarian\`; elsewhere, report and capture instead) coordinate (\`claim\` / \`sync\`) → ingest pending \`raw/\` and triage \`_inbox/\` → \`tng-wiki rounds\` dashboard plus lint verbs → work the \`cite_content_changed\` queue → reconcile → \`ground --update-lock\` (scoped \`--page\` when only some pages were re-verified) → update index, append log, commit, \`sync --push\`, report. Where this summary and the wiki's \`operations.md\` disagree, the doctrine file wins - it is the single source.
 
 **Schema upgrades.** When \`tng-wiki doctor\` reports a wiki's schema was generated by an older CLI, suggest \`tng-wiki upgrade --dry-run --wiki <slug>\` (then the real run). It regenerates \`AGENTS.md\` + \`.tng-wiki/doctrine/\` while preserving hand-authored sections; the previous schema is backed up to \`.tng-wiki/backup/AGENTS.md\`. Have the user review \`git diff\` before committing.
 
@@ -116,7 +133,7 @@ When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "h
 ## What not to do
 
 - **Never modify files directly via the filesystem.** The wiki is maintained inside a specific workflow (ingest / lint / ground) defined by each wiki's \`AGENTS.md\`. If the user asks you to update the wiki, \`cd\` into the wiki directory (from \`tng-wiki list\`) and follow the \`AGENTS.md\` instructions there.
-- **One exception: \`_inbox/\` capture.** On wikis whose \`AGENTS.md\` defines the inbox capture contract, any session may drop NEW files into \`_inbox/\` - capture is cheap and owes no grounding, index, or log updates; a later librarian session triages them. The exception covers adding new capture files only: filing into \`wiki/\` / \`raw/\` / \`deliverables/\` stays librarian work (\`tng-wiki graduate <item>\` moves a capture to \`raw/\` when a page needs to cite it), and \`_inbox/\` is never a citable root.
+- **One exception: \`_inbox/\` capture.** On wikis whose \`AGENTS.md\` defines the inbox capture contract, any session may add NEW files to \`_inbox/\` - with \`tng-wiki capture\` (see above), which also publishes them. Capture is cheap and owes no grounding, index, or log updates; a later librarian session triages them. The exception covers adding new capture files only: filing into \`wiki/\` / \`raw/\` / \`deliverables/\` stays librarian work (\`tng-wiki graduate <item>\` moves a capture to \`raw/\` when a page needs to cite it), and \`_inbox/\` is never a citable root.
 - **Don't confuse \`raw/\` with \`wiki/\`.** \`tng-wiki search\` only searches \`wiki/\` (the compiled knowledge). Uncompiled sources live in \`raw/\` - use \`tng-wiki sources\` to enumerate them.
 - **Prefer CLI over MCP for this skill.** If the user has both the \`tng-wiki\` CLI and the \`tng-wiki-mcp\` server configured, use the CLI - the MCP form exists only for shell-less environments.
 

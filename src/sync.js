@@ -1,20 +1,21 @@
-// `tng-wiki sync` (#38) - pull the git repos behind registered wikis
-// (fast-forward ONLY - sync never creates a merge commit; diverged repos are
-// reported with a pointer at the doctrine merge story) and report what
-// arrived, per wiki: `_inbox/` arrivals prominently (the triage queue), plus
-// counts for new raw/ sources, wiki/ page changes, and lockfile movement.
-// Monorepos are handled naturally: wikis are grouped by git root, each root is
-// pulled once, and the diff is attributed to wikis by path prefix.
+// `tng-wiki sync` (#38, ADR 0001) - sync the git repos behind registered
+// wikis and report what arrived, per wiki: `_inbox/` arrivals prominently (the
+// triage queue), plus counts for new raw/ sources, wiki/ page changes, and
+// lockfile movement. Plain sync only fast-forwards and reports local commits
+// that were never published; `--push` is the librarian's publish step (push,
+// rebasing over incoming captures when diverged). Captures queued offline are
+// flushed first. Monorepos are handled naturally: wikis are grouped by git
+// root, each root is synced once, and the diff is attributed to wikis by path.
 import { execFileSync } from 'child_process';
 import { existsSync } from 'fs';
 import { resolve, relative } from 'path';
 import pc from 'picocolors';
 import { loadRegistry, listWikis } from './registry.js';
-import { flushOutbox } from './publish.js';
+import { flushOutbox, upstreamOf, identityEnv } from './publish.js';
 
-function git(repoDir, gitArgs, { timeout = 60_000 } = {}) {
+function git(repoDir, gitArgs, { timeout = 60_000, env = process.env } = {}) {
   return execFileSync('git', ['-C', repoDir, ...gitArgs], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout,
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env,
   }).trim();
 }
 
@@ -22,25 +23,64 @@ function gitRoot(dir) {
   try { return git(dir, ['rev-parse', '--show-toplevel']); } catch { return null; }
 }
 
-// Classify a failed `git pull --ff-only` from its stderr.
-function classifyPullError(e) {
-  const text = `${e.stderr ?? ''}${e.message ?? ''}`;
-  if (/fast-forward/i.test(text) || /divergent branches/i.test(text)) return 'diverged';
-  if (/no tracking information|no remote repository specified|does not appear to be a git repository/i.test(text)) return 'no-upstream';
-  return 'error';
+function tryGit(root, args, opts) {
+  try { return { ok: true, out: git(root, args, opts) }; } catch (e) { return { ok: false, error: `${e.stderr ?? e.message ?? ''}`.trim().split('\n').filter(Boolean).at(-1) ?? 'git failed' }; }
 }
 
-// Pull one repo root. Returns { status, before, after, error? } where status is
-// 'updated' | 'up-to-date' | 'diverged' | 'no-upstream' | 'error'.
-function pullRepo(root) {
+// Sync one repo root with its upstream. Fast-forward only unless `push`:
+//   behind only            -> fast-forward               'updated'
+//   ahead only             -> 'ahead' (report), or push  'pushed'
+//   diverged               -> 'diverged' (report), or with push: rebase the
+//                             local commits onto upstream and push 'rebased'.
+//                             Safe by design (ADR 0001): with one librarian per
+//                             wiki, the only incoming changes are new capture
+//                             files. Refuses over uncommitted tracked edits
+//                             ('dirty' - never stashes); a conflicting rebase is
+//                             aborted and reported ('conflict').
+// Returns { status, before, after, ahead, behind, incoming_base?, conflicts?, error? }.
+function syncRepo(root, { push = false } = {}) {
   const before = git(root, ['rev-parse', 'HEAD']);
-  try {
-    git(root, ['pull', '--ff-only'], { timeout: 120_000 });
-  } catch (e) {
-    return { status: classifyPullError(e), before, after: before, error: (e.stderr ?? e.message ?? '').trim().split('\n').at(-1) };
+  const up = upstreamOf(root);
+  if (!up) return { status: 'no-upstream', before, after: before };
+  const fetched = tryGit(root, ['fetch', '--quiet', up.remote, `+${up.mergeRef}:${up.trackingRef}`], { timeout: 120_000 });
+  if (!fetched.ok) return { status: 'error', before, after: before, error: fetched.error };
+
+  const [ahead, behind] = git(root, ['rev-list', '--left-right', '--count', `HEAD...${up.trackingRef}`]).split(/\s+/).map(Number);
+  const base = { before, ahead, behind };
+  const pushNow = () => tryGit(root, ['push', '--quiet', up.remote, `HEAD:${up.mergeRef}`], { timeout: 120_000 });
+
+  if (ahead === 0 && behind === 0) return { status: 'up-to-date', ...base, after: before };
+  if (ahead === 0) {
+    const ff = tryGit(root, ['merge', '--ff-only', '--quiet', up.trackingRef]);
+    if (!ff.ok) return { status: 'error', ...base, after: before, error: ff.error };
+    return { status: 'updated', ...base, after: git(root, ['rev-parse', 'HEAD']) };
+  }
+  if (behind === 0) {
+    if (!push) return { status: 'ahead', ...base, after: before };
+    const pushed = pushNow();
+    return pushed.ok ? { status: 'pushed', ...base, after: before } : { status: 'error', ...base, after: before, error: pushed.error };
+  }
+  if (!push) return { status: 'diverged', ...base, after: before };
+
+  if (git(root, ['status', '--porcelain', '--untracked-files=no']) !== '') {
+    return { status: 'dirty', ...base, after: before, error: 'uncommitted tracked changes - commit (or finish) them, then sync --push again' };
+  }
+  const incomingBase = git(root, ['merge-base', 'HEAD', up.trackingRef]);
+  const incomingTip = git(root, ['rev-parse', up.trackingRef]);
+  const rebased = tryGit(root, ['rebase', '--quiet', up.trackingRef], { env: identityEnv(root) });
+  if (!rebased.ok) {
+    const conflicts = tryGit(root, ['diff', '--name-only', '--diff-filter=U']);
+    tryGit(root, ['rebase', '--abort']);
+    return {
+      status: 'conflict', ...base, after: git(root, ['rev-parse', 'HEAD']),
+      conflicts: conflicts.ok && conflicts.out ? conflicts.out.split('\n') : [], error: rebased.error,
+    };
   }
   const after = git(root, ['rev-parse', 'HEAD']);
-  return { status: after === before ? 'up-to-date' : 'updated', before, after };
+  const pushed = pushNow();
+  const incoming = { incoming_base: incomingBase, incoming_tip: incomingTip };
+  if (!pushed.ok) return { status: 'error', ...base, after, ...incoming, error: `rebased, but push failed: ${pushed.error}` };
+  return { status: 'rebased', ...base, after, ...incoming };
 }
 
 // Attribute `git diff --name-status before..after` to the repo's wikis.
@@ -71,7 +111,7 @@ function attributeChanges(root, before, after, wikisInRepo) {
   return [...perWiki.values()];
 }
 
-export function syncWikis({ only = null, home } = {}) {
+export function syncWikis({ only = null, home, push = false } = {}) {
   const wikis = listWikis(loadRegistry(home)).filter((w) => (only ? w.slug === only : true));
   if (only && wikis.length === 0) throw new Error(`No wiki registered under slug "${only}". Run \`tng-wiki list\`.`);
 
@@ -91,9 +131,12 @@ export function syncWikis({ only = null, home } = {}) {
   const repoResults = [];
   const wikiResults = [];
   for (const [root, { wikis: inRepo }] of repos) {
-    const pull = pullRepo(root);
-    repoResults.push({ root, wikis: inRepo.map((w) => w.slug), ...pull });
-    if (pull.status === 'updated') wikiResults.push(...attributeChanges(root, pull.before, pull.after, inRepo));
+    const result = syncRepo(root, { push });
+    repoResults.push({ root, wikis: inRepo.map((w) => w.slug), ...result });
+    // incoming changes: the fast-forward range, or for a rebase the upstream
+    // side (merge-base .. the tip the local commits were replayed onto)
+    if (result.status === 'updated') wikiResults.push(...attributeChanges(root, result.before, result.after, inRepo));
+    if (result.incoming_tip) wikiResults.push(...attributeChanges(root, result.incoming_base, result.incoming_tip, inRepo));
   }
   return { repos: repoResults, wikis: wikiResults, skipped, outbox };
 }
@@ -110,32 +153,43 @@ export async function runSync(args) {
     if (args[i] === '--wiki') { i++; continue; }
     if (!args[i].startsWith('--')) throw new Error(`unknown argument "${args[i]}" - \`sync\` takes no positional arguments. Did you mean --wiki ${args[i]}?`);
   }
-  const result = syncWikis({ only: argValue(args, '--wiki') });
+  const result = syncWikis({ only: argValue(args, '--wiki'), push: args.includes('--push') });
 
   if (args.includes('--json')) {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     return;
   }
+  // --quiet (session-start hooks): only what someone should act on or know.
+  const quiet = args.includes('--quiet');
+  const out = (line) => process.stdout.write(line + '\n');
 
   for (const r of result.repos) {
     const label = pc.bold(r.root);
-    if (r.status === 'up-to-date') process.stdout.write(`${pc.green('✓')} ${label} ${pc.dim('up to date')}\n`);
-    else if (r.status === 'updated') process.stdout.write(`${pc.green('✓')} ${label} ${pc.dim(`${r.before.slice(0, 7)} → ${r.after.slice(0, 7)}`)}\n`);
-    else if (r.status === 'diverged') process.stdout.write(`${pc.yellow('⚠')} ${label} ${pc.yellow('diverged - merge manually')} ${pc.dim('(see .tng-wiki/doctrine/grounding.md, Merge Conflicts)')}\n`);
-    else if (r.status === 'no-upstream') process.stdout.write(`${pc.dim(`○ ${r.root} no upstream - skipped`)}\n`);
-    else process.stdout.write(`${pc.yellow('⚠')} ${label} ${pc.yellow(r.error ?? 'pull failed')}\n`);
+    const n = (k) => `${k} commit${k === 1 ? '' : 's'}`;
+    if (r.status === 'up-to-date') { if (!quiet) out(`${pc.green('✓')} ${label} ${pc.dim('up to date')}`); }
+    else if (r.status === 'updated') out(`${pc.green('✓')} ${label} ${pc.dim(`${r.before.slice(0, 7)} → ${r.after.slice(0, 7)}`)}`);
+    else if (r.status === 'pushed') out(`${pc.green('✓')} ${label} ${pc.dim(`pushed ${n(r.ahead)}`)}`);
+    else if (r.status === 'rebased') out(`${pc.green('✓')} ${label} ${pc.dim(`rebased ${n(r.ahead)} onto ${n(r.behind)} from upstream, pushed`)}`);
+    else if (r.status === 'ahead') out(`${pc.yellow('⚠')} ${label} ${pc.yellow(`${n(r.ahead)} not pushed`)} ${pc.dim('- the librarian publishes with tng-wiki sync --push')}`);
+    else if (r.status === 'diverged') out(`${pc.yellow('⚠')} ${label} ${pc.yellow(`diverged (${r.ahead} local, ${r.behind} upstream)`)} ${pc.dim('- tng-wiki sync --push rebases the local commits and publishes')}`);
+    else if (r.status === 'dirty') out(`${pc.yellow('⚠')} ${label} ${pc.yellow('not rebased:')} ${r.error}`);
+    else if (r.status === 'conflict') out(`${pc.yellow('⚠')} ${label} ${pc.yellow(`rebase conflict in ${r.conflicts.join(', ') || 'unknown files'} - aborted, clone unchanged`)} ${pc.dim('(see .tng-wiki/doctrine/grounding.md, Merge Conflicts)')}`);
+    else if (r.status === 'no-upstream') { if (!quiet) out(pc.dim(`○ ${r.root} no upstream - skipped`)); }
+    else out(`${pc.yellow('⚠')} ${label} ${pc.yellow(r.error ?? 'sync failed')}`);
   }
-  for (const s of result.skipped) process.stdout.write(pc.dim(`○ ${s.slug}: ${s.reason} - skipped\n`));
+  if (!quiet) for (const s of result.skipped) out(pc.dim(`○ ${s.slug}: ${s.reason} - skipped`));
+  for (const p of result.outbox.published) out(`${pc.green('✓')} published queued capture ${pc.cyan(p.path)}`);
+  for (const p of result.outbox.pending) out(`${pc.yellow('●')} capture still queued: ${p.relPath} ${pc.dim(`- ${p.reason}`)}`);
 
   const touched = result.wikis.filter((w) => w.arrivals.length || w.raw_added.length || w.wiki_changed || w.lock_changed);
   for (const w of touched) {
-    process.stdout.write(`\n${pc.bold(w.slug)}\n`);
-    for (const a of w.arrivals) process.stdout.write(`  ${pc.cyan('●')} inbox arrival: ${a} ${pc.dim('- triage: file into wiki/ · deliverables/ · raw/ (tng-wiki graduate)')}\n`);
-    if (w.raw_added.length) process.stdout.write(`  ${w.raw_added.length} new raw source(s) ${pc.dim('- tng-wiki sources --uncompiled')}\n`);
-    if (w.wiki_changed) process.stdout.write(`  ${w.wiki_changed} wiki page(s) changed\n`);
-    if (w.lock_changed) process.stdout.write(`  ${pc.dim('lockfile changed - run tng-wiki ground to see per-citation state')}\n`);
+    out(`\n${pc.bold(w.slug)}`);
+    for (const a of w.arrivals) out(`  ${pc.cyan('●')} inbox arrival: ${a} ${pc.dim('- triage: file into wiki/ · deliverables/ · raw/ (tng-wiki graduate)')}`);
+    if (w.raw_added.length) out(`  ${w.raw_added.length} new raw source(s) ${pc.dim('- tng-wiki sources --uncompiled')}`);
+    if (w.wiki_changed) out(`  ${w.wiki_changed} wiki page(s) changed`);
+    if (w.lock_changed) out(`  ${pc.dim('lockfile changed - run tng-wiki ground to see per-citation state')}`);
   }
-  if (result.repos.some((r) => r.status === 'updated') && touched.length === 0) {
-    process.stdout.write(pc.dim('\npulled changes touch no registered wiki content\n'));
+  if (!quiet && result.repos.some((r) => r.status === 'updated' || r.status === 'rebased') && touched.length === 0) {
+    out(pc.dim('\npulled changes touch no registered wiki content'));
   }
 }

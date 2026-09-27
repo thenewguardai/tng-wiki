@@ -291,7 +291,7 @@ Lists what is waiting in each registered wiki's `_inbox/`: path, title (frontmat
 ```bash
 $ tng-wiki inbox
 projects 2 pending
-  ● 2026-09-27-webgl-gpu-timer.md - WebGL GPU timers read busy time on laptop GPUs (0d · from legion5090)
+  ● 2026-09-27-webgl-gpu-timer.md - WebGL GPU timers read busy time on laptop GPUs (0d · from laptop)
   ● 2026-09-27-threejs-compileasync.md - three.js compileAsync must bind the composer target (0d · also: shared)
 shared 0 pending
 ```
@@ -597,10 +597,37 @@ Restart Claude Desktop. The tools appear under the server name `tng-wiki`.
 
 ### Cross-machine (wiki on one box, agent on another)
 
-- **Git sync** - the wiki is git-tracked; `git clone` on the remote machine and `git pull` to keep fresh. Natural versioning, offline-friendly.
+- **Git sync with roles (recommended)** - see [Multi-machine wikis](#multi-machine-wikis-capture-and-the-librarian-seat) below: one librarian host per wiki, captures from anywhere, `sync` everywhere.
 - **SSH + CLI** - `ssh wiki-host "tng-wiki search karpathy --wiki ai-research"` for ad-hoc queries without a full clone.
 - **Thin HTTP wrapper** - wrap the CLI in ~50 lines of `http.createServer` if you want multiple remote agents hitting one wiki without SSH.
 - **MCP for remote chat-app agents** - same `tng-wiki-mcp` binary; run it on the wiki host and point remote MCP clients at it.
+
+## Multi-machine wikis: capture and the librarian seat
+
+When one wiki repo is cloned on several machines and many agent sessions touch it, give each machine one of two seats ([ADR 0001](docs/adr/0001-capture-to-origin-and-home-librarian.md), [design](docs/design/cross-machine-flow.md)):
+
+- **Librarian seat** - the one host named in the wiki's committed `.tng-wiki.json` (`tng-wiki librarian --set-here`). It triages `_inbox/`, files pages, grounds, locks, and publishes with `tng-wiki sync --push`.
+- **Capturer seat** - every other machine. Sessions read and search as usual and add knowledge with `tng-wiki capture`. Compiled-state writes (`ground --update-lock` / `--fix-*`, `graduate`, `dismiss`, `log`, `upgrade`) refuse here unless `--off-host`.
+
+```bash
+# any machine, any session: one command, no commit or push decisions
+$ tng-wiki capture --wiki research --file /tmp/finding.md
+✓ published research/_inbox/2026-09-27-webgl-gpu-timers-lie.md (4f1c2ab)
+  the librarian for "research" files it; nothing else to do here
+
+$ tng-wiki capture --file note.md          # no target: prints every wiki's ## Scope and asks
+
+# the librarian host, at the end of rounds
+$ tng-wiki sync --push
+✓ ~/wikis rebased 3 commits onto 2 commits from upstream, pushed
+
+# every machine, at session start (e.g. a Claude Code SessionStart hook)
+$ timeout 20 tng-wiki sync --quiet          # silent unless something arrived or needs attention
+```
+
+How `capture` stays conflict-free: it builds the commit on the freshly fetched upstream tip with a private git index and pushes that SHA (retrying if another capture wins the race), so the index and working tree other sessions are using are never touched, and a new uniquely named file cannot conflict. The local clone fast-forwards when it can; if it holds unpublished commits, the capture arrives on the next `sync --push`. A repo with no upstream gets a path-only local commit (`--no-push` forces that). If the remote is unreachable, the capture waits in `~/.tng-wiki/outbox/` and the next `capture` or `sync` publishes it.
+
+Routing: capture to ONE best-fit wiki and name others with `--also`; the librarian fans out. `tng-wiki inbox` shows what is waiting in every wiki.
 
 ## QMD Integration
 

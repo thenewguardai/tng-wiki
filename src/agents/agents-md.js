@@ -427,13 +427,13 @@ Types: \`ingest\`, \`query\`, \`lint\`, \`issue-prep\`, \`post-publish\`
 
 "Rounds" is the named maintenance bundle. When the user says "do your rounds", "do wiki rounds", "wiki maintenance", or "housekeeping", run it end to end and report a short summary:
 
-1. **Coordinate.** If other agent sessions may be active on this machine, \`tng-wiki claim\` first (advisory machine-local lease; \`release\` when done); if a mutating verb reports someone ELSE's lease, stop and coordinate instead of writing. On multi-machine wikis, \`tng-wiki sync\` next - fast-forward pull plus a per-wiki arrivals report; on a diverged repo, see the merge-conflict section of \`grounding.md\`.
+1. **Coordinate.** Rounds run on the wiki's librarian host when one is set (\`tng-wiki librarian\` shows the seat): on a capturer seat, report the dashboard and capture what you learned (\`tng-wiki capture\`) instead of filing. If other agent sessions may be active on this machine, \`tng-wiki claim\` first (advisory machine-local lease; \`release\` when done); if a mutating verb reports someone ELSE's lease, stop and coordinate instead of writing. On multi-machine wikis, \`tng-wiki sync\` next - fast-forward pull plus a per-wiki arrivals report (it also reports local commits not yet published); \`sync --push\` rebases unpublished librarian commits over the incoming captures. On a conflict, see the merge-conflict section of \`grounding.md\`.
 2. **Ingest** anything pending in \`raw/\` (\`tng-wiki sources --uncompiled\`), and triage anything sitting in \`_inbox/\` when the wiki has one (see the Inbox contract below; the rounds dashboard counts it).
 3. **Lint + ground:** \`tng-wiki rounds\` for every count at a glance, then \`ground\` / \`orphans\` / \`unsourced\` / \`unverified\` / \`stale\` / \`drift\` for detail.
 4. **Work the citation queue.** \`cite_content_changed\` findings are the per-citation re-verification queue - re-check each against its authority (\`tng-wiki cite show <page>\` puts each claim next to the exact lines it cites). \`tng-wiki ground --fix-moved\` repairs shifted \`#L\` anchors (safe: content unchanged). A code finding that carries \`suggested_range\` names where the locked lines most likely are now (mapped through the authority's git diff since the lock); read the claim against THOSE lines, and if it still holds, repoint the anchor there before \`--update-lock\`.
 5. **Reconcile** what's safely reconcilable; leave the \`⚠️\` markers that need human judgment and surface them.
 6. **Re-lock.** After reconciling, \`tng-wiki ground --update-lock\` records the newly verified state in the lockfile - scope it with \`--page <p>\` when you only re-verified some pages ("verify one thing, lock one thing"; never bless content you haven't checked).
-7. **Close out.** Update \`wiki/index.md\`, append a \`wiki/log.md\` entry, and report what changed and what still needs the human.
+7. **Close out.** Update \`wiki/index.md\`, append a \`wiki/log.md\` entry, commit the wiki paths you changed, and publish with \`tng-wiki sync --push\` so every clone sees the filed state. Report what changed and what still needs the human.
 
 Run rounds when asked, or on a maintenance cadence (the user may wire it to cron or the \`schedule\` skill).
 
@@ -484,8 +484,9 @@ Output a lint report. Suggest specific actions.
 
 For wikis with an \`_inbox/\` directory - the cross-session capture surface:
 
-- **Capture is cheap.** Any session, opened anywhere, may drop a NEW file into \`_inbox/\` - a capture owes no grounding, no index entry, no log line. That is the entire point: zero friction at capture time.
-- **Filing is careful.** A session opened *in this wiki* is its librarian: triage \`_inbox/\` before finishing - distill verifiable claims into grounded \`wiki/\` pages, send dated point-in-time write-ups to \`deliverables/\` (wikis that keep one), move immutable captures to \`raw/\`. \`_inbox/\` should be empty when you leave, or carry only items you logged as deferred.
+- **Capture is cheap.** Any session, opened anywhere, captures with \`tng-wiki capture --wiki <slug> --file <note.md>\` (or stdin): it adds a NEW \`_inbox/\` file and publishes it to the wiki repo's upstream without touching the index or working tree other sessions use, queueing if offline. A capture owes no grounding, no index entry, no log line, and no commit or push decision. That is the entire point: zero friction at capture time.
+- **Route once.** A capture goes to ONE best-fit wiki (each wiki's \`## Scope\` is the routing table; \`capture\` without \`--wiki\` prints them), naming any other wiki that should hear about it with \`--also\`. Never write the same finding into several wikis; the librarian fans it out (host-adapted copies, \`[[wiki:page]]\` links) and may move a capture to a better-fit wiki.
+- **Filing is careful.** A session opened *in this wiki* (on its librarian host, when one is set) is its librarian: triage \`_inbox/\` before finishing - distill verifiable claims into grounded \`wiki/\` pages, send dated point-in-time write-ups to \`deliverables/\` (wikis that keep one), move immutable captures to \`raw/\`. \`_inbox/\` should be empty when you leave, or carry only items you logged as deferred.
 - **Never a citable root.** A page that needs an inbox artifact as evidence graduates it first: \`tng-wiki graduate <item>\` moves it to \`raw/\` and prints the citable path (\`ground\` flags \`_inbox/\` cites as \`unknown_cite_root\`).
 
 | Content | Destination |

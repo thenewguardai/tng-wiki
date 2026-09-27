@@ -60,7 +60,7 @@ export function upstreamOf(root) {
 
 // The user's git identity when configured; a neutral fallback otherwise, so a
 // fresh machine can still capture.
-function identityEnv(root, base = process.env) {
+export function identityEnv(root, base = process.env) {
   let email = '';
   try { email = git(root, ['config', 'user.email']); } catch { /* unset */ }
   if (email || base.GIT_AUTHOR_EMAIL) return base;
