@@ -58,6 +58,7 @@ export const COMMANDS = [
       WIKI,
       { name: '--push', desc: 'the librarian\'s publish step: push local commits; on a diverged repo, rebase them onto upstream first (refuses over uncommitted tracked edits, never stashes; aborts cleanly on conflict)' },
       { name: '--quiet', desc: 'print only arrivals, published captures and problems - for a session-start hook' },
+      { name: '--off-host', desc: 'with --push: publish local commits that change a wiki this machine is not librarian for' },
       JSON_FLAG,
     ],
     examples: ['tng-wiki sync', 'tng-wiki sync --push', 'timeout 20 tng-wiki sync --quiet'],

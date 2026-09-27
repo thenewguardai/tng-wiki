@@ -7,11 +7,13 @@
 // flushed first. Monorepos are handled naturally: wikis are grouped by git
 // root, each root is synced once, and the diff is attributed to wikis by path.
 import { execFileSync } from 'child_process';
-import { existsSync } from 'fs';
-import { resolve, relative } from 'path';
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, relative } from 'path';
 import pc from 'picocolors';
 import { loadRegistry, listWikis } from './registry.js';
-import { flushOutbox, upstreamOf, identityEnv } from './publish.js';
+import { flushOutbox, upstreamOf, identityEnv, headBranch } from './publish.js';
+import { seatFor } from './librarian.js';
 
 function git(repoDir, gitArgs, { timeout = 60_000, env = process.env } = {}) {
   return execFileSync('git', ['-C', repoDir, ...gitArgs], {
@@ -20,11 +22,63 @@ function git(repoDir, gitArgs, { timeout = 60_000, env = process.env } = {}) {
 }
 
 function gitRoot(dir) {
-  try { return git(dir, ['rev-parse', '--show-toplevel']); } catch { return null; }
+  try { return realpathSync(git(dir, ['rev-parse', '--show-toplevel'])); } catch { return null; }
 }
 
 function tryGit(root, args, opts) {
   try { return { ok: true, out: git(root, args, opts) }; } catch (e) { return { ok: false, error: `${e.stderr ?? e.message ?? ''}`.trim().split('\n').filter(Boolean).at(-1) ?? 'git failed' }; }
+}
+
+// Repo-relative prefix of a wiki (realpath'd: the registry may hold a symlink).
+function wikiPrefix(root, wikiPath) {
+  let real = wikiPath;
+  try { real = realpathSync(wikiPath); } catch { /* keep as registered */ }
+  return relative(root, real).split('\\').join('/');
+}
+
+function relInWiki(prefix, file) {
+  if (prefix === '') return file;
+  return file.startsWith(`${prefix}/`) ? file.slice(prefix.length + 1) : null;
+}
+
+// Local commits that write compiled state into a wiki this machine only
+// captures for (anything outside its _inbox/). `sync --push` refuses to
+// publish those without --off-host (ADR 0001).
+function offSeatWrites(root, fromRef, wikisInRepo) {
+  const changed = tryGit(root, ['diff', '--name-only', fromRef, 'HEAD']);
+  if (!changed.ok || !changed.out) return [];
+  const capturerWikis = wikisInRepo
+    .map((w) => ({ w, seat: seatFor(w.path), prefix: wikiPrefix(root, w.path) }))
+    .filter((x) => x.seat.role === 'capturer');
+  const out = [];
+  for (const file of changed.out.split('\n')) {
+    for (const { w, seat, prefix } of capturerWikis) {
+      const rel = relInWiki(prefix, file);
+      if (rel !== null && !rel.startsWith('_inbox/')) out.push({ wiki: w.slug, librarian: seat.librarian, file });
+    }
+  }
+  return out;
+}
+
+// Rebase HEAD's local commits onto `onto` in a throwaway detached worktree,
+// so the user's working tree never holds a rebase in progress and an aborted
+// rebase can never reset anyone's edits. Returns { ok, head } or
+// { ok: false, conflicts, error }.
+function rebaseAside(root, onto) {
+  const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-rebase-'));
+  const added = tryGit(root, ['worktree', 'add', '--quiet', '--detach', dir, 'HEAD']);
+  if (!added.ok) { rmSync(dir, { recursive: true, force: true }); return { ok: false, conflicts: [], error: added.error }; }
+  try {
+    const rebased = tryGit(dir, ['rebase', '--quiet', '--no-autostash', onto], { env: identityEnv(root) });
+    if (rebased.ok) return { ok: true, head: git(dir, ['rev-parse', 'HEAD']) };
+    const conflicts = tryGit(dir, ['diff', '--name-only', '--diff-filter=U']);
+    tryGit(dir, ['rebase', '--abort']);
+    return { ok: false, conflicts: conflicts.ok && conflicts.out ? conflicts.out.split('\n') : [], error: rebased.error };
+  } finally {
+    tryGit(root, ['worktree', 'remove', '--force', dir]);
+    rmSync(dir, { recursive: true, force: true });
+    tryGit(root, ['worktree', 'prune']);
+  }
 }
 
 // Sync one repo root with its upstream. Fast-forward only unless `push`:
@@ -34,12 +88,20 @@ function tryGit(root, args, opts) {
 //                             local commits onto upstream and push 'rebased'.
 //                             Safe by design (ADR 0001): with one librarian per
 //                             wiki, the only incoming changes are new capture
-//                             files. Refuses over uncommitted tracked edits
-//                             ('dirty' - never stashes); a conflicting rebase is
-//                             aborted and reported ('conflict').
-// Returns { status, before, after, ahead, behind, incoming_base?, conflicts?, error? }.
-function syncRepo(root, { push = false } = {}) {
+//                             files. Refuses over staged or modified tracked
+//                             files ('dirty' - never stashes); rebases in a
+//                             throwaway worktree and moves the branch with
+//                             `reset --keep`, which refuses rather than
+//                             overwrites a concurrent edit; a conflicting
+//                             rebase leaves the clone exactly as it was.
+//   with push, local commits writing compiled state into a wiki this machine
+//   only captures for                       -> 'off-seat' (unless offHost)
+// Returns { status, before, after, ahead, behind, incoming_base?, incoming_tip?,
+// conflicts?, off_seat?, error? }.
+function syncRepo(root, { push = false, offHost = false, wikisInRepo = [] } = {}) {
   const before = git(root, ['rev-parse', 'HEAD']);
+  const branch = headBranch(root);
+  if (!branch) return { status: 'error', before, after: before, error: 'HEAD is detached (a rebase in progress?) - finish it first' };
   const up = upstreamOf(root);
   if (!up) return { status: 'no-upstream', before, after: before };
   const fetched = tryGit(root, ['fetch', '--quiet', up.remote, `+${up.mergeRef}:${up.trackingRef}`], { timeout: 120_000 });
@@ -55,32 +117,35 @@ function syncRepo(root, { push = false } = {}) {
     if (!ff.ok) return { status: 'error', ...base, after: before, error: ff.error };
     return { status: 'updated', ...base, after: git(root, ['rev-parse', 'HEAD']) };
   }
+  if (!push) return { status: behind === 0 ? 'ahead' : 'diverged', ...base, after: before };
+
+  const incomingBase = git(root, ['merge-base', 'HEAD', up.trackingRef]);
+  if (!offHost) {
+    const offSeat = offSeatWrites(root, incomingBase, wikisInRepo);
+    if (offSeat.length) {
+      return { status: 'off-seat', ...base, after: before, off_seat: offSeat, error: `local commits change ${offSeat[0].wiki}, whose librarian is "${offSeat[0].librarian}" - publish from there, or re-run with --off-host` };
+    }
+  }
   if (behind === 0) {
-    if (!push) return { status: 'ahead', ...base, after: before };
     const pushed = pushNow();
     return pushed.ok ? { status: 'pushed', ...base, after: before } : { status: 'error', ...base, after: before, error: pushed.error };
   }
-  if (!push) return { status: 'diverged', ...base, after: before };
 
   if (git(root, ['status', '--porcelain', '--untracked-files=no']) !== '') {
     return { status: 'dirty', ...base, after: before, error: 'uncommitted tracked changes - commit (or finish) them, then sync --push again' };
   }
-  const incomingBase = git(root, ['merge-base', 'HEAD', up.trackingRef]);
   const incomingTip = git(root, ['rev-parse', up.trackingRef]);
-  const rebased = tryGit(root, ['rebase', '--quiet', up.trackingRef], { env: identityEnv(root) });
-  if (!rebased.ok) {
-    const conflicts = tryGit(root, ['diff', '--name-only', '--diff-filter=U']);
-    tryGit(root, ['rebase', '--abort']);
-    return {
-      status: 'conflict', ...base, after: git(root, ['rev-parse', 'HEAD']),
-      conflicts: conflicts.ok && conflicts.out ? conflicts.out.split('\n') : [], error: rebased.error,
-    };
+  const rebased = rebaseAside(root, incomingTip);
+  if (!rebased.ok) return { status: 'conflict', ...base, after: before, conflicts: rebased.conflicts, error: rebased.error };
+  if (git(root, ['rev-parse', 'HEAD']) !== before) {
+    return { status: 'error', ...base, after: before, error: 'another session committed during sync - run sync --push again' };
   }
-  const after = git(root, ['rev-parse', 'HEAD']);
-  const pushed = pushNow();
+  const moved = tryGit(root, ['reset', '--quiet', '--keep', rebased.head]);
+  if (!moved.ok) return { status: 'error', ...base, after: before, error: `rebased, but could not move the branch (a concurrent edit?): ${moved.error}` };
   const incoming = { incoming_base: incomingBase, incoming_tip: incomingTip };
-  if (!pushed.ok) return { status: 'error', ...base, after, ...incoming, error: `rebased, but push failed: ${pushed.error}` };
-  return { status: 'rebased', ...base, after, ...incoming };
+  const pushed = pushNow();
+  if (!pushed.ok) return { status: 'error', ...base, after: rebased.head, ...incoming, error: `rebased, but push failed: ${pushed.error}` };
+  return { status: 'rebased', ...base, after: rebased.head, ...incoming };
 }
 
 // Attribute `git diff --name-status before..after` to the repo's wikis.
@@ -90,13 +155,13 @@ function attributeChanges(root, before, after, wikisInRepo) {
   }]));
   const out = git(root, ['diff', '--name-status', before, after]);
   if (!out) return [...perWiki.values()];
+  const prefixes = wikisInRepo.map((w) => [w, wikiPrefix(root, w.path)]);
   for (const line of out.split('\n')) {
     const parts = line.split('\t');
     const status = parts[0][0];
     const file = parts.at(-1);  // rename lines are "Rnn\told\tnew" - take the new path
-    for (const w of wikisInRepo) {
-      const prefix = relative(root, resolve(w.path));
-      const rel = prefix === '' ? file : file.startsWith(`${prefix}/`) ? file.slice(prefix.length + 1) : null;
+    for (const [w, prefix] of prefixes) {
+      const rel = relInWiki(prefix, file);
       if (rel === null) continue;
       const bucket = perWiki.get(w.slug);
       if (rel.startsWith('_inbox/') && status === 'A') bucket.arrivals.push(rel);
@@ -111,11 +176,11 @@ function attributeChanges(root, before, after, wikisInRepo) {
   return [...perWiki.values()];
 }
 
-export function syncWikis({ only = null, home, push = false } = {}) {
+export function syncWikis({ only = null, home, push = false, offHost = false } = {}) {
   const wikis = listWikis(loadRegistry(home)).filter((w) => (only ? w.slug === only : true));
   if (only && wikis.length === 0) throw new Error(`No wiki registered under slug "${only}". Run \`tng-wiki list\`.`);
 
-  const repos = new Map();  // root -> { wikis: [], skipped? }
+  const repos = new Map();  // root -> { wikis: [] }
   const skipped = [];
   for (const w of wikis) {
     if (!existsSync(w.path)) { skipped.push({ slug: w.slug, reason: 'path missing' }); continue; }
@@ -131,12 +196,20 @@ export function syncWikis({ only = null, home, push = false } = {}) {
   const repoResults = [];
   const wikiResults = [];
   for (const [root, { wikis: inRepo }] of repos) {
-    const result = syncRepo(root, { push });
+    let result;
+    try {
+      result = syncRepo(root, { push, offHost, wikisInRepo: inRepo });
+    } catch (e) {
+      // one broken repo (unborn HEAD, unrelated histories) must not stop the sweep
+      result = { status: 'error', error: `${e.stderr ?? e.message ?? ''}`.trim().split('\n').at(-1) };
+    }
     repoResults.push({ root, wikis: inRepo.map((w) => w.slug), ...result });
     // incoming changes: the fast-forward range, or for a rebase the upstream
     // side (merge-base .. the tip the local commits were replayed onto)
-    if (result.status === 'updated') wikiResults.push(...attributeChanges(root, result.before, result.after, inRepo));
-    if (result.incoming_tip) wikiResults.push(...attributeChanges(root, result.incoming_base, result.incoming_tip, inRepo));
+    try {
+      if (result.status === 'updated') wikiResults.push(...attributeChanges(root, result.before, result.after, inRepo));
+      if (result.incoming_tip) wikiResults.push(...attributeChanges(root, result.incoming_base, result.incoming_tip, inRepo));
+    } catch { /* attribution is a report, never a reason to fail the sync */ }
   }
   return { repos: repoResults, wikis: wikiResults, skipped, outbox };
 }
@@ -153,7 +226,7 @@ export async function runSync(args) {
     if (args[i] === '--wiki') { i++; continue; }
     if (!args[i].startsWith('--')) throw new Error(`unknown argument "${args[i]}" - \`sync\` takes no positional arguments. Did you mean --wiki ${args[i]}?`);
   }
-  const result = syncWikis({ only: argValue(args, '--wiki'), push: args.includes('--push') });
+  const result = syncWikis({ only: argValue(args, '--wiki'), push: args.includes('--push'), offHost: args.includes('--off-host') });
 
   if (args.includes('--json')) {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -173,6 +246,7 @@ export async function runSync(args) {
     else if (r.status === 'ahead') out(`${pc.yellow('⚠')} ${label} ${pc.yellow(`${n(r.ahead)} not pushed`)} ${pc.dim('- the librarian publishes with tng-wiki sync --push')}`);
     else if (r.status === 'diverged') out(`${pc.yellow('⚠')} ${label} ${pc.yellow(`diverged (${r.ahead} local, ${r.behind} upstream)`)} ${pc.dim('- tng-wiki sync --push rebases the local commits and publishes')}`);
     else if (r.status === 'dirty') out(`${pc.yellow('⚠')} ${label} ${pc.yellow('not rebased:')} ${r.error}`);
+    else if (r.status === 'off-seat') out(`${pc.yellow('⚠')} ${label} ${pc.yellow('not pushed:')} ${r.error}`);
     else if (r.status === 'conflict') out(`${pc.yellow('⚠')} ${label} ${pc.yellow(`rebase conflict in ${r.conflicts.join(', ') || 'unknown files'} - aborted, clone unchanged`)} ${pc.dim('(see .tng-wiki/doctrine/grounding.md, Merge Conflicts)')}`);
     else if (r.status === 'no-upstream') { if (!quiet) out(pc.dim(`○ ${r.root} no upstream - skipped`)); }
     else out(`${pc.yellow('⚠')} ${label} ${pc.yellow(r.error ?? 'sync failed')}`);

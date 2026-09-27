@@ -9,19 +9,32 @@
 // pre-written into the working tree: an untracked file at an incoming path
 // aborts a later merge.
 //
-// Unreachable remotes queue the capture in ~/.tng-wiki/outbox/, flushed by the
-// next capture or sync.
+// Publishing is idempotent: when the target _inbox/ upstream already holds a
+// file with the identical blob, the capture is already there and nothing is
+// pushed. That makes overlapping outbox flushes and a kill between push and
+// cleanup harmless.
+//
+// Anything that cannot be published now queues in ~/.tng-wiki/outbox/ (the
+// content is never lost); the next capture or sync retries.
 import { execFileSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'fs';
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync,
+  rmSync, statSync, unlinkSync, writeFileSync,
+} from 'fs';
 import { homedir, tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { dirname, join, posix } from 'path';
 
-const PUSH_ATTEMPTS = 5;
+const PUSH_ATTEMPTS = 8;
+const STALE_CLAIM_MS = 10 * 60_000;
 
 export class TransportError extends Error {
-  constructor(stage, message) {
+  // kind: 'network' (retry later), 'rejected' (the remote refused - needs a
+  // human), 'race' (lost every retry to other pushers), 'detached' (no branch
+  // to publish from right now).
+  constructor(stage, message, kind = 'network') {
     super(`${stage} failed: ${message}`);
     this.stage = stage;
+    this.kind = kind;
   }
 }
 
@@ -31,23 +44,42 @@ function git(root, args, { env, input, timeout = 60_000 } = {}) {
   }).trim();
 }
 
-function gitOk(root, args) {
-  try { git(root, args); return true; } catch { return false; }
+function gitOk(root, args, opts) {
+  try { git(root, args, opts); return true; } catch { return false; }
 }
 
-function stderrOf(e) {
-  return `${e.stderr ?? ''}`.trim().split('\n').filter(Boolean).at(-1) ?? e.message;
+// The whole stderr, trimmed - the last line alone ("failed to push some
+// refs") hides the reason a hook or server gave.
+function stderrText(e) {
+  const text = `${e.stderr ?? ''}`.trim() || e.message || 'git failed';
+  return text.split('\n').map((l) => l.replace(/^(remote|error|fatal|hint):\s*/, '').trim()).filter(Boolean).slice(0, 6).join(' | ').slice(0, 600);
+}
+
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+export function classifyPushError(stderr) {
+  if (/\((fetch first|non-fast-forward)\)|non-fast-forward/i.test(stderr)) return 'race';
+  if (/\[remote rejected\]|declined|protected branch|permission|denied|403|unauthorized/i.test(stderr)) return 'rejected';
+  return 'network';
 }
 
 export function repoRootOf(dir) {
-  try { return git(dir, ['rev-parse', '--show-toplevel']); } catch { return null; }
+  try { return realpathSync(git(dir, ['rev-parse', '--show-toplevel'])); } catch { return null; }
+}
+
+// The checked-out branch, or null on a detached HEAD (e.g. mid-rebase).
+export function headBranch(root) {
+  try { return git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']); } catch { return null; }
 }
 
 // { remote, mergeRef, trackingRef } for the checked-out branch, or null when
 // HEAD is detached or the branch tracks nothing.
 export function upstreamOf(root) {
+  const branch = headBranch(root);
+  if (!branch) return null;
   try {
-    const branch = git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
     const remote = git(root, ['config', `branch.${branch}.remote`]);
     const mergeRef = git(root, ['config', `branch.${branch}.merge`]);
     const trackingRef = git(root, ['rev-parse', '--symbolic-full-name', '@{u}']);
@@ -91,32 +123,55 @@ function freePath(root, treeish, relPath) {
   throw new Error(`no free name near ${relPath}`);
 }
 
+// Path of a file under `dirRel` in `treeish` whose blob is `blob`, or null.
+function sameBlobIn(root, treeish, dirRel, blob) {
+  let listing = '';
+  try { listing = git(root, ['ls-tree', '-r', treeish, '--', `${dirRel}/`]); } catch { return null; }
+  for (const line of listing.split('\n')) {
+    const m = line.match(/^\d+ blob ([0-9a-f]+)\t(.+)$/);
+    if (m && m[1] === blob) return m[2];
+  }
+  return null;
+}
+
+// 'updated' (fast-forwarded), 'ahead' (this clone holds unpublished commits),
+// or 'blocked' (the fast-forward failed: a lock, or a file in the way).
 function fastForwardLocal(root, commit) {
-  if (!gitOk(root, ['merge-base', '--is-ancestor', 'HEAD', commit])) return 'pending';
-  return gitOk(root, ['merge', '--ff-only', '--quiet', commit]) ? 'updated' : 'pending';
+  if (!gitOk(root, ['merge-base', '--is-ancestor', 'HEAD', commit])) return 'ahead';
+  return gitOk(root, ['merge', '--ff-only', '--quiet', commit]) ? 'updated' : 'blocked';
 }
 
 // Commit `content` at `relPath` onto the upstream branch and push it.
-// Returns { commit, path, local: 'updated' | 'pending' }. Throws TransportError
-// when the remote is unreachable (the caller queues).
+// Returns { commit, path, local, already }. Throws TransportError when it
+// cannot be published now (the caller queues).
 export function publishFile({ root, relPath, content, message }) {
+  if (!headBranch(root)) throw new TransportError('publish', 'HEAD is detached (a rebase in progress?)', 'detached');
   const up = upstreamOf(root);
   if (!up) throw new Error(`${root} has no upstream branch - nothing to publish to`);
   const env = identityEnv(root);
+  const blob = git(root, ['hash-object', '-w', '--stdin'], { input: content });
+  const dirRel = posix.dirname(relPath);
   for (let attempt = 1; attempt <= PUSH_ATTEMPTS; attempt++) {
     try {
       git(root, ['fetch', '--quiet', up.remote, `+${up.mergeRef}:${up.trackingRef}`], { timeout: 120_000 });
     } catch (e) {
-      throw new TransportError('fetch', stderrOf(e));
+      // another process in this clone holds the ref lock: local contention, retry
+      if (/cannot lock ref|unable to create .*\.lock|File exists/i.test(`${e.stderr ?? ''}`) && attempt < PUSH_ATTEMPTS) {
+        sleepMs(50 * attempt + Math.floor(Math.random() * 150));
+        continue;
+      }
+      throw new TransportError('fetch', stderrText(e), 'network');
     }
     const base = git(root, ['rev-parse', up.trackingRef]);
+    const existing = sameBlobIn(root, base, dirRel, blob);
+    if (existing) return { commit: base, path: existing, local: fastForwardLocal(root, base), already: true };
+
     const path = freePath(root, base, relPath);
     const scratch = mkdtempSync(join(tmpdir(), 'tng-wiki-capture-'));
     const indexEnv = { ...env, GIT_INDEX_FILE: join(scratch, 'index') };
     let commit;
     try {
       git(root, ['read-tree', base], { env: indexEnv });
-      const blob = git(root, ['hash-object', '-w', '--stdin'], { input: content });
       git(root, ['update-index', '--add', '--cacheinfo', `100644,${blob},${path}`], { env: indexEnv });
       const tree = git(root, ['write-tree'], { env: indexEnv });
       commit = git(root, ['commit-tree', tree, '-p', base, '-F', '-'], { env, input: message });
@@ -126,27 +181,41 @@ export function publishFile({ root, relPath, content, message }) {
     try {
       git(root, ['push', '--quiet', up.remote, `${commit}:${up.mergeRef}`], { timeout: 120_000 });
     } catch (e) {
-      const why = stderrOf(e);
-      const raced = /non-fast-forward|fetch first|rejected/i.test(`${e.stderr ?? ''}`);
-      if (raced && attempt < PUSH_ATTEMPTS) continue;
-      throw new TransportError('push', why);
+      const why = stderrText(e);
+      const kind = classifyPushError(`${e.stderr ?? ''}`);
+      if (kind === 'race' && attempt < PUSH_ATTEMPTS) {
+        sleepMs(50 * attempt + Math.floor(Math.random() * 150));
+        continue;
+      }
+      throw new TransportError('push', why, kind);
     }
-    git(root, ['update-ref', up.trackingRef, commit]);
-    return { commit, path, local: fastForwardLocal(root, commit) };
+    // Pushing to the configured remote normally moves the tracking ref itself;
+    // this is a courtesy, and a lock on it must not fail a published capture.
+    gitOk(root, ['update-ref', up.trackingRef, commit]);
+    return { commit, path, local: fastForwardLocal(root, commit), already: false };
   }
-  throw new TransportError('push', `still racing after ${PUSH_ATTEMPTS} attempts`);
+  throw new TransportError('push', `still racing other pushers after ${PUSH_ATTEMPTS} attempts`, 'race');
 }
 
 // No upstream: write the file and commit only that path, so other sessions'
-// staged work stays staged. Returns { commit, path }.
+// staged work stays staged. Returns { commit, path }. On failure the file is
+// removed again (no stray untracked capture); the caller queues the content.
 export function commitLocal({ root, relPath, content, message }) {
+  if (!headBranch(root)) throw new TransportError('commit', 'HEAD is detached (a rebase in progress?)', 'detached');
   const hasHead = gitOk(root, ['rev-parse', '--verify', '--quiet', 'HEAD']);
   const path = freePath(root, hasHead ? 'HEAD' : null, relPath);
-  mkdirSync(dirname(join(root, path)), { recursive: true });
-  writeFileSync(join(root, path), content);
+  const abs = join(root, path);
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, content);
   const env = identityEnv(root);
-  git(root, ['add', '--', path], { env });
-  git(root, ['commit', '--quiet', '--only', '-F', '-', '--', path], { env, input: message });
+  try {
+    git(root, ['add', '--', path], { env });
+    git(root, ['commit', '--quiet', '--only', '-F', '-', '--', path], { env, input: message });
+  } catch (e) {
+    gitOk(root, ['reset', '--quiet', '--', path]);
+    rmSync(abs, { force: true });
+    throw new TransportError('commit', stderrText(e), 'network');
+  }
   return { commit: git(root, ['rev-parse', 'HEAD']), path };
 }
 
@@ -156,12 +225,19 @@ export function outboxDir(home = homedir()) {
   return join(home, '.tng-wiki', 'outbox');
 }
 
-export function queueCapture({ root, relPath, content, message, error }, home = homedir()) {
+function writeAtomic(file, text) {
+  const tmp = `${file}.tmp-${process.pid}`;
+  writeFileSync(tmp, text);
+  renameSync(tmp, file);
+}
+
+export function queueCapture({ root, relPath, content, message, error, kind = null }, home = homedir()) {
   const dir = outboxDir(home);
   mkdirSync(dir, { recursive: true });
   const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${Math.random().toString(36).slice(2, 8)}`;
   const file = join(dir, `${id}.json`);
-  writeFileSync(file, JSON.stringify({ root, relPath, content, message, error, queued_at: new Date().toISOString() }, null, 2) + '\n');
+  const entry = { root, relPath, content, message, error, kind, attempts: 1, queued_at: new Date().toISOString() };
+  writeAtomic(file, JSON.stringify(entry, null, 2) + '\n');
   return file;
 }
 
@@ -178,22 +254,58 @@ export function listOutbox(home = homedir()) {
   });
 }
 
+// Take ownership of an entry by renaming it, so overlapping flushes (several
+// sessions starting at once) never publish the same entry concurrently. A
+// claim older than STALE_CLAIM_MS belonged to a killed process and is retaken.
+function claim(dir, name) {
+  const target = join(dir, `${name}.claim-${process.pid}`);
+  try {
+    renameSync(join(dir, name), target);
+    return target;
+  } catch {
+    return null;
+  }
+}
+
+function staleClaims(dir) {
+  return readdirSync(dir).filter((f) => /\.json\.claim-\d+$/.test(f)).filter((f) => {
+    try { return Date.now() - statSync(join(dir, f)).mtimeMs > STALE_CLAIM_MS; } catch { return false; }
+  });
+}
+
 // Publish every queued capture that can be published now.
-// Returns { published: [{ relPath, commit, path }], pending: [{ relPath, reason }] }.
+// Returns { published: [{ relPath, commit, path, already }], pending: [{ relPath, reason }] }.
 export function flushOutbox(home = homedir()) {
+  const dir = outboxDir(home);
   const published = [];
   const pending = [];
-  for (const entry of listOutbox(home)) {
-    if (entry.invalid) { pending.push({ relPath: entry.file, reason: `unreadable: ${entry.invalid}` }); continue; }
-    if (!existsSync(entry.root)) { pending.push({ relPath: entry.relPath, reason: `repo missing: ${entry.root}` }); continue; }
+  if (!existsSync(dir)) return { published, pending };
+  for (const stale of staleClaims(dir)) {
+    try { renameSync(join(dir, stale), join(dir, stale.replace(/\.claim-\d+$/, ''))); } catch { /* raced */ }
+  }
+  for (const name of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
+    const claimed = claim(dir, name);
+    if (!claimed) continue;
+    let entry;
     try {
-      const done = upstreamOf(entry.root)
-        ? publishFile(entry)
-        : commitLocal(entry);
-      unlinkSync(entry.file);
-      published.push({ relPath: entry.relPath, commit: done.commit, path: done.path });
+      entry = JSON.parse(readFileSync(claimed, 'utf8'));
     } catch (e) {
-      pending.push({ relPath: entry.relPath, reason: e.message });
+      renameSync(claimed, join(dir, name));
+      pending.push({ relPath: name, reason: `unreadable: ${e.message}` });
+      continue;
+    }
+    const release = (reason, kind) => {
+      writeAtomic(claimed, JSON.stringify({ ...entry, error: reason, kind, attempts: (entry.attempts ?? 1) + 1, last_attempt: new Date().toISOString() }, null, 2) + '\n');
+      renameSync(claimed, join(dir, name));
+      pending.push({ relPath: entry.relPath, reason, kind });
+    };
+    if (!existsSync(entry.root)) { release(`repo missing: ${entry.root}`, 'network'); continue; }
+    try {
+      const done = upstreamOf(entry.root) ? publishFile(entry) : commitLocal(entry);
+      unlinkSync(claimed);
+      published.push({ relPath: entry.relPath, commit: done.commit, path: done.path, already: !!done.already });
+    } catch (e) {
+      release(e.message, e.kind ?? 'network');
     }
   }
   return { published, pending };

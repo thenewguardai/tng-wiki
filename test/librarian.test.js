@@ -85,6 +85,7 @@ test('mutating verbs refuse on a capturer seat; read verbs and --off-host still 
       ['ground', '--wiki', 'lib', '--fix-index'],
       ['log', '--wiki', 'lib', '--type', 'note', '--desc', 'x'],
       ['upgrade', '--wiki', 'lib', '--dry-run'],
+      ['register', dir, '--shared'],
     ]) {
       const r = run(home, argv, 'travel-box');
       assert.notEqual(r.status, 0, `${argv.join(' ')} ran on a capturer seat`);

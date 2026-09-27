@@ -2,13 +2,14 @@
 // reporting, and `sync --quiet` for session-start hooks.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'url';
 import { scaffoldWiki } from '../src/init.js';
 import { syncWikis } from '../src/sync.js';
+import { setLibrarian } from '../src/librarian.js';
 
 const CLI = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'bin', 'cli.js');
 const GIT_ENV = {
@@ -132,6 +133,7 @@ test('--push aborts a conflicting rebase and leaves the clone as it was', () => 
     assert.equal(git(f.a, ['rev-parse', 'HEAD']), head);
     assert.equal(existsSync(join(f.a, '.git', 'rebase-merge')), false);
     assert.equal(git(f.a, ['status', '--porcelain']), '');
+    assert.equal(git(f.a, ['worktree', 'list']).split('\n').length, 1, 'temporary rebase worktree left behind');
   } finally {
     f.cleanup();
   }
@@ -148,6 +150,57 @@ test('sync --quiet prints nothing when there is nothing to say, and the arrival 
     git(f.b, ['push', '-q']);
     r = run();
     assert.match(r.stdout, /inbox arrival: _inbox\/from-b\.md/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('--push refuses to publish compiled-state commits for a wiki this machine only captures for', () => {
+  const f = makeFixture();
+  const saved = process.env.TNG_WIKI_HOST;
+  try {
+    process.env.TNG_WIKI_HOST = 'travel-box';
+    setLibrarian(join(f.a, 'hub'), 'home-box');
+    git(f.a, ['add', '-A']);
+    git(f.a, ['commit', '-q', '-m', 'stamp librarian']);
+    const before = f.originHead();
+    let r = syncWikis({ home: f.home, push: true });
+    assert.equal(r.repos[0].status, 'off-seat');
+    assert.match(r.repos[0].error, /librarian is "home-box"/);
+    assert.equal(f.originHead(), before);
+
+    // a capture committed by hand into the capturer's _inbox/ is fine to publish
+    git(f.a, ['reset', '-q', '--hard', 'origin/main']);
+    commitFile(f.a, 'hub/_inbox/by-hand.md', '# By hand\n', 'hub inbox: by hand');
+    r = syncWikis({ home: f.home, push: true });
+    assert.equal(r.repos[0].status, 'pushed');
+
+    commitFile(f.a, 'hub/wiki/page.md', 'x\n', 'page');
+    assert.equal(syncWikis({ home: f.home, push: true, offHost: true }).repos[0].status, 'pushed');
+  } finally {
+    if (saved === undefined) delete process.env.TNG_WIKI_HOST; else process.env.TNG_WIKI_HOST = saved;
+    f.cleanup();
+  }
+});
+
+test('one broken repo does not stop the sweep', () => {
+  const f = makeFixture();
+  try {
+    // a second registered wiki whose repo has an unborn HEAD
+    const broken = join(f.base, 'broken');
+    mkdirSync(join(broken, 'w'), { recursive: true });
+    scaffoldWiki(join(broken, 'w'), { domain: 'blank', agent: 'claude-code', wikiName: 'Broken' });
+    git(f.base, ['init', '-q', '-b', 'main', broken]);
+    const registry = JSON.parse(readFileSync(join(f.home, '.tng-wiki', 'registry.json'), 'utf8'));
+    registry.wikis = { broken: { name: 'Broken', path: join(broken, 'w'), domain: 'blank', registered: new Date().toISOString() }, ...registry.wikis };
+    writeFileSync(join(f.home, '.tng-wiki', 'registry.json'), JSON.stringify(registry));
+    commitFile(f.b, 'hub/_inbox/from-b.md', '# From b\n', 'hub inbox: from b');
+    git(f.b, ['push', '-q']);
+
+    const r = syncWikis({ home: f.home });
+    const byRoot = Object.fromEntries(r.repos.map((x) => [x.wikis[0], x.status]));
+    assert.equal(byRoot.broken, 'error');
+    assert.equal(byRoot.hub, 'updated');
   } finally {
     f.cleanup();
   }

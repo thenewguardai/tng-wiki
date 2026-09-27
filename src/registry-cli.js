@@ -9,7 +9,7 @@ import {
 import { isTempPath } from './paths.js';
 import { readSharing, stampSharing, relationTo } from './sharing.js';
 import { localHost } from './host.js';
-import { seatFor } from './librarian.js';
+import { seatFor, assertLibrarianSeat } from './librarian.js';
 import { readdirSync } from 'fs';
 
 export function readWikiMetadata(root) {
@@ -29,8 +29,12 @@ export function readWikiMetadata(root) {
 // Register one wiki dir: stamp sharing if asked, refuse another host's wiki
 // unless forced (#38 - "don't register the other host's wiki" is metadata now,
 // not README convention), then add it to the registry.
-export function registerOne(root, { nameOverride, domainOverride, stamp, force }) {
-  if (stamp) stampSharing(root, stamp);
+export function registerOne(root, { nameOverride, domainOverride, stamp, force, args = [] }) {
+  // stamping writes the committed manifest - a librarian-seat change (ADR 0001)
+  if (stamp) {
+    assertLibrarianSeat(root, args, `register --${stamp === 'shared' ? 'shared' : 'host'}`);
+    stampSharing(root, stamp);
+  }
   const sharing = readSharing(root);
   const relation = relationTo(sharing);
   if (relation === 'other-host' && !force) {
@@ -121,7 +125,7 @@ export async function runRegister(args) {
     return;
   }
 
-  const { slug, entry } = registerOne(root, { nameOverride, domainOverride, stamp, force });
+  const { slug, entry } = registerOne(root, { nameOverride, domainOverride, stamp, force, args });
   let registry = loadRegistry();
   if (makeDefault) { registry = setDefaultInRegistry(registry, slug); saveRegistry(registry); }
   console.log(`${pc.green('✓')} Registered ${pc.bold(slug)} ${pc.dim(`(${entry.path})`)}${stamp ? pc.dim(` [${stamp}]`) : ''}`);
