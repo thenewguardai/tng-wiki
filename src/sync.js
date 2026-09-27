@@ -10,6 +10,7 @@ import { existsSync } from 'fs';
 import { resolve, relative } from 'path';
 import pc from 'picocolors';
 import { loadRegistry, listWikis } from './registry.js';
+import { flushOutbox } from './publish.js';
 
 function git(repoDir, gitArgs, { timeout = 60_000 } = {}) {
   return execFileSync('git', ['-C', repoDir, ...gitArgs], {
@@ -84,6 +85,9 @@ export function syncWikis({ only = null, home } = {}) {
     repos.get(root).wikis.push(w);
   }
 
+  // Captures queued while offline go first, so this sync's pull brings them home.
+  const outbox = flushOutbox(home);
+
   const repoResults = [];
   const wikiResults = [];
   for (const [root, { wikis: inRepo }] of repos) {
@@ -91,7 +95,7 @@ export function syncWikis({ only = null, home } = {}) {
     repoResults.push({ root, wikis: inRepo.map((w) => w.slug), ...pull });
     if (pull.status === 'updated') wikiResults.push(...attributeChanges(root, pull.before, pull.after, inRepo));
   }
-  return { repos: repoResults, wikis: wikiResults, skipped };
+  return { repos: repoResults, wikis: wikiResults, skipped, outbox };
 }
 
 function argValue(args, flag) {

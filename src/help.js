@@ -132,6 +132,25 @@ export const COMMANDS = [
     examples: ['tng-wiki graduate session-notes.md', 'tng-wiki graduate briefs/q3-brief.md --to raw/briefs', 'tng-wiki graduate 2026-08-04-notes.md --as 2026-08-06-routing-addendum.md'],
   },
   {
+    name: 'capture', group: 'Wiki access',
+    summary: 'Drop a new note into a wiki\'s _inbox/ and publish it straight to the wiki repo\'s upstream (never touches your index or working tree; queues when offline)',
+    usage: 'tng-wiki capture --wiki <slug> [--file <path> | stdin] [--title <t>] [--name <file>] [--also <slug,slug>] [--trailer <line>]... [--no-push] [--json]',
+    args: [], flags: [
+      { name: '--wiki', value: '<slug>', desc: 'the best-fit wiki (default: the wiki the cwd is inside; never the registered default - without a target, the wikis\' scopes are printed)' },
+      { name: '--file', value: '<path>', desc: 'the note to capture (default: stdin)' },
+      { name: '--title', value: '<t>', desc: 'title when the note has no frontmatter title or # heading' },
+      { name: '--name', value: '<file>', desc: 'file name in _inbox/ (default: <date>-<slugified title>.md; a taken name gets -2, -3, ...)' },
+      { name: '--also', value: '<slug,slug>', desc: 'other wikis the librarian should consider (recorded as `also:`); capture once, never duplicate' },
+      { name: '--trailer', value: '<line>', desc: 'repeatable: extra commit-message trailer (e.g. a session link)' },
+      { name: '--no-push', desc: 'commit locally only (the same path-scoped commit used when the repo has no upstream)' },
+      JSON_FLAG,
+    ],
+    examples: [
+      'tng-wiki capture --wiki projects --file /tmp/finding.md',
+      'printf \'# Title\\n\\nBody\\n\' | tng-wiki capture --wiki shared --also legion-ubuntu',
+    ],
+  },
+  {
     name: 'librarian', group: 'Wiki access',
     summary: 'Show or set the wiki\'s librarian home host - the one machine that files, grounds and publishes it; every other machine captures',
     usage: 'tng-wiki librarian [--wiki <slug>] [--set <host> | --set-here | --clear] [--json]',

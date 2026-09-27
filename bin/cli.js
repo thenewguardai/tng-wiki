@@ -100,6 +100,11 @@ async function main() {
       await runSearch(args);
       break;
     }
+    case 'capture': {
+      const { runCapture } = await import('../src/capture.js');
+      await runCapture(args);
+      break;
+    }
     case 'librarian': {
       const { runLibrarian } = await import('../src/librarian.js');
       await runLibrarian(args);
