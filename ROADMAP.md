@@ -59,6 +59,14 @@ Every new verb / command / integration point ships with a README entry containin
 
 Split to `docs/` once README crosses ~250 lines.
 
+## Cross-Machine Flow (decided 2026-09-27)
+
+A friction audit of about 220 agent sessions across three machines showed capturers making librarian-grade decisions over a transport nobody pushed. Decision: [ADR 0001](docs/adr/0001-capture-to-origin-and-home-librarian.md); design: [docs/design/cross-machine-flow.md](docs/design/cross-machine-flow.md). Build order:
+
+1. Quick fixes: `cite show` page resolution matches `read`; `tng-wiki inbox` across all wikis; `upgrade --all`; case-insensitive host comparison; moved-and-edited code cite repoint suggestions.
+2. `tng-wiki capture` (private-index commit straight to upstream, outbox when offline), the `librarian` home-host field with off-host refusal on compiled-state writes, `sync --push` / `--quiet` and unpushed-commit reporting.
+3. `tng-wiki join` bootstrap and a `doctor` check that the CLI resolves in non-interactive shells.
+
 ## Fifth + Sixth External Reviews (received 2026-07-09, inspected 0.8.0)
 
 Two follow-up reviews of 0.8.0; the second re-ran an adversarial battery against the upgrade machinery. Disposition:
