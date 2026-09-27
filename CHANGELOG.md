@@ -4,6 +4,12 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`cite show` resolves pages the way `read` does.** It kept its own strict resolver, so only `dir/page.md` worked and agents burned retries on `dir/page`, a bare stem, or a `[[wikilink]]` (observed repeatedly in the 2026-09 friction audit). It now uses the shared resolver: same forms, same ambiguity and escape errors.
+
 ## [0.14.0] - 2026-08-20
 
 ### Changed

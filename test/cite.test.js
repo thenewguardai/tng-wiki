@@ -192,6 +192,18 @@ test('citeShow accepts wiki/-prefixed page paths (composes with ground --page ou
   }
 });
 
+test('citeShow accepts every page form read accepts (bare stem, no .md, wikilink)', () => {
+  const dir = makeFixture();
+  try {
+    const canonical = citeShow(dir, 'entities/fixture.md');
+    for (const form of ['entities/fixture', 'fixture', 'fixture.md', '[[fixture]]']) {
+      assert.deepEqual(citeShow(dir, form), canonical, `form not resolved: ${form}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('citeShow returns [] for a page with no citations and throws for a missing page', () => {
   const dir = makeWiki();
   try {

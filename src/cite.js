@@ -6,10 +6,10 @@
 // authorities at their pinned git ref via the same plumbing `ground --at-ref`
 // uses. Errors degrade per-cite (same finding names ground uses), never per-run.
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import pc from 'picocolors';
-import { resolveWiki } from './verbs.js';
+import { resolveWiki, resolvePagePath } from './verbs.js';
 import { insideRoot } from './paths.js';
 import { splitFrontmatter, extractCitations, loadCodeAuthorities } from './ground.js';
 import { citeKey } from './lock.js';
@@ -68,17 +68,10 @@ function resolveWithin(root, relPath) {
   return insideRoot(rootAbs, target) ? target : null;
 }
 
-// Page path resolution — same forms `read` accepts (relative to wiki/), plus a
-// `wiki/`-prefixed form so it composes with ground's --page output.
-function resolvePagePath(wikiPath, page) {
-  const wikiDir = resolve(wikiPath, 'wiki');
-  const rel = page.startsWith('wiki/') ? page.slice('wiki/'.length) : page;
-  const target = resolve(wikiDir, rel);
-  if (!insideRoot(wikiDir, target)) {
-    throw new Error(`Page path "${page}" escapes the wiki directory`);
-  }
-  if (!existsSync(target)) throw new Error(`Page not found: ${page}`);
-  return target;
+// Page path resolution is `read`'s resolver (bare stem, missing .md, wikilink,
+// `wiki/` prefix, escape guard), so every verb that takes a page agrees.
+function resolvePageAbs(wikiPath, page) {
+  return resolve(wikiPath, 'wiki', resolvePagePath(wikiPath, page));
 }
 
 // ---- core (pure data; rendering lives in runCite) ----
@@ -90,7 +83,7 @@ function resolvePagePath(wikiPath, page) {
 // path_escapes_root for a `..` cite that resolves outside its root; errors
 // degrade per-cite, never abort the run.
 export function citeShow(wikiPath, page, { atRef = false, context = DEFAULT_CONTEXT, only = null } = {}) {
-  const abs = resolvePagePath(wikiPath, page);
+  const abs = resolvePageAbs(wikiPath, page);
   const { body, bodyStartLine } = splitFrontmatter(readFileSync(abs, 'utf8'));
   // kind 'unknown' (unrecognized cite root, #48) has no evidence to show and
   // would corrupt the raw/code column pairing below - ground reports it.
