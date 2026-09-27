@@ -132,6 +132,7 @@ tng-wiki split      --pages <glob|zone> --into <path> --dry-run [--wiki <slug>] 
                                     #   which links go cross-wiki (dry-run only)
 
 # Registry
+tng-wiki join <git-url> [--path <dir>]   # Onboard this machine to a shared wiki repo
 tng-wiki register [path]            # Register an existing wiki
 tng-wiki unregister <slug>          # Remove from the registry (files untouched)
 tng-wiki list                       # List registered wikis (★ marks default)
@@ -628,6 +629,8 @@ $ timeout 20 tng-wiki sync --quiet          # silent unless something arrived or
 How `capture` stays conflict-free: it builds the commit on the freshly fetched upstream tip with a private git index and pushes that SHA (retrying if another capture wins the race), so the index and working tree other sessions are using are never touched, and a new uniquely named file cannot conflict. The local clone fast-forwards when it can; if it holds unpublished commits, the capture arrives on the next `sync --push`. A repo with no upstream gets a path-only local commit (`--no-push` forces that). If the remote is unreachable, the capture waits in `~/.tng-wiki/outbox/` and the next `capture` or `sync` publishes it.
 
 Routing: capture to ONE best-fit wiki and name others with `--also`; the librarian fans out. `tng-wiki inbox` shows what is waiting in every wiki.
+
+Adding a machine is one command: `tng-wiki join <git-url>` clones the repo (or adopts an existing clone of the same remote), registers the wikis meant for this host (its sharing stamps decide), installs the Claude Code skill, prints the `localize` command for any code authority this machine lacks, and checks that `tng-wiki` resolves in non-interactive shells (`tng-wiki doctor --install-shim` fixes it when it does not).
 
 ## QMD Integration
 

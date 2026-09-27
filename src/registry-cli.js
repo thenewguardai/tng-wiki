@@ -29,7 +29,7 @@ export function readWikiMetadata(root) {
 // Register one wiki dir: stamp sharing if asked, refuse another host's wiki
 // unless forced (#38 - "don't register the other host's wiki" is metadata now,
 // not README convention), then add it to the registry.
-function registerOne(root, { nameOverride, domainOverride, stamp, force }) {
+export function registerOne(root, { nameOverride, domainOverride, stamp, force }) {
   if (stamp) stampSharing(root, stamp);
   const sharing = readSharing(root);
   const relation = relationTo(sharing);
@@ -63,6 +63,33 @@ function childWikis(root) {
   }
 }
 
+export function isMonorepo(root) {
+  return !existsSync(join(root, 'AGENTS.md')) && childWikis(root).length > 0;
+}
+
+// Register a monorepo's depth-1 child wikis, honoring sharing stamps: another
+// host's wiki is always skipped; an unstamped one is skipped under `yes` and
+// otherwise decided by `confirm(child)`. Returns one record per child:
+// { child, slug?, relation, skipped, reason? }.
+export async function registerChildren(root, { yes = false, force = false, confirm = async () => false } = {}) {
+  const results = [];
+  for (const child of childWikis(root)) {
+    const sharing = readSharing(child);
+    const relation = relationTo(sharing);
+    if (relation === 'other-host') {
+      results.push({ child, relation, skipped: true, reason: `stamped host:${sharing.host} (another host's wiki)` });
+      continue;
+    }
+    if (relation === null && (yes || !(await confirm(child)))) {
+      results.push({ child, relation, skipped: true, reason: yes ? 'unstamped (no sharing field); register it individually or stamp it' : 'declined' });
+      continue;
+    }
+    const { slug } = registerOne(child, { force });
+    results.push({ child, slug, relation, skipped: false });
+  }
+  return results;
+}
+
 export async function runRegister(args) {
   const pathArg = args.find(a => !a.startsWith('--')) ?? '.';
   const root = resolve(pathArg);
@@ -80,25 +107,16 @@ export async function runRegister(args) {
 
   // Monorepo mode: the path is not itself a wiki but contains child wikis at
   // depth 1 - enumerate them, honoring each child's sharing stamp (#38).
-  if (!existsSync(join(root, 'AGENTS.md')) && childWikis(root).length > 0) {
+  if (isMonorepo(root)) {
     if (stamp) throw new Error('--shared/--host stamp a single wiki - run register per child to stamp, or stamp then re-run on the root.');
-    for (const child of childWikis(root)) {
-      const relation = relationTo(readSharing(child));
-      if (relation === 'other-host') {
-        console.log(`  ${pc.dim(`skipped ${basename(child)} - stamped host:${readSharing(child).host} (another host's wiki)`)}`);
-        continue;
-      }
-      if (relation === null && yes) {
-        console.log(`  ${pc.dim(`skipped ${basename(child)} - unstamped (no sharing field); register it individually or stamp it`)}`);
-        continue;
-      }
-      if (relation === null) {
-        const go = await p.confirm({ message: `${basename(child)} has no sharing stamp - register it on this machine?` });
-        if (p.isCancel(go)) throw new Error('CANCELLED');
-        if (!go) { console.log(`  ${pc.dim(`skipped ${basename(child)}`)}`); continue; }
-      }
-      const { slug } = registerOne(child, { force });
-      console.log(`${pc.green('✓')} Registered ${pc.bold(slug)} ${pc.dim(`(${child})`)}${relation ? pc.dim(` [${relation}]`) : ''}`);
+    const confirm = async (child) => {
+      const go = await p.confirm({ message: `${basename(child)} has no sharing stamp - register it on this machine?` });
+      if (p.isCancel(go)) throw new Error('CANCELLED');
+      return go;
+    };
+    for (const r of await registerChildren(root, { yes, force, confirm })) {
+      if (r.skipped) console.log(`  ${pc.dim(`skipped ${basename(r.child)} - ${r.reason}`)}`);
+      else console.log(`${pc.green('✓')} Registered ${pc.bold(r.slug)} ${pc.dim(`(${r.child})`)}${r.relation ? pc.dim(` [${r.relation}]`) : ''}`);
     }
     return;
   }

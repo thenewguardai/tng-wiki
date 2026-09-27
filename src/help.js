@@ -39,6 +39,17 @@ export const COMMANDS = [
     ],
   },
   {
+    name: 'join', group: 'Registry',
+    summary: 'Onboard this machine to a shared wiki repo: clone (or adopt), register this host\'s wikis, install the skill, list authorities needing localize, check PATH',
+    usage: 'tng-wiki join <git-url> [--path <dir>] [--json]',
+    args: [{ name: 'git-url', required: true, desc: 'the wiki repo\'s clone URL' }],
+    flags: [
+      { name: '--path', value: '<dir>', desc: 'where to clone (default: ~/<repo name>); an existing clone of the same remote is adopted' },
+      JSON_FLAG,
+    ],
+    examples: ['tng-wiki join git@github.com:you/wikis.git', 'tng-wiki join git@github.com:you/wikis.git --path ~/wikis'],
+  },
+  {
     name: 'sync', group: 'Registry',
     summary: 'Pull the git repos behind registered wikis (fast-forward only) and report arrivals per wiki plus unpublished local commits; --push publishes (rebasing over incoming captures)',
     usage: 'tng-wiki sync [--wiki <slug>] [--push] [--quiet] [--json]',
