@@ -142,6 +142,7 @@ tng-wiki query      [--wiki <slug>] [--json]
 tng-wiki read       <page> [--wiki <slug>] [--json]   # path, [[wikilink]], or unique page stem
 tng-wiki search     <query> [--wiki <slug>] [--regex] [--include-raw] [--json]
 tng-wiki sources    [--wiki <slug>] [--uncompiled] [--json]
+tng-wiki inbox      [--wiki <slug>] [--json]           # pending _inbox/ captures, every registered wiki
 
 # Grounding + lint (keeping the wiki honest)
 tng-wiki ground     [--wiki <slug>] [--page <path>] [--at-ref] [--json]   # structural ground-check
@@ -279,6 +280,18 @@ $ tng-wiki sources --uncompiled
 
 $ tng-wiki sources --json | jq '.sources | map(select(.compiled == false)) | length'
 2
+```
+
+### `inbox` - pending captures across every wiki
+
+Lists what is waiting in each registered wiki's `_inbox/`: path, title (frontmatter or first heading), age in days, the host it was captured on, and any `also:` hints naming other wikis the librarian should consider. This is the triage queue for "anything waiting anywhere?", in one call.
+
+```bash
+$ tng-wiki inbox
+projects 2 pending
+  ● 2026-09-27-webgl-gpu-timer.md - WebGL GPU timers read busy time on laptop GPUs (0d · from legion5090)
+  ● 2026-09-27-threejs-compileasync.md - three.js compileAsync must bind the composer target (0d · also: shared)
+shared 0 pending
 ```
 
 ### `stale` - list pages with `⚠️ STALE?` markers

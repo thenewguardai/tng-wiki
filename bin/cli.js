@@ -100,6 +100,11 @@ async function main() {
       await runSearch(args);
       break;
     }
+    case 'inbox': {
+      const { runInbox } = await import('../src/inbox.js');
+      await runInbox(args);
+      break;
+    }
     case 'sources': {
       const { runSources } = await import('../src/verbs-cli.js');
       await runSources(args);

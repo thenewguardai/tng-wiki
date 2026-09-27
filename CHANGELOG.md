@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+### Added
+
+- **`tng-wiki inbox`** - pending `_inbox/` captures across every registered wiki (or `--wiki <slug>`), with title, age, origin host (`captured_on`) and `also:` hints. Replaces the per-hub `ls` loops agents hand-rolled to answer "anything waiting?". Mirrored as the `inbox` MCP tool.
+
 ### Fixed
 
 - **Host stamps compare case-insensitively, and `TNG_WIKI_HOST` overrides the machine name.** `os.hostname()` returns `Legion-Ubuntu` or `LEGION5090` while stamps are typed lowercase, so a `sharing: host:legion-ubuntu` wiki read as another host's wiki on its own machine. Comparison now lives in `src/host.js` and is shared by every committed host field.

@@ -169,6 +169,12 @@ export const COMMANDS = [
     examples: ['tng-wiki log --type ingest --desc "compiled Q3 brief" --source raw/briefs/q3.md --updated wiki/roadmap.md'],
   },
   {
+    name: 'inbox', group: 'Wiki access', summary: 'List pending _inbox/ captures across every registered wiki (the librarian triage queue)',
+    usage: 'tng-wiki inbox [--wiki <slug>] [--json]',
+    args: [], flags: [{ name: '--wiki', value: '<slug>', desc: 'only this registered wiki (default: every registered wiki)' }, JSON_FLAG],
+    examples: ['tng-wiki inbox', 'tng-wiki inbox --wiki projects --json'],
+  },
+  {
     name: 'sources', group: 'Wiki access', summary: 'List raw sources; compiled-state is derived from citations, never a flag',
     usage: 'tng-wiki sources [--uncompiled] [--wiki <slug>] [--json]',
     args: [], flags: [{ name: '--uncompiled', desc: 'only pending sources (cited by no page, not dismissed) - the ingest queue' }, WIKI, JSON_FLAG],

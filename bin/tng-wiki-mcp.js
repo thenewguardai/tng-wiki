@@ -16,6 +16,7 @@ import {
   checkGrounding, listDriftPages, listUnsourcedPages, listUnverifiedPages,
 } from '../src/ground.js';
 import { loadRegistry, listWikis } from '../src/registry.js';
+import { collectInbox } from '../src/inbox.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'));
@@ -143,6 +144,24 @@ server.registerTool(
   async ({ wiki, uncompiled_only }) => withWiki(wiki, (w) => ok({
     wiki: w.slug, sources: listSources(w.path, { uncompiledOnly: !!uncompiled_only }),
   })),
+);
+
+server.registerTool(
+  'inbox',
+  {
+    title: 'List pending _inbox/ captures',
+    description: 'Lists captures waiting in _inbox/ across every registered wiki (or one), with title, age in days, origin host (captured_on) and also: hints naming other wikis the librarian should consider. This is the librarian triage queue; captures are leads, never citable until graduated to raw/.',
+    inputSchema: {
+      wiki: z.string().optional().describe('Registry slug of one wiki. Omit to list every registered wiki.'),
+    },
+  },
+  async ({ wiki }) => {
+    try {
+      return ok(collectInbox({ only: wiki ?? null }));
+    } catch (e) {
+      return err(e.message);
+    }
+  },
 );
 
 server.registerTool(

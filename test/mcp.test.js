@@ -67,7 +67,7 @@ test('MCP server lists all shipped tools with the expected names', async () => {
     const listMsg = msgs.find(m => m.id === 2);
     const names = listMsg.result.tools.map(t => t.name).sort();
     assert.deepEqual(names, [
-      'drift', 'ground', 'list_wikis', 'orphans', 'query', 'read',
+      'drift', 'ground', 'inbox', 'list_wikis', 'orphans', 'query', 'read',
       'search', 'sources', 'stale', 'unsourced', 'unverified',
     ]);
   } finally {
@@ -87,6 +87,27 @@ test('MCP list_wikis tool returns the registered wiki', async () => {
     assert.equal(payload.wikis.length, 1);
     assert.equal(payload.wikis[0].slug, 'mcp-demo');
     assert.equal(payload.wikis[0].isDefault, true);
+  } finally {
+    env.cleanup();
+  }
+});
+
+test('MCP inbox tool lists pending captures and errors on an unknown slug', async () => {
+  const env = withEnv();
+  try {
+    mkdirSync(join(env.wikiPath, '_inbox'), { recursive: true });
+    writeFileSync(join(env.wikiPath, '_inbox', 'lead.md'), '---\ntitle: A lead\n---\nbody\n');
+    const msgs = await mcpCall(env.home, [
+      INIT, INITIALIZED,
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'inbox', arguments: {} } },
+      { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'inbox', arguments: { wiki: 'nope' } } },
+    ]);
+    const payload = JSON.parse(msgs.find(m => m.id === 3).result.content[0].text);
+    assert.equal(payload.total, 1);
+    assert.equal(payload.wikis[0].items[0].title, 'A lead');
+    const bad = msgs.find(m => m.id === 4).result;
+    assert.equal(bad.isError, true);
+    assert.match(bad.content[0].text, /No wiki registered under slug "nope"/);
   } finally {
     env.cleanup();
   }
