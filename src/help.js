@@ -8,6 +8,7 @@ import pc from 'picocolors';
 // Reused flags
 const WIKI = { name: '--wiki', value: '<slug>', desc: 'target a specific registered wiki (default: the wiki the cwd is inside, else the registered default)' };
 const JSON_FLAG = { name: '--json', desc: 'structured, machine-readable output' };
+const OFF_HOST = { name: '--off-host', desc: 'write even though this machine is not the wiki\'s librarian host (for when the home host is unavailable)' };
 
 export const COMMANDS = [
   {
@@ -114,7 +115,7 @@ export const COMMANDS = [
       { name: '--reason', value: '"<why>"', desc: 'required: why nothing was worth compiling (recorded in .tng-wiki/dismissals.json)' },
       { name: '--by', value: '<who>', desc: 'optional attribution (agent/session or human)' },
       { name: '--undo', desc: 'remove the dismissal - the source returns to the ingest queue' },
-      WIKI, JSON_FLAG,
+      WIKI, OFF_HOST, JSON_FLAG,
     ],
     examples: ['tng-wiki dismiss raw/captures/dup-notes.md --reason "superseded by the 08-14 capture"'],
   },
@@ -126,9 +127,22 @@ export const COMMANDS = [
     flags: [
       { name: '--to', value: '<raw/dir>', desc: 'destination directory under raw/ (default: raw/captures)' },
       { name: '--as', value: '<filename>', desc: 'rename on the way in (collisions are expected: capturing sessions cannot see raw/); records graduated_from: frontmatter' },
-      WIKI, JSON_FLAG,
+      WIKI, OFF_HOST, JSON_FLAG,
     ],
     examples: ['tng-wiki graduate session-notes.md', 'tng-wiki graduate briefs/q3-brief.md --to raw/briefs', 'tng-wiki graduate 2026-08-04-notes.md --as 2026-08-06-routing-addendum.md'],
+  },
+  {
+    name: 'librarian', group: 'Wiki access',
+    summary: 'Show or set the wiki\'s librarian home host - the one machine that files, grounds and publishes it; every other machine captures',
+    usage: 'tng-wiki librarian [--wiki <slug>] [--set <host> | --set-here | --clear] [--json]',
+    args: [], flags: [
+      WIKI,
+      { name: '--set', value: '<host>', desc: 'stamp `librarian: <host>` in the committed .tng-wiki.json (hostnames compare case-insensitively)' },
+      { name: '--set-here', desc: 'stamp this machine as the librarian (TNG_WIKI_HOST overrides the OS hostname)' },
+      { name: '--clear', desc: 'remove the field - any machine may maintain the wiki again' },
+      JSON_FLAG,
+    ],
+    examples: ['tng-wiki librarian --wiki projects', 'tng-wiki librarian --wiki projects --set-here'],
   },
   {
     name: 'claim', group: 'Wiki access',
@@ -164,7 +178,7 @@ export const COMMANDS = [
       { name: '--updated', value: '<page>', desc: 'repeatable: pages updated' },
       { name: '--author', value: '<who>', desc: 'optional attribution token (agent/model + session), pairs with lintable provenance' },
       { name: '--notes', value: '<text>', desc: 'freeform notes field' },
-      WIKI, JSON_FLAG,
+      WIKI, OFF_HOST, JSON_FLAG,
     ],
     examples: ['tng-wiki log --type ingest --desc "compiled Q3 brief" --source raw/briefs/q3.md --updated wiki/roadmap.md'],
   },
@@ -191,7 +205,7 @@ export const COMMANDS = [
       { name: '--fix-moved', desc: 'rewrite #L anchors for cites whose locked content moved unchanged (the only safe auto-fix; updates the lockfile)' },
       { name: '--fix-index', desc: 'rewrite the index.md header to the measured page count and newest page date (deterministic repair of index_header_drift)' },
       { name: '--fix-dates', desc: 'set frontmatter `updated` to the page file\'s last change date (git commit date, mtime fallback) on pages flagged frontmatter_updated_stale' },
-      WIKI, JSON_FLAG,
+      WIKI, OFF_HOST, JSON_FLAG,
     ],
     examples: ['tng-wiki ground', 'tng-wiki ground --at-ref --json', 'tng-wiki ground --update-lock', 'tng-wiki ground --fix-moved', 'tng-wiki ground --fix-index', 'tng-wiki ground --fix-dates --page systems/api.md'],
   },
@@ -237,7 +251,7 @@ export const COMMANDS = [
       { name: '--domain', value: '<d>', desc: 're-domain the wiki while upgrading (e.g. software-engineering → code-archaeology); updates .tng-wiki.json and the registry' },
       { name: '--all', desc: 'upgrade every registered wiki present on this machine (registered-but-missing paths are reported and skipped; not combinable with --wiki, a path, or --domain)' },
       { name: '--dry-run', desc: 'report what would change without writing anything' },
-      JSON_FLAG,
+      OFF_HOST, JSON_FLAG,
     ],
     examples: ['tng-wiki upgrade --dry-run', 'tng-wiki upgrade', 'tng-wiki upgrade --all --dry-run', 'tng-wiki upgrade --wiki research --domain code-archaeology'],
   },

@@ -136,6 +136,8 @@ tng-wiki register [path]            # Register an existing wiki
 tng-wiki unregister <slug>          # Remove from the registry (files untouched)
 tng-wiki list                       # List registered wikis (★ marks default)
 tng-wiki set-default <slug>         # Set the default wiki
+tng-wiki librarian  [--wiki <slug>] [--set <host> | --set-here | --clear]
+                                    # The one machine that files this wiki; others capture
 
 # Wiki access (the verbs your agent will call)
 tng-wiki query      [--wiki <slug>] [--json]

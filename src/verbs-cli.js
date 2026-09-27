@@ -7,6 +7,7 @@ import {
   checkGrounding, WARN_ISSUES, listDriftPages, listUnsourcedPages, listUnverifiedPages,
 } from './ground.js';
 import { warnIfLeased, activeLease } from './lease.js';
+import { assertLibrarianSeat, seatFor } from './librarian.js';
 import { parseCrossRef, crossRefWiki } from './crosswiki.js';
 
 function argValue(args, flag) {
@@ -230,7 +231,10 @@ export async function runGround(args) {
       `so this would write to "${wiki.slug}" implicitly. Pass --wiki ${wiki.slug} to target it, or run from inside the wiki.`,
     );
   }
-  if (updateLock || fixMoved || fixIndex || fixDates) warnIfLeased(wiki.path);
+  if (updateLock || fixMoved || fixIndex || fixDates) {
+    assertLibrarianSeat(wiki.path, args, `ground ${updateLock ? '--update-lock' : fixMoved ? '--fix-moved' : fixIndex ? '--fix-index' : '--fix-dates'}`, undefined, wiki.slug);
+    warnIfLeased(wiki.path);
+  }
   const result = checkGrounding(wiki.path, { ...(page ? { page } : {}), atRef, updateLock, fixMoved, fixIndex, fixDates });
   maybeJson(args, { wiki: wiki.slug, ...result }, () => {
     // Warnings go to stderr (findings stay on stdout); --json carries them in
@@ -345,8 +349,12 @@ export async function runRounds(args) {
   const wiki = wikiFromArgs(args);
   const r = roundsReport(wiki.path);
   const lease = activeLease(wiki.path);
-  maybeJson(args, { wiki: wiki.slug, ...r, lease }, () => {
+  const seat = seatFor(wiki.path);
+  maybeJson(args, { wiki: wiki.slug, ...r, lease, seat }, () => {
     process.stdout.write(`${pc.bold('Wiki rounds')} ${pc.dim(`— ${wiki.slug} · ${r.scanned} groundable pages`)}\n\n`);
+    if (seat.role === 'capturer') {
+      process.stdout.write(`  ${pc.cyan('ℹ')} capturer seat: "${seat.librarian}" is this wiki's librarian - rounds run there; from here, report and capture (tng-wiki capture)\n\n`);
+    }
     if (lease) {
       process.stdout.write(`  ${pc.cyan('ℹ')} lease: "${lease.holder}" holds this wiki until ${lease.expires_at.slice(11, 16)} UTC${lease.note ? ` (${lease.note})` : ''}\n\n`);
     }

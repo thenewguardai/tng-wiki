@@ -12,6 +12,7 @@ import { join } from 'path';
 import pc from 'picocolors';
 import { resolveWiki } from './verbs.js';
 import { warnIfLeased } from './lease.js';
+import { assertLibrarianSeat } from './librarian.js';
 
 function argValue(args, flag) {
   const idx = args.indexOf(flag);
@@ -88,6 +89,7 @@ export async function runLog(args) {
     );
   }
 
+  assertLibrarianSeat(wiki.path, args, 'log', undefined, wiki.slug);
   warnIfLeased(wiki.path);
 
   const validTypes = schemaLogTypes(wiki.path);

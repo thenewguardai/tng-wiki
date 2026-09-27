@@ -11,6 +11,7 @@ import pc from 'picocolors';
 import { resolveWiki } from './verbs.js';
 import { insideRoot } from './paths.js';
 import { warnIfLeased } from './lease.js';
+import { assertLibrarianSeat } from './librarian.js';
 import { splitFrontmatter } from './frontmatter.js';
 
 function argValue(args, flag) {
@@ -85,6 +86,7 @@ export async function runGraduate(args) {
     );
   }
 
+  assertLibrarianSeat(wiki.path, args, 'graduate', undefined, wiki.slug);
   warnIfLeased(wiki.path);
 
   const inboxDir = join(wiki.path, '_inbox');

@@ -11,6 +11,7 @@ import { getTemplate, DOMAIN_KEYS } from './templates/index.js';
 import { installedVersion } from './version.js';
 import { loadRegistry, saveRegistry, listWikis } from './registry.js';
 import { resolveWiki } from './verbs.js';
+import { assertLibrarianSeat, seatFor } from './librarian.js';
 
 // `tng-wiki upgrade` regenerates a wiki's schema in place after a CLI update,
 // without clobbering anything the user wrote. Three cases:
@@ -334,13 +335,17 @@ export function resolveUpgradeRoot(args, { cwd = process.cwd(), home } = {}) {
 }
 
 // `upgrade --all` targets: every registered wiki whose directory exists on this
-// machine (a registry entry can outlive its checkout); the rest are reported.
-export function upgradeTargets({ home } = {}) {
+// machine (a registry entry can outlive its checkout) and that this machine is
+// librarian for (a schema upgrade is a compiled-state write, ADR 0001); the
+// rest are reported. `offHost` includes capturer seats too.
+export function upgradeTargets({ home, offHost = false } = {}) {
   const targets = [];
   const skipped = [];
   for (const w of listWikis(loadRegistry(home))) {
-    if (existsSync(w.path)) targets.push({ slug: w.slug, root: w.path });
-    else skipped.push({ slug: w.slug, reason: 'path missing' });
+    if (!existsSync(w.path)) { skipped.push({ slug: w.slug, reason: 'path missing' }); continue; }
+    const { librarian, role } = seatFor(w.path);
+    if (role === 'capturer' && !offHost) { skipped.push({ slug: w.slug, reason: `capturer seat (librarian: ${librarian})` }); continue; }
+    targets.push({ slug: w.slug, root: w.path });
   }
   return { targets, skipped };
 }
@@ -349,7 +354,7 @@ async function runUpgradeAll(args) {
   if (argValue(args, '--domain')) throw new Error('--all cannot re-domain: --domain applies to one wiki. Run it per wiki with --wiki <slug>.');
   if (args.includes('--wiki') || firstPositional(args)) throw new Error('--all targets every registered wiki; drop --wiki / the path, or drop --all.');
   const dryRun = args.includes('--dry-run');
-  const { targets, skipped } = upgradeTargets();
+  const { targets, skipped } = upgradeTargets({ offHost: args.includes('--off-host') });
   const results = targets.map(({ slug, root }) => ({ slug, root, result: upgradeWiki(root, { dryRun }) }));
   if (args.includes('--json')) {
     process.stdout.write(JSON.stringify({
@@ -365,6 +370,7 @@ async function runUpgradeAll(args) {
 export async function runUpgrade(args) {
   if (args.includes('--all')) return runUpgradeAll(args);
   const { root, slug } = resolveUpgradeRoot(args);
+  assertLibrarianSeat(root, args, 'upgrade', undefined, slug);
   const result = upgradeWiki(root, {
     domain: argValue(args, '--domain'),
     dryRun: args.includes('--dry-run'),

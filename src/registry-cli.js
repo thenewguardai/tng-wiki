@@ -9,6 +9,7 @@ import {
 import { isTempPath } from './paths.js';
 import { readSharing, stampSharing, relationTo } from './sharing.js';
 import { localHost } from './host.js';
+import { seatFor } from './librarian.js';
 import { readdirSync } from 'fs';
 
 export function readWikiMetadata(root) {
@@ -144,7 +145,11 @@ export async function runList() {
       : relation === 'mine' ? ` ${pc.dim(`[host:${sharing.host}]`)}`
       : relation === 'other-host' ? ` ${pc.yellow(`[host:${sharing.host} - another host's wiki]`)}`
       : '';
-    console.log(`  ${marker} ${pc.bold(w.slug.padEnd(24))} ${pc.dim(w.domain.padEnd(18))} ${w.path}${badge}${temp}`);
+    const seat = seatFor(w.path);
+    const seatBadge = seat.role === 'librarian' ? ` ${pc.green('[librarian here]')}`
+      : seat.role === 'capturer' ? ` ${pc.dim(`[capturer · librarian: ${seat.librarian}]`)}`
+      : '';
+    console.log(`  ${marker} ${pc.bold(w.slug.padEnd(24))} ${pc.dim(w.domain.padEnd(18))} ${w.path}${badge}${seatBadge}${temp}`);
   }
   console.log('');
 }

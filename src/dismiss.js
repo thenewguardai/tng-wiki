@@ -10,6 +10,7 @@ import pc from 'picocolors';
 import { resolveWiki, rawCiters, readDismissals, DISMISSALS_RELPATH } from './verbs.js';
 import { insideRoot } from './paths.js';
 import { warnIfLeased } from './lease.js';
+import { assertLibrarianSeat } from './librarian.js';
 
 function argValue(args, flag) {
   const idx = args.indexOf(flag);
@@ -52,6 +53,7 @@ export async function runDismiss(args) {
     );
   }
 
+  assertLibrarianSeat(wiki.path, args, 'dismiss', undefined, wiki.slug);
   warnIfLeased(wiki.path);
 
   const rel = pos[0].replace(/^\.\//, '');
