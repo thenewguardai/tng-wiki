@@ -63,9 +63,15 @@ Split to `docs/` once README crosses ~250 lines.
 
 A friction audit of about 220 agent sessions across three machines showed capturers making librarian-grade decisions over a transport nobody pushed. Decision: [ADR 0001](docs/adr/0001-capture-to-origin-and-home-librarian.md); design: [docs/design/cross-machine-flow.md](docs/design/cross-machine-flow.md). Build order:
 
-1. Quick fixes: `cite show` page resolution matches `read`; `tng-wiki inbox` across all wikis; `upgrade --all`; case-insensitive host comparison; moved-and-edited code cite repoint suggestions.
-2. `tng-wiki capture` (private-index commit straight to upstream, outbox when offline), the `librarian` home-host field with off-host refusal on compiled-state writes, `sync --push` / `--quiet` and unpushed-commit reporting.
-3. `tng-wiki join` bootstrap and a `doctor` check that the CLI resolves in non-interactive shells.
+1. Quick fixes: `cite show` page resolution matches `read` (4953c93); `tng-wiki inbox` across all wikis (4771578); `upgrade --all` (3feaacf); case-insensitive host comparison (6daf760); moved-and-edited code cite repoint suggestions (1ec7241). **Shipped 2026-09-27.**
+2. `tng-wiki capture` (private-index commit straight to upstream, outbox when offline) (57893b4), the `librarian` home-host field with off-host refusal on compiled-state writes (fa50e4f), `sync --push` / `--quiet` and unpushed-commit reporting (9795bc5). **Shipped 2026-09-27.**
+3. `tng-wiki join` bootstrap (53a06c6) and a `doctor` check that the CLI resolves in non-interactive shells, with `--install-shim` (292b844). **Shipped 2026-09-27.**
+4. Adversarial review of the transport before release: idempotent publish, claim-by-rename outbox, rebase in a throwaway worktree, off-seat push refusal, queue-don't-lose on every failure (060d340). **Shipped 2026-09-27.** Dogfooded the same day: captures from legion and legion5090 published to origin and arrived on legion-ubuntu through `sync --quiet`.
+
+Follow-ups:
+- `sync --push` refuses over any staged or modified tracked file. A librarian mid-edit must commit first; `reset --keep` would carry unrelated edits, but it unstages unrelated staged files, so the refusal stays until a staging-preserving move (two-tree `read-tree -m -u` plus a compare-and-swap `update-ref`) is built and tested.
+- An optional `sync` source that pulls GitHub Issues (or another phone-friendly channel) into `_inbox/`, for capture away from a terminal.
+- Routing hints from the capturer are free text today (`also:`); a librarian-side `tng-wiki route <item> --to <wiki>` that moves a capture between wikis' inboxes (preserving provenance) would make fan-out one command.
 
 ## Fifth + Sixth External Reviews (received 2026-07-09, inspected 0.8.0)
 
