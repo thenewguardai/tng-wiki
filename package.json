@@ -24,11 +24,11 @@
   "homepage": "https://thenewguard.ai/projects/tng-wiki/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/thenewguardai/tng-wiki"
+    "url": "git+https://github.com/thenewguardai/tng-wiki.git"
   },
   "bin": {
-    "tng-wiki": "./bin/cli.js",
-    "tng-wiki-mcp": "./bin/tng-wiki-mcp.js"
+    "tng-wiki": "bin/cli.js",
+    "tng-wiki-mcp": "bin/tng-wiki-mcp.js"
   },
   "publishConfig": {
     "access": "public"
