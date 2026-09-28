@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { runChecks, recommendNextStep, versionCheck, runDoctor } from '../src/doctor.js';
+import { runChecks, recommendNextStep, versionCheck, runDoctor, softenWikiDirCheck } from '../src/doctor.js';
 import { installSkill } from '../src/skill.js';
 import { installedVersion } from '../src/version.js';
 
@@ -371,4 +371,27 @@ test('runDoctor --json carries the non-interactive PATH check with its fix', asy
     rmSync(wiki, { recursive: true, force: true });
     rmSync(claudeHome, { recursive: true, force: true });
   }
+});
+
+test('recommendNextStep: stale schemas come first and point at upgrade --all + install-skill', () => {
+  const wikis = [{ slug: 'a', path: '/home/u/a' }, { slug: 'b', path: '/home/u/b' }];
+  const schemas = [
+    { slug: 'a', path: '/home/u/a', schema_version: '0.14.0', fresh: false },
+    { slug: 'b', path: '/home/u/b', schema_version: '0.15.0', fresh: true },
+  ];
+  const rec = recommendNextStep({ root: '/home/u', isWiki: false, wikis, schemas });
+  assert.match(rec, /1 wiki schema\(s\) predate this CLI \(a\)/);
+  assert.match(rec, /tng-wiki upgrade --all/);
+  assert.match(rec, /tng-wiki install-skill/);
+  const changelog = rec.match(/"Upgrading" section of (\S+CHANGELOG\.md)$/)?.[1];
+  assert.ok(changelog && existsSync(changelog), `doctor names a CHANGELOG that exists: ${changelog}`);
+  assert.doesNotMatch(recommendNextStep({ root: '/home/u', isWiki: false, wikis, schemas: [schemas[1]] }), /upgrade/);
+});
+
+test('softenWikiDirCheck: outside a wiki is only an issue when nothing is registered', () => {
+  const make = () => [{ name: 'Wiki directory', ok: false, detail: 'not in a wiki directory — run tng-wiki init' }];
+  assert.equal(softenWikiDirCheck(make(), 0)[0].optional, undefined);
+  const soft = softenWikiDirCheck(make(), 3)[0];
+  assert.equal(soft.optional, true);
+  assert.match(soft.detail, /fine - 3 registered/);
 });

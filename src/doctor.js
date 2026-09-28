@@ -1,12 +1,13 @@
 import * as p from '@clack/prompts';
+import { fileURLToPath } from 'url';
 import pc from 'picocolors';
 import { execSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { resolve, join } from 'path';
 import { detectObsidian as realDetectObsidian } from './integrations/obsidian.js';
 import { loadRegistry, listWikis } from './registry.js';
-import { nonInteractiveCheck, installShim } from './cli-path.js';
-import { listOutbox } from './publish.js';
+import { nonInteractiveCheck, installShim, shimStatus } from './cli-path.js';
+import { listOutbox, repoRootOf, upstreamOf } from './publish.js';
 import { seatFor } from './librarian.js';
 import { skillStatus } from './skill.js';
 import { loadCodeAuthorities } from './ground.js';
@@ -194,7 +195,27 @@ export function runChecks(root, deps = {}) {
 // The single most useful thing for an onboarding agent: given the current
 // directory + registry state, what command should it run next? Pure (no fs) so
 // it's unit-testable.
-export function recommendNextStep({ root, isWiki, wikis }) {
+// Outside a wiki is normal once wikis are registered - not an issue to fix
+// (it used to count as one and nudge agents toward a pointless `init`).
+// The installed package's own CHANGELOG (shipped in `files`), for upgrade notes.
+const CHANGELOG_PATH = fileURLToPath(new URL('../CHANGELOG.md', import.meta.url));
+
+export function softenWikiDirCheck(checks, registeredCount) {
+  const check = checks.find((c) => c.name === 'Wiki directory');
+  if (check && !check.ok && registeredCount > 0) {
+    check.optional = true;
+    check.detail = `not inside a wiki (fine - ${registeredCount} registered, see Registry)`;
+  }
+  return checks;
+}
+
+export function recommendNextStep({ root, isWiki, wikis, schemas = [] }) {
+  const stale = schemas.filter((s) => !s.fresh && !isTempPath(s.path));
+  if (stale.length > 0) {
+    return `${stale.length} wiki schema(s) predate this CLI (${stale.map((s) => s.slug).join(', ')}). ` +
+      'Run tng-wiki upgrade --all (on each wiki\'s librarian host), then tng-wiki install-skill, and commit each wiki repo. ' +
+      `Anything else this release needs is in the "Upgrading" section of ${CHANGELOG_PATH}`;
+  }
   const registered = isWiki ? wikis.find((w) => resolve(w.path) === resolve(root)) : null;
   if (isWiki && registered) {
     return `This wiki is registered as "${registered.slug}". Query it: tng-wiki query --wiki ${registered.slug}`;
@@ -248,7 +269,16 @@ export async function runDoctor(args, deps = {}) {
   const skill = skillStatus(deps.claudeHome);
   const version = versionCheck(root, deps);
   const schemas = schemaReport(wikis, deps.installed);
-  const recommendation = recommendNextStep({ root, isWiki, wikis });
+  const recommendation = recommendNextStep({ root, isWiki, wikis, schemas });
+  softenWikiDirCheck(checks, wikis.length);
+  const shimState = shim ? { stale: false } : (deps.shimStatus ?? shimStatus)();
+  if (shimState.ours && shimState.stale) {
+    checks.push({ name: 'CLI shim', ok: false, detail: `~/.local/bin/tng-wiki runs ${shimState.cliPath}, not this install`, fix: ['tng-wiki doctor --install-shim      # point the shim at this install'] });
+  }
+  // Wikis pushed to a remote with nobody named as librarian: the setup ADR 0001
+  // exists for. Informational - a single-machine wiki with a backup remote is fine.
+  const unseated = wikis.filter((w) => existsSync(w.path) && !isTempPath(w.path) && seatFor(w.path).role === null)
+    .filter((w) => { const r = repoRootOf(w.path); return r && upstreamOf(r); });
 
   if (args.includes('--json')) {
     process.stdout.write(JSON.stringify({
@@ -257,6 +287,7 @@ export async function runDoctor(args, deps = {}) {
       checks: checks.map((c) => ({ name: c.name, ok: c.ok, detail: c.detail, optional: !!c.optional, ...(c.fix?.length ? { fix: c.fix } : {}) })),
       registry: { count: wikis.length, wikis: wikis.map((w) => ({ slug: w.slug, path: w.path, domain: w.domain, default: w.isDefault, seat: existsSync(w.path) ? seatFor(w.path) : null })) },
       outbox: outbox.map((e) => ({ relPath: e.relPath ?? null, queued_at: e.queued_at ?? null, error: e.error ?? e.invalid ?? null })),
+      unseated: unseated.map((w) => w.slug),
       shim,
       schemas,
       skillInstalled: skill.installed,
@@ -308,6 +339,9 @@ export async function runDoctor(args, deps = {}) {
     const seat = seatFor(w.path);
     if (seat.role === 'librarian') console.log(`      ${pc.green('✓')} ${w.slug}: librarian seat - this machine files and publishes it (tng-wiki sync --push)`);
     else if (seat.role === 'capturer') console.log(`      ${pc.dim(`○ ${w.slug}: capturer seat (librarian: ${seat.librarian}) - add knowledge with tng-wiki capture`)}`);
+  }
+  if (unseated.length) {
+    console.log(`  ${pc.cyan('ℹ')} ${pc.bold('Multi-machine')}  ${pc.dim('—')}  ${unseated.map((w) => w.slug).join(', ')} push to a remote with no librarian host set. If more than one machine maintains them, name one: tng-wiki librarian --wiki <slug> --set <host> ${pc.dim('(README: Multi-machine wikis)')}`);
   }
   if (outbox.length) {
     console.log(`  ${pc.yellow('⚠')} ${pc.bold('Outbox')}  ${pc.dim('—')}  ${pc.yellow(`${outbox.length} capture(s) queued while the remote was unreachable - tng-wiki sync publishes them`)}`);

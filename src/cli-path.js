@@ -60,3 +60,15 @@ export function nonInteractiveCheck({ home = homedir() } = {}) {
     ],
   };
 }
+
+// Is ~/.local/bin/tng-wiki our shim, and does it run THIS install? A shim
+// written before an upgrade under another node version keeps running the old
+// CLI silently. Returns { exists, ours, cliPath, stale }.
+export function shimStatus({ home = homedir(), cliPath = currentCliPath() } = {}) {
+  const path = join(home, '.local', 'bin', 'tng-wiki');
+  if (!existsSync(path)) return { exists: false, ours: false, cliPath: null, stale: false };
+  const text = readFileSync(path, 'utf8');
+  if (!text.includes(SHIM_MARKER)) return { exists: true, ours: false, cliPath: null, stale: false };
+  const target = text.match(/^exec "[^"]*" "([^"]*)"/m)?.[1] ?? null;
+  return { exists: true, ours: true, cliPath: target, stale: target !== cliPath };
+}

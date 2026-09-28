@@ -7,7 +7,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'url';
-import { nonInteractiveCheck, installShim, shimScript, SHIM_MARKER } from '../src/cli-path.js';
+import { nonInteractiveCheck, installShim, shimScript, shimStatus, SHIM_MARKER } from '../src/cli-path.js';
 
 const CLI = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'bin', 'cli.js');
 const hasBash = spawnSync('bash', ['-c', 'true']).status === 0;
@@ -59,6 +59,19 @@ test('nonInteractiveCheck: fails with the exact fix when .bashrc only sets PATH 
     writeFileSync(join(home, '.bashrc'), `case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac\n` + readFileSync(join(home, '.bashrc'), 'utf8'));
     const good = nonInteractiveCheck({ home });
     assert.equal(good.ok, true, good.detail);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('shimStatus spots a shim that runs a different install than this one', () => {
+  const home = fakeHome();
+  try {
+    assert.deepEqual(shimStatus({ home, cliPath: CLI }), { exists: false, ours: false, cliPath: null, stale: false });
+    installShim({ home, nodePath: process.execPath, cliPath: '/old/node/lib/tng-wiki/bin/cli.js' });
+    assert.equal(shimStatus({ home, cliPath: CLI }).stale, true);
+    installShim({ home, nodePath: process.execPath, cliPath: CLI });
+    assert.equal(shimStatus({ home, cliPath: CLI }).stale, false);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
