@@ -561,7 +561,7 @@ const GUARDRAILS = `## Guardrails
 - **Never delete wiki pages** - update with corrections, archive if truly obsolete. **Never invent sources** - an uncited claim is \`[inference]\` at best.
 - **Never skip the index or the log.** Every operation updates \`wiki/index.md\` and appends a \`wiki/log.md\` entry.
 - **Concurrent sessions:** \`tng-wiki claim\` before mutating, \`tng-wiki release\` when done (advisory machine-local lease); someone ELSE's lease means stop and coordinate. Multi-machine wikis: start with \`tng-wiki sync\`.
-- **\`_inbox/\` (when present):** any session may drop NEW captures - capture is cheap and owes no grounding, index, or log. A librarian session (opened in this wiki) triages it to empty. Never a citable root - \`tng-wiki graduate <item>\` moves a capture to \`raw/\` and prints the citable path. Full contract: \`.tng-wiki/doctrine/operations.md\`.
+- **\`_inbox/\` (when present):** any session captures with \`tng-wiki capture --wiki <slug> --file <note>\` (a NEW file, published for you) - capture is cheap and owes no grounding, index, log, commit, or push. A librarian session (opened in this wiki, on its librarian host when \`.tng-wiki.json\` names one) triages it to empty. Never a citable root - \`tng-wiki graduate <item>\` moves a capture to \`raw/\` and prints the citable path. Full contract: \`.tng-wiki/doctrine/operations.md\`.
 - The \`## Scope\` section below the schema fence is hand-authored and load-bearing - the one thing only this wiki's humans can say. Keep it to a sentence or two, and keep it true.`;
 
 // --- Domain-specific sections ---
@@ -687,7 +687,7 @@ Two output surfaces with opposite lifecycles. Never conflate them:
 
 ### Librarian Duties (standing, every session)
 
-A session opened *in this wiki* is its librarian. Capture is cheap and happens from anywhere (any session can drop a doc in \`_inbox/\`); filing is careful and happens here. Every session, before you finish:
+A session opened *in this wiki* (on its librarian host, when one is set) is its librarian. Capture is cheap and happens from anywhere (\`tng-wiki capture\` publishes a doc into \`_inbox/\`); filing is careful and happens here. Every session, before you finish:
 
 1. **Triage \`_inbox/\`.** Read what landed there, then file it: distill verifiable claims into grounded \`wiki/\` pages, send dated point-in-time write-ups to \`deliverables/\`, and move immutable captures to \`raw/\` (\`tng-wiki graduate <item>\` does the move and prints the citable path). \`_inbox/\` is never a citable root - a page that needs an inbox artifact as evidence graduates it first. \`_inbox/\` should be empty when you leave, or carry only items you logged as deferred.
 2. **Keep \`wiki/index.md\` and \`wiki/log.md\` current** via the tng-wiki verbs: every new or changed page earns an index entry and a log line.

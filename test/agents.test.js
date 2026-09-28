@@ -309,3 +309,12 @@ test('schemaLayout(unknown) returns no aliases rather than throwing', () => {
     aliases: [],
   });
 });
+
+test('the always-on schema teaches one capture contract: tng-wiki capture, filed on the librarian host (ADR 0001)', () => {
+  for (const domain of ['blank', 'code-archaeology']) {
+    const out = generateAgentsMd({ ...ctx, domain });
+    assert.match(out, /tng-wiki capture --wiki <slug>/, domain);
+    assert.match(out, /librarian host/, domain);
+    assert.doesNotMatch(out, /any session may drop NEW captures|any session can drop a doc/, domain);
+  }
+});
