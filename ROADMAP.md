@@ -68,7 +68,10 @@ A friction audit of about 220 agent sessions across three machines showed captur
 3. `tng-wiki join` bootstrap (53a06c6) and a `doctor` check that the CLI resolves in non-interactive shells, with `--install-shim` (292b844). **Shipped 2026-09-27.**
 4. Adversarial review of the transport before release: idempotent publish, claim-by-rename outbox, rebase in a throwaway worktree, off-seat push refusal, queue-don't-lose on every failure (060d340). **Shipped 2026-09-27.** Dogfooded the same day: captures from legion and legion5090 published to origin and arrived on legion-ubuntu through `sync --quiet`.
 
+Released 2026-09-28 as 0.15.0 (the flow), 0.15.2 (capturer seats are not prompted to triage; 0.15.1 was tagged but its release run failed on a color-sensitive test) and 0.15.3 (schema freshness judged by content, so patch releases do not demand re-stamp commits). Rolled out: legion-ubuntu, legion, legion5090 on 0.15.3 with the PATH shim; the four personal hubs upgraded and published; matts-claudes carries the capture contract, the wiki-push exception and the SessionStart `sync --quiet` hook to five seats (the MacBook seats were unreachable).
+
 Follow-ups:
+- The work wikis on legion (`vso-ai`, `foglifter-notes-and-artifacts`) still carry 0.14 schemas; `vso-ai` pins `0.14.x` and has in-flight librarian edits, so its own librarian session upgrades them.
 - `sync --push` refuses over any staged or modified tracked file. A librarian mid-edit must commit first; `reset --keep` would carry unrelated edits, but it unstages unrelated staged files, so the refusal stays until a staging-preserving move (two-tree `read-tree -m -u` plus a compare-and-swap `update-ref`) is built and tested.
 - An optional `sync` source that pulls GitHub Issues (or another phone-friendly channel) into `_inbox/`, for capture away from a terminal.
 - Routing hints from the capturer are free text today (`also:`); a librarian-side `tng-wiki route <item> --to <wiki>` that moves a capture between wikis' inboxes (preserving provenance) would make fan-out one command.
