@@ -4,7 +4,9 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [0.15.1] - 2026-09-28
+## [0.15.2] - 2026-09-28
+
+_The v0.15.1 tag was never published: its release run failed on a test that did not tolerate CI's forced color output. 0.15.2 carries the same fix._
 
 ### Fixed
 

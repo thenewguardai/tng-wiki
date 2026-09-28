@@ -212,7 +212,12 @@ test('on a capturer seat, arrivals are not a triage prompt: --quiet stays silent
     setLibrarian(join(f.b, 'hub'), 'home-box');
     commitFile(f.b, 'hub/_inbox/from-b.md', '# From b\n', 'hub inbox: from b + librarian');
     git(f.b, ['push', '-q']);
-    const run = (args, host) => spawnSync('node', [CLI, 'sync', ...args], { encoding: 'utf8', env: { ...GIT_ENV, HOME: f.home, TNG_WIKI_HOST: host } });
+    // CI forces color; compare the text, not the escapes
+    const strip = (t) => t.replace(/\x1B\[[0-9;]*m/g, '');
+    const run = (args, host) => {
+      const r = spawnSync('node', [CLI, 'sync', ...args], { encoding: 'utf8', env: { ...GIT_ENV, HOME: f.home, TNG_WIKI_HOST: host } });
+      return { ...r, stdout: strip(r.stdout) };
+    };
     const quiet = run(['--quiet'], 'travel-box');
     assert.equal(quiet.status, 0, quiet.stderr);
     assert.doesNotMatch(quiet.stdout, /triage|inbox arrival/);
