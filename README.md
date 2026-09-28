@@ -503,6 +503,17 @@ Rounds also reports **ritual meta-health** - the maintenance loop itself can lap
 Ritual: last log entry 27d ago · uncommitted: 5 changed + 8 untracked
 ```
 
+### Upgrading tng-wiki
+
+```bash
+npm i -g @thenewguard/tng-wiki@latest   # every machine that uses the wikis
+tng-wiki doctor                          # names what is stale and the next command
+tng-wiki upgrade --all                   # one machine per wiki repo (its librarian host); commit + push
+tng-wiki install-skill                   # every machine
+```
+
+Each release's CHANGELOG entry opens with an "Upgrading" section when there is anything beyond these four commands (for 0.15: adopting the multi-machine flow, and the PATH shim).
+
 ### Upgrading a wiki's schema - `upgrade`
 
 A wiki's `AGENTS.md` and `.tng-wiki/doctrine/` are generated, and the generator improves between releases - but wikis accumulate hand-written operating rules that a regen must never destroy. `tng-wiki upgrade` regenerates both without clobbering anything you wrote:

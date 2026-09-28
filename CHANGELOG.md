@@ -6,9 +6,34 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+### Upgrading from 0.14
+
+Nothing refuses or changes behavior until you opt in (a wiki without a `librarian` field works exactly as before), so the upgrade itself is mechanical:
+
+```bash
+npm i -g @thenewguard/tng-wiki@latest   # on every machine that uses the wikis
+tng-wiki doctor                          # names stale schemas, a stale skill, PATH problems
+tng-wiki upgrade --all                   # ONE machine per wiki repo (the librarian host), then commit and push
+tng-wiki install-skill                   # on every machine, so sessions learn capture / inbox / sync --push
+```
+
+Run `upgrade --all` on one machine per wiki repo only: two clones regenerating the same schema commit competing changes. Other machines pick the new schema up with `tng-wiki sync`.
+
+If `doctor` reports `CLI in non-interactive shells` failing, run `tng-wiki doctor --install-shim` and add the one `~/.bashrc` line it prints. If you already have a shim and upgraded under a different node version, `doctor` flags `CLI shim` and the same command re-points it.
+
+**Adopting the multi-machine flow** (wikis cloned on more than one machine; `doctor` lists them under "Multi-machine"). On the machine that should do the filing:
+
+```bash
+tng-wiki librarian --wiki <slug> --set-here                   # per wiki; commit .tng-wiki.json and push
+tng-wiki register <path-to-wiki> --shared                     # or --host <name> for a host-only wiki; lets `join` register the right ones
+```
+
+From then on: sessions anywhere capture with `tng-wiki capture --wiki <slug> --file <note>` instead of writing into `_inbox/` by hand (hand-written captures still work; they just leave committing and pushing to someone); rounds happen on the librarian host and end with `tng-wiki sync --push`; other machines run `tng-wiki sync` (a session-start hook with `sync --quiet` keeps them fresh) and `tng-wiki join <url>` sets up a new one. See README "Multi-machine wikis" and `docs/adr/0001-capture-to-origin-and-home-librarian.md`.
+
 ### Added
 
 - **`tng-wiki join <git-url> [--path <dir>]`** - onboard a machine in one command: clone (or adopt an existing clone of the same remote; a different remote is refused), register the wikis meant for this host via the same sharing-stamp rules as `register --yes`, install the skill, print the exact `localize` command for code authorities missing here (never trusting on its own), and run the non-interactive PATH check. Replaces the manual clone / register x N / localize / install-skill sequence a session had to rediscover when legion5090 joined.
+- **`doctor` guides the upgrade.** Stale schemas now lead the recommendation with `upgrade --all` + `install-skill` (previously a per-wiki `upgrade --wiki` line each and a generic "query one" next step); wikis that push to a remote with no librarian get an informational "Multi-machine" line; a shim pointing at a different install is flagged; and running `doctor` outside a wiki no longer counts "not in a wiki directory - run tng-wiki init" as an issue when wikis are registered.
 - **`doctor` checks the CLI resolves in non-interactive shells, and `doctor --install-shim` fixes it.** The most repeated failure in the audit was `tng-wiki: command not found` in `ssh host cmd`, login shells and agent harnesses: nvm and npm-prefix PATH entries sit below `.bashrc`'s interactive guard, and a symlink alone still fails on `#!/usr/bin/env node`. `doctor` now simulates that shell and, on failure, prints the fix: `--install-shim` writes `~/.local/bin/tng-wiki` with absolute node + CLI paths (also surviving nvm default switches; it refuses to replace a file it did not write), plus the one line that puts `~/.local/bin` on PATH above the guard. `doctor` also reports queued captures and each wiki's librarian/capturer seat.
 - **`sync --push` and `sync --quiet`; `sync` reports unpublished commits.** Plain `sync` still only fast-forwards, and now says when a clone holds local commits nobody pushed (at audit time one clone was 46 ahead, invisibly). `--push` is the librarian's publish step: push, or on a diverged repo rebase the local commits over the incoming captures first. The rebase runs in a throwaway detached worktree and the branch moves with `reset --keep`, so the working tree never holds a rebase in progress, a concurrent session's edit is refused rather than overwritten, and a conflict leaves the clone exactly as it was; it refuses over staged or modified tracked files (never stashing). It also refuses to publish local commits that change a wiki this machine only captures for (`--off-host` overrides; `_inbox/` additions are fine), and one broken repo no longer stops the sweep. `--quiet` prints only arrivals and problems, for a session-start hook. `sync` also flushes the capture outbox first. The rounds doctrine and the skill now end rounds with commit + `sync --push`, and teach `capture` as the one capture path (route once, `--also` for other wikis, no commit or push decisions for capturers).
 - **`tng-wiki capture` (ADR 0001).** The one command a capturing session needs: `tng-wiki capture --wiki <slug> [--file <path> | stdin] [--also a,b]`. It completes the note's frontmatter (`title`, `date`, `captured_on`, `also:`; never overwriting), names it `<date>-<slug>.md` (a taken name gets `-2`), and commits it straight onto the wiki repo's upstream branch through a private `GIT_INDEX_FILE` - fetch, build on the upstream tip, push, rebuild on a race - so concurrent sessions' staged work is never touched and a capture can never conflict. The local branch fast-forwards when it can; the file is never pre-written into the working tree (an untracked file at an incoming path would abort the next merge). No upstream (or `--no-push`): a path-only local commit, cleaned up if it fails. Publishing is idempotent - an identical blob already in the target `_inbox/` upstream means the capture is there - so overlapping outbox flushes (several sessions starting at once) or a kill between push and cleanup never duplicate a note; outbox entries are claimed by rename and written atomically. Anything that cannot be published now (offline, detached HEAD mid-rebase, a remote that refuses the push) is queued in `~/.tng-wiki/outbox/`, never lost: only push races retry (with jittered backoff); a refusal is reported with the remote's full reason instead of looping, and the human output says "do not capture it again". Symlinked wiki paths resolve. Without `--wiki` outside a wiki it prints every wiki's `## Scope` and asks, rather than routing to the default. Frontmatter handling covers CRLF input, empty frontmatter, YAML-significant titles; `--also` and `--name` are validated.
@@ -19,6 +44,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ### Fixed
 
+- **The always-on schema teaches the same capture contract as the doctrine.** Generated `AGENTS.md` said "any session may drop NEW captures" into `_inbox/` while `operations.md` taught `tng-wiki capture`; after `upgrade` both say capture, and that filing happens on the librarian host when one is set.
 - **Host stamps compare case-insensitively, and `TNG_WIKI_HOST` overrides the machine name.** `os.hostname()` returns `Legion-Ubuntu` or `LEGION5090` while stamps are typed lowercase, so a `sharing: host:legion-ubuntu` wiki read as another host's wiki on its own machine. Comparison now lives in `src/host.js` and is shared by every committed host field.
 
 - **`cite show` resolves pages the way `read` does.** It kept its own strict resolver, so only `dir/page.md` worked and agents burned retries on `dir/page`, a bare stem, or a `[[wikilink]]` (observed repeatedly in the 2026-09 friction audit). It now uses the shared resolver: same forms, same ambiguity and escape errors.

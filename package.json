@@ -50,6 +50,8 @@
     "bin/",
     "src/",
     "README.md",
+    "CHANGELOG.md",
+    "docs/",
     "LICENSE"
   ],
   "dependencies": {
