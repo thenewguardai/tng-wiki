@@ -205,3 +205,28 @@ test('one broken repo does not stop the sweep', () => {
     f.cleanup();
   }
 });
+
+test('on a capturer seat, arrivals are not a triage prompt: --quiet stays silent, plain sync names the librarian', () => {
+  const f = makeFixture();
+  try {
+    setLibrarian(join(f.b, 'hub'), 'home-box');
+    commitFile(f.b, 'hub/_inbox/from-b.md', '# From b\n', 'hub inbox: from b + librarian');
+    git(f.b, ['push', '-q']);
+    const run = (args, host) => spawnSync('node', [CLI, 'sync', ...args], { encoding: 'utf8', env: { ...GIT_ENV, HOME: f.home, TNG_WIKI_HOST: host } });
+    const quiet = run(['--quiet'], 'travel-box');
+    assert.equal(quiet.status, 0, quiet.stderr);
+    assert.doesNotMatch(quiet.stdout, /triage|inbox arrival/);
+
+    commitFile(f.b, 'hub/_inbox/second.md', '# Second\n', 'hub inbox: second');
+    git(f.b, ['push', '-q']);
+    const plain = run([], 'travel-box');
+    assert.match(plain.stdout, /1 new capture\(s\) - filed by home-box/);
+    assert.doesNotMatch(plain.stdout, /triage/);
+
+    commitFile(f.b, 'hub/_inbox/third.md', '# Third\n', 'hub inbox: third');
+    git(f.b, ['push', '-q']);
+    assert.match(run(['--quiet'], 'home-box').stdout, /inbox arrival: _inbox\/third\.md - triage/);
+  } finally {
+    f.cleanup();
+  }
+});

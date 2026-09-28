@@ -4,6 +4,12 @@ All notable changes to `tng-wiki` are documented here.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-09-28
+
+### Fixed
+
+- **`sync` does not prompt capturer seats to triage.** On a machine that only captures for a wiki, arrivals used to print with "triage: file into wiki/..." hints - with the session-start `sync --quiet` hook, every session on those machines opened with instructions to do the librarian's work. `--quiet` now stays silent about another host's queue, and plain `sync` says "N new capture(s) - filed by <librarian>". The librarian host sees the full triage list as before.
+
 ## [0.15.0] - 2026-09-28
 
 ### Upgrading from 0.14

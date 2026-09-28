@@ -151,7 +151,7 @@ function syncRepo(root, { push = false, offHost = false, wikisInRepo = [] } = {}
 // Attribute `git diff --name-status before..after` to the repo's wikis.
 function attributeChanges(root, before, after, wikisInRepo) {
   const perWiki = new Map(wikisInRepo.map((w) => [w.slug, {
-    slug: w.slug, arrivals: [], raw_added: [], wiki_changed: 0, lock_changed: false,
+    slug: w.slug, seat: seatFor(w.path), arrivals: [], raw_added: [], wiki_changed: 0, lock_changed: false,
   }]));
   const out = git(root, ['diff', '--name-status', before, after]);
   if (!out) return [...perWiki.values()];
@@ -257,6 +257,12 @@ export async function runSync(args) {
 
   const touched = result.wikis.filter((w) => w.arrivals.length || w.raw_added.length || w.wiki_changed || w.lock_changed);
   for (const w of touched) {
+    // A capturer seat does not triage: arrivals are the librarian's queue, and a
+    // triage prompt at every session start sends sessions to do off-seat work.
+    if (w.seat?.role === 'capturer') {
+      if (!quiet && w.arrivals.length) out(`\n${pc.bold(w.slug)} ${pc.dim(`${w.arrivals.length} new capture(s) - filed by ${w.seat.librarian}`)}`);
+      continue;
+    }
     out(`\n${pc.bold(w.slug)}`);
     for (const a of w.arrivals) out(`  ${pc.cyan('●')} inbox arrival: ${a} ${pc.dim('- triage: file into wiki/ · deliverables/ · raw/ (tng-wiki graduate)')}`);
     if (w.raw_added.length) out(`  ${w.raw_added.length} new raw source(s) ${pc.dim('- tng-wiki sources --uncompiled')}`);
