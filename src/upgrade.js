@@ -222,10 +222,21 @@ export function upgradeWiki(root, { domain: domainOverride = null, dryRun = fals
   const markerCounts = countFenceMarkers(merged);
   const fenceAnomaly = markerCounts.opens !== 1 || markerCounts.closes !== 1 ? markerCounts : null;
 
+  // Would this upgrade change anything but the version stamp? A patch release
+  // with an unchanged generator must not demand a re-stamp commit in every wiki.
+  const unstamp = (t) => (t ?? '').replace(/tng-wiki:schema v[0-9][^\s]*/g, 'tng-wiki:schema v*');
+  const contentChanged = oldContent === null
+    || unstamp(merged) !== unstamp(oldContent)
+    || Object.entries(doctrine).some(([f, text]) => {
+      const onDisk = join(root, DOCTRINE_DIR, f);
+      return !existsSync(onDisk) || readFileSync(onDisk, 'utf8') !== text;
+    });
+
   const result = {
     root,
     wikiName,
     mode,
+    contentChanged,
     domain,
     previousDomain,
     domainChanged: domainOverride !== null && domainOverride !== previousDomain,

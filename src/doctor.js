@@ -7,6 +7,7 @@ import { resolve, join } from 'path';
 import { detectObsidian as realDetectObsidian } from './integrations/obsidian.js';
 import { loadRegistry, listWikis } from './registry.js';
 import { nonInteractiveCheck, installShim, shimStatus } from './cli-path.js';
+import { upgradeWiki } from './upgrade.js';
 import { listOutbox, repoRootOf, upstreamOf } from './publish.js';
 import { seatFor } from './librarian.js';
 import { skillStatus } from './skill.js';
@@ -242,7 +243,13 @@ export function schemaReport(wikis, installed = installedVersion()) {
     try {
       version = JSON.parse(readFileSync(join(w.path, '.tng-wiki.json'), 'utf8')).schema_version ?? null;
     } catch { /* missing or unreadable manifest = unknown */ }
-    return { slug: w.slug, path: w.path, schema_version: version, fresh: version !== null && compareSemver(version, installed) === 0 };
+    let fresh = version !== null && compareSemver(version, installed) === 0;
+    // An OLDER stamp whose generated text this CLI would reproduce is fresh too:
+    // judge by content, so a patch release does not demand a re-stamp commit.
+    if (!fresh && version !== null && compareSemver(version, installed) < 0 && existsSync(w.path)) {
+      try { fresh = !upgradeWiki(w.path, { dryRun: true }).contentChanged; } catch { /* unreadable: stale */ }
+    }
+    return { slug: w.slug, path: w.path, schema_version: version, fresh };
   });
 }
 

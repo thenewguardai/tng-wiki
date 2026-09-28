@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runChecks, recommendNextStep, versionCheck, runDoctor, softenWikiDirCheck } from '../src/doctor.js';
@@ -394,4 +394,34 @@ test('softenWikiDirCheck: outside a wiki is only an issue when nothing is regist
   const soft = softenWikiDirCheck(make(), 3)[0];
   assert.equal(soft.optional, true);
   assert.match(soft.detail, /fine - 3 registered/);
+});
+
+test('schemaReport: an older stamp with identical generated content is fresh; changed content or a newer stamp is not', async () => {
+  const { scaffoldWiki } = await import('../src/init.js');
+  const { schemaReport } = await import('../src/doctor.js');
+  const dir = mkdtempSync(join(tmpdir(), 'tng-wiki-fresh-'));
+  try {
+    scaffoldWiki(dir, { domain: 'blank', agent: 'claude-code', wikiName: 'Fresh' });
+    const installed = installedVersion();
+    const [major, minor, patch] = installed.split('.').map(Number);
+    const stamp = (v) => {
+      const metaPath = join(dir, '.tng-wiki.json');
+      const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
+      meta.schema_version = v;
+      writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+      const agents = join(dir, 'AGENTS.md');
+      writeFileSync(agents, readFileSync(agents, 'utf8').replace(/tng-wiki:schema v[0-9.]+/, `tng-wiki:schema v${v}`));
+    };
+    const report = () => schemaReport([{ slug: 'f', path: dir }], installed)[0];
+    const older = patch > 0 ? `${major}.${minor}.${patch - 1}` : `${major}.${Math.max(minor - 1, 0)}.9`;
+    stamp(older);
+    assert.equal(report().fresh, true, 'patch release with an unchanged generator must not demand an upgrade');
+    const doctrine = join(dir, '.tng-wiki', 'doctrine', 'operations.md');
+    writeFileSync(doctrine, readFileSync(doctrine, 'utf8') + '\nold generator text\n');
+    assert.equal(report().fresh, false, 'doctrine that differs from this generator is stale');
+    stamp(`${major + 1}.0.0`);
+    assert.equal(report().fresh, false, 'a schema newer than the CLI stays stale (update the CLI)');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
